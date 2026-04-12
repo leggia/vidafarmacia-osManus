@@ -1,0 +1,9 @@
+{
+  "query": "CREATE TABLE `task_queue` (\n  `id` int AUTO_INCREMENT NOT NULL,\n  `type` enum('purchase_sync','transfer_sync') NOT NULL,\n  `referenceId` int NOT NULL,\n  `status` enum('pending','processing','completed','failed') NOT NULL DEFAULT 'pending',\n  `attempts` int DEFAULT 0,\n  `maxAttempts` int DEFAULT 3,\n  `lastError` text,\n  `payload` json,\n  `scheduledAt` timestamp NOT NULL DEFAULT (now()),\n  `processedAt` timestamp,\n  `createdAt` timestamp NOT NULL DEFAULT (now()),\n  `updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,\n  CONSTRAINT `task_queue_id` PRIMARY KEY(`id`)\n);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway05.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3C3YedTYyRZ9gp1.root --database ELm6QT6PJVYqbTF7mNfFga --execute CREATE TABLE `task_queue` (\n  `id` int AUTO_INCREMENT NOT NULL,\n  `type` enum('purchase_sync','transfer_sync') NOT NULL,\n  `referenceId` int NOT NULL,\n  `status` enum('pending','processing','completed','failed') NOT NULL DEFAULT 'pending',\n  `attempts` int DEFAULT 0,\n  `maxAttempts` int DEFAULT 3,\n  `lastError` text,\n  `payload` json,\n  `scheduledAt` timestamp NOT NULL DEFAULT (now()),\n  `processedAt` timestamp,\n  `createdAt` timestamp NOT NULL DEFAULT (now()),\n  `updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,\n  CONSTRAINT `task_queue_id` PRIMARY KEY(`id`)\n);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 119
+}

@@ -1,0 +1,9 @@
+{
+  "query": "CREATE TABLE `products` (\n  `id` int AUTO_INCREMENT NOT NULL,\n  `externalCode` varchar(50),\n  `name` varchar(500) NOT NULL,\n  `genericName` varchar(500),\n  `supplier` varchar(255),\n  `unitCost` decimal(12,4) DEFAULT '0',\n  `salePrice` decimal(12,4) DEFAULT '0',\n  `category` varchar(255),\n  `isActive` int NOT NULL DEFAULT 1,\n  `createdAt` timestamp NOT NULL DEFAULT (now()),\n  `updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,\n  CONSTRAINT `products_id` PRIMARY KEY(`id`)\n);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway05.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3C3YedTYyRZ9gp1.root --database ELm6QT6PJVYqbTF7mNfFga --execute CREATE TABLE `products` (\n  `id` int AUTO_INCREMENT NOT NULL,\n  `externalCode` varchar(50),\n  `name` varchar(500) NOT NULL,\n  `genericName` varchar(500),\n  `supplier` varchar(255),\n  `unitCost` decimal(12,4) DEFAULT '0',\n  `salePrice` decimal(12,4) DEFAULT '0',\n  `category` varchar(255),\n  `isActive` int NOT NULL DEFAULT 1,\n  `createdAt` timestamp NOT NULL DEFAULT (now()),\n  `updatedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,\n  CONSTRAINT `products_id` PRIMARY KEY(`id`)\n);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 112
+}

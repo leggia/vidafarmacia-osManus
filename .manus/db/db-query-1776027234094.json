@@ -1,0 +1,9 @@
+{
+  "query": "CREATE TABLE `operation_history` (\n  `id` int AUTO_INCREMENT NOT NULL,\n  `userId` int NOT NULL,\n  `type` enum('purchase','transfer') NOT NULL,\n  `referenceId` int NOT NULL,\n  `action` varchar(100) NOT NULL,\n  `status` enum('success','error','info') NOT NULL DEFAULT 'info',\n  `details` text,\n  `createdAt` timestamp NOT NULL DEFAULT (now()),\n  CONSTRAINT `operation_history_id` PRIMARY KEY(`id`)\n);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway05.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3C3YedTYyRZ9gp1.root --database ELm6QT6PJVYqbTF7mNfFga --execute CREATE TABLE `operation_history` (\n  `id` int AUTO_INCREMENT NOT NULL,\n  `userId` int NOT NULL,\n  `type` enum('purchase','transfer') NOT NULL,\n  `referenceId` int NOT NULL,\n  `action` varchar(100) NOT NULL,\n  `status` enum('success','error','info') NOT NULL DEFAULT 'info',\n  `details` text,\n  `createdAt` timestamp NOT NULL DEFAULT (now()),\n  CONSTRAINT `operation_history_id` PRIMARY KEY(`id`)\n);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 215
+}

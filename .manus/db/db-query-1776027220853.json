@@ -1,0 +1,9 @@
+{
+  "query": "CREATE TABLE `transfer_items` (\n  `id` int AUTO_INCREMENT NOT NULL,\n  `transferId` int NOT NULL,\n  `productId` int,\n  `productName` varchar(500) NOT NULL,\n  `quantity` int NOT NULL DEFAULT 1,\n  `matched` int DEFAULT 0,\n  `createdAt` timestamp NOT NULL DEFAULT (now()),\n  CONSTRAINT `transfer_items_id` PRIMARY KEY(`id`)\n);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway05.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3C3YedTYyRZ9gp1.root --database ELm6QT6PJVYqbTF7mNfFga --execute CREATE TABLE `transfer_items` (\n  `id` int AUTO_INCREMENT NOT NULL,\n  `transferId` int NOT NULL,\n  `productId` int,\n  `productName` varchar(500) NOT NULL,\n  `quantity` int NOT NULL DEFAULT 1,\n  `matched` int DEFAULT 0,\n  `createdAt` timestamp NOT NULL DEFAULT (now()),\n  CONSTRAINT `transfer_items_id` PRIMARY KEY(`id`)\n);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 112
+}
