@@ -15,6 +15,13 @@
       "when": 1776027159499,
       "tag": "0001_certain_snowbird",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "5",
+      "when": 1776045681371,
+      "tag": "0002_salty_prism",
+      "breakpoints": true
     }
   ]
 }

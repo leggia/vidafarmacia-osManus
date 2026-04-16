@@ -58,7 +58,7 @@ export const purchases = mysqlTable("purchases", {
   receiptType: varchar("receiptType", { length: 50 }).default("BOLETA"),
   supplier: varchar("supplier", { length: 255 }),
   totalAmount: decimal("totalAmount", { precision: 12, scale: 2 }).default("0"),
-  status: mysqlEnum("status", ["draft", "pending_sync", "synced", "error"]).default("draft").notNull(),
+  status: mysqlEnum("status", ["draft", "pending_sync", "synced", "error", "completed"]).default("draft").notNull(),
   imageUrl: text("imageUrl"), // S3 URL of the uploaded invoice image/PDF
   imageKey: varchar("imageKey", { length: 500 }),
   extractedData: json("extractedData"), // Raw AI extraction result
@@ -94,7 +94,7 @@ export const transfers = mysqlTable("transfers", {
   fromBranchId: int("fromBranchId").notNull(),
   toBranchId: int("toBranchId").notNull(),
   referenceNumber: varchar("referenceNumber", { length: 100 }),
-  status: mysqlEnum("status", ["draft", "pending_sync", "synced", "error"]).default("draft").notNull(),
+  status: mysqlEnum("status", ["draft", "pending_sync", "synced", "error", "completed"]).default("draft").notNull(),
   imageUrl: text("imageUrl"),
   imageKey: varchar("imageKey", { length: 500 }),
   extractedData: json("extractedData"),

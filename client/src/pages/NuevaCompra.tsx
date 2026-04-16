@@ -20,6 +20,7 @@ import {
   ArrowLeft,
   Sparkles,
   Check,
+  CheckCircle2,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
@@ -68,22 +69,26 @@ export default function NuevaCompra() {
     try {
       const reader = new FileReader();
       reader.onload = async () => {
-        const base64 = (reader.result as string).split(",")[1];
-        const result = await uploadAndExtract.mutateAsync({
-          fileBase64: base64,
-          fileName: file.name,
-          mimeType: file.type,
-        });
-        if (result.items && result.items.length > 0) {
-          setItems(result.items);
-          if (result.supplier) setSupplier(result.supplier);
-          if (result.receiptNumber) setReceiptNumber(result.receiptNumber);
-          setExtracted(true);
-          toast.success(
-            `Se extrajeron ${result.items.length} productos de la imagen`
-          );
-        } else {
-          toast.error("No se pudieron extraer productos de la imagen");
+        try {
+          const base64 = (reader.result as string).split(",")[1];
+          const result = await uploadAndExtract.mutateAsync({
+            fileBase64: base64,
+            fileName: file.name,
+            mimeType: file.type,
+          });
+          if (result.items && result.items.length > 0) {
+            setItems(result.items);
+            if (result.supplier) setSupplier(result.supplier);
+            if (result.receiptNumber) setReceiptNumber(result.receiptNumber);
+            setExtracted(true);
+            toast.success(
+              `Se extrajeron ${result.items.length} productos de la imagen`
+            );
+          } else {
+            toast.error("No se pudieron extraer productos de la imagen");
+          }
+        } catch (err: any) {
+          toast.error(err.message || "Error al procesar la imagen");
         }
         setIsExtracting(false);
       };
@@ -94,36 +99,56 @@ export default function NuevaCompra() {
     }
   }, [file, uploadAndExtract]);
 
-  const handleSubmit = useCallback(async () => {
-    if (!branchId) {
-      toast.error("Seleccione una sucursal");
-      return;
-    }
-    if (items.length === 0) {
-      toast.error("Agregue al menos un producto");
-      return;
-    }
-    setIsSubmitting(true);
-    try {
-      const totalAmount = items.reduce((sum, i) => sum + i.subtotal, 0);
-      await createPurchase.mutateAsync({
-        branchId: parseInt(branchId),
-        receiptNumber,
-        supplier,
-        totalAmount,
-        items,
-        imageUrl: uploadAndExtract.data?.imageUrl || null,
-        imageKey: uploadAndExtract.data?.imageKey || null,
-      });
-      toast.success("Compra registrada exitosamente");
-      setLocation("/compras");
-    } catch (err: any) {
-      toast.error(err.message || "Error al registrar la compra");
-    }
-    setIsSubmitting(false);
-  }, [branchId, items, receiptNumber, supplier, createPurchase, setLocation, uploadAndExtract.data]);
+  const handleSubmit = useCallback(
+    async (confirmDirectly: boolean) => {
+      if (!branchId) {
+        toast.error("Seleccione una sucursal");
+        return;
+      }
+      if (items.length === 0) {
+        toast.error("Agregue al menos un producto");
+        return;
+      }
+      setIsSubmitting(true);
+      try {
+        const totalAmount = items.reduce((sum, i) => sum + i.subtotal, 0);
+        await createPurchase.mutateAsync({
+          branchId: parseInt(branchId),
+          receiptNumber,
+          supplier,
+          totalAmount,
+          items,
+          imageUrl: uploadAndExtract.data?.imageUrl || null,
+          imageKey: uploadAndExtract.data?.imageKey || null,
+          confirmDirectly,
+        });
+        if (confirmDirectly) {
+          toast.success("Compra confirmada y completada exitosamente");
+        } else {
+          toast.success("Compra guardada como borrador");
+        }
+        setLocation("/compras");
+      } catch (err: any) {
+        toast.error(err.message || "Error al registrar la compra");
+      }
+      setIsSubmitting(false);
+    },
+    [
+      branchId,
+      items,
+      receiptNumber,
+      supplier,
+      createPurchase,
+      setLocation,
+      uploadAndExtract.data,
+    ]
+  );
 
-  const updateItem = (index: number, field: keyof ExtractedItem, value: any) => {
+  const updateItem = (
+    index: number,
+    field: keyof ExtractedItem,
+    value: any
+  ) => {
     setItems((prev) => {
       const updated = [...prev];
       updated[index] = { ...updated[index], [field]: value };
@@ -228,9 +253,7 @@ export default function NuevaCompra() {
                   className="border-2 border-dashed border-foreground/20 rounded p-8 text-center cursor-pointer hover:border-primary/50 transition-colors"
                 >
                   <Upload className="h-8 w-8 mx-auto text-muted-foreground mb-3" />
-                  <p className="text-sm font-medium">
-                    Haga clic para subir
-                  </p>
+                  <p className="text-sm font-medium">Haga clic para subir</p>
                   <p className="text-xs text-muted-foreground mt-1">
                     JPG, PNG o PDF
                   </p>
@@ -411,7 +434,7 @@ export default function NuevaCompra() {
             </CardContent>
           </Card>
 
-          {/* Submit */}
+          {/* Submit Buttons */}
           {items.length > 0 && (
             <div className="flex justify-end gap-3 mt-4">
               <Button
@@ -422,7 +445,8 @@ export default function NuevaCompra() {
                 Cancelar
               </Button>
               <Button
-                onClick={handleSubmit}
+                variant="outline"
+                onClick={() => handleSubmit(false)}
                 disabled={isSubmitting}
                 className="gap-2 uppercase tracking-wider text-xs font-semibold"
               >
@@ -431,7 +455,19 @@ export default function NuevaCompra() {
                 ) : (
                   <Save className="h-4 w-4" />
                 )}
-                Registrar Compra
+                Guardar Borrador
+              </Button>
+              <Button
+                onClick={() => handleSubmit(true)}
+                disabled={isSubmitting}
+                className="gap-2 uppercase tracking-wider text-xs font-semibold bg-green-700 hover:bg-green-800 text-white"
+              >
+                {isSubmitting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="h-4 w-4" />
+                )}
+                Confirmar Compra
               </Button>
             </div>
           )}

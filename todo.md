@@ -59,3 +59,7 @@
 - [x] Tests vitest para autenticación y logout
 - [x] Tests vitest para validación de inputs en todos los routers
 - [x] Tests vitest para protección de rutas (auth required)
+
+## Bugs Reportados - 12/04/2026
+- [x] BUG: IA no interpreta correctamente cantidades farmacéuticas (x10 caps, cpr, comp) - debe multiplicar cajas x unidades por caja
+- [x] BUG: Compras se quedan en estado BORRADOR sin opción de confirmar directamente - debe permitir confirmar y completar

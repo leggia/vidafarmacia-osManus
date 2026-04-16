@@ -108,10 +108,13 @@ export async function createPurchase(data: {
   imageUrl?: string | null;
   imageKey?: string | null;
   extractedData?: any;
+  status?: string;
   items: Array<{ productName: string; quantity: number; unitCost: number; subtotal: number }>;
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+
+  const finalStatus = data.status || "draft";
 
   const [purchaseResult] = await db.insert(purchases).values({
     userId: data.userId,
@@ -122,7 +125,7 @@ export async function createPurchase(data: {
     imageUrl: data.imageUrl || null,
     imageKey: data.imageKey || null,
     extractedData: data.extractedData || null,
-    status: "draft",
+    status: finalStatus as any,
   });
 
   const purchaseId = purchaseResult.insertId;
@@ -140,24 +143,54 @@ export async function createPurchase(data: {
   }
 
   // Log operation
+  const actionLabel = finalStatus === "completed" ? "Compra confirmada" : "Compra creada (borrador)";
   await db.insert(operationHistory).values({
     userId: data.userId,
     type: "purchase",
     referenceId: purchaseId,
-    action: "Compra creada",
+    action: actionLabel,
     status: "success",
     details: `${data.items.length} productos, total: ${data.totalAmount || 0} BS`,
   });
 
-  // Create task queue entry
-  await db.insert(taskQueue).values({
-    type: "purchase_sync",
-    referenceId: purchaseId,
-    status: "pending",
-    payload: JSON.stringify({ purchaseId, items: data.items }),
-  });
+  // Only create task queue entry if not confirmed directly
+  if (finalStatus === "draft") {
+    await db.insert(taskQueue).values({
+      type: "purchase_sync",
+      referenceId: purchaseId,
+      status: "pending",
+      payload: JSON.stringify({ purchaseId, items: data.items }),
+    });
+  }
 
   return { id: purchaseId };
+}
+
+export async function confirmPurchase(purchaseId: number, userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  await db
+    .update(purchases)
+    .set({ status: "completed" as any })
+    .where(and(eq(purchases.id, purchaseId), eq(purchases.userId, userId)));
+
+  // Remove from task queue if exists
+  await db
+    .delete(taskQueue)
+    .where(and(eq(taskQueue.referenceId, purchaseId), eq(taskQueue.type, "purchase_sync")));
+
+  // Log operation
+  await db.insert(operationHistory).values({
+    userId,
+    type: "purchase",
+    referenceId: purchaseId,
+    action: "Compra confirmada",
+    status: "success",
+    details: "Compra confirmada manualmente por el usuario",
+  });
+
+  return { success: true };
 }
 
 // ─── Transfers ───
@@ -201,10 +234,13 @@ export async function createTransfer(data: {
   imageUrl?: string | null;
   imageKey?: string | null;
   extractedData?: any;
+  status?: string;
   items: Array<{ productName: string; quantity: number }>;
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
+
+  const finalStatus = data.status || "draft";
 
   const [transferResult] = await db.insert(transfers).values({
     userId: data.userId,
@@ -215,7 +251,7 @@ export async function createTransfer(data: {
     imageUrl: data.imageUrl || null,
     imageKey: data.imageKey || null,
     extractedData: data.extractedData || null,
-    status: "draft",
+    status: finalStatus as any,
   });
 
   const transferId = transferResult.insertId;
@@ -230,23 +266,51 @@ export async function createTransfer(data: {
     );
   }
 
+  const actionLabel = finalStatus === "completed" ? "Transferencia confirmada" : "Transferencia creada (borrador)";
   await db.insert(operationHistory).values({
     userId: data.userId,
     type: "transfer",
     referenceId: transferId,
-    action: "Transferencia creada",
+    action: actionLabel,
     status: "success",
     details: `${data.items.length} productos`,
   });
 
-  await db.insert(taskQueue).values({
-    type: "transfer_sync",
-    referenceId: transferId,
-    status: "pending",
-    payload: JSON.stringify({ transferId, items: data.items }),
-  });
+  if (finalStatus === "draft") {
+    await db.insert(taskQueue).values({
+      type: "transfer_sync",
+      referenceId: transferId,
+      status: "pending",
+      payload: JSON.stringify({ transferId, items: data.items }),
+    });
+  }
 
   return { id: transferId };
+}
+
+export async function confirmTransfer(transferId: number, userId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+
+  await db
+    .update(transfers)
+    .set({ status: "completed" as any })
+    .where(and(eq(transfers.id, transferId), eq(transfers.userId, userId)));
+
+  await db
+    .delete(taskQueue)
+    .where(and(eq(taskQueue.referenceId, transferId), eq(taskQueue.type, "transfer_sync")));
+
+  await db.insert(operationHistory).values({
+    userId,
+    type: "transfer",
+    referenceId: transferId,
+    action: "Transferencia confirmada",
+    status: "success",
+    details: "Transferencia confirmada manualmente por el usuario",
+  });
+
+  return { success: true };
 }
 
 // ─── Task Queue ───

@@ -2,12 +2,34 @@ import { trpc } from "@/lib/trpc";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, ArrowLeftRight, Image as ImageIcon } from "lucide-react";
+import { Plus, ArrowLeftRight, CheckCircle2, Loader2 } from "lucide-react";
 import { useLocation } from "wouter";
+import { toast } from "sonner";
+import { useState } from "react";
 
 export default function Transferencias() {
   const [, setLocation] = useLocation();
+  const utils = trpc.useUtils();
   const { data: transfers, isLoading } = trpc.transfers.list.useQuery();
+  const [confirmingId, setConfirmingId] = useState<number | null>(null);
+
+  const confirmTransfer = trpc.transfers.confirm.useMutation({
+    onSuccess: () => {
+      toast.success("Transferencia confirmada y completada exitosamente");
+      utils.transfers.list.invalidate();
+      utils.dashboard.stats.invalidate();
+      setConfirmingId(null);
+    },
+    onError: (err) => {
+      toast.error(err.message || "Error al confirmar la transferencia");
+      setConfirmingId(null);
+    },
+  });
+
+  const handleConfirm = async (id: number) => {
+    setConfirmingId(id);
+    confirmTransfer.mutate({ id });
+  };
 
   return (
     <div className="space-y-6">
@@ -52,6 +74,11 @@ export default function Transferencias() {
                       <p className="text-xs text-muted-foreground">
                         {t.fromBranchName} → {t.toBranchName}
                       </p>
+                      {t.itemCount > 0 && (
+                        <p className="text-xs text-muted-foreground">
+                          {t.itemCount} producto{t.itemCount !== 1 ? "s" : ""}
+                        </p>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-3">
@@ -59,6 +86,22 @@ export default function Transferencias() {
                       {new Date(t.createdAt).toLocaleDateString("es-BO")}
                     </p>
                     <StatusBadge status={t.status} />
+                    {(t.status === "draft" || t.status === "pending_sync") && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleConfirm(t.id)}
+                        disabled={confirmingId === t.id}
+                        className="gap-1 text-xs uppercase tracking-wider font-semibold border-green-600 text-green-700 hover:bg-green-50"
+                      >
+                        {confirmingId === t.id ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="h-3 w-3" />
+                        )}
+                        Confirmar
+                      </Button>
+                    )}
                   </div>
                 </div>
               </CardContent>
@@ -84,15 +127,16 @@ export default function Transferencias() {
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const config: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
-    draft: { label: "Borrador", variant: "secondary" },
-    pending_sync: { label: "Pendiente", variant: "outline" },
-    synced: { label: "Sincronizado", variant: "default" },
-    error: { label: "Error", variant: "destructive" },
+  const config: Record<string, { label: string; className: string }> = {
+    draft: { label: "Borrador", className: "bg-gray-100 text-gray-600 border-gray-300" },
+    pending_sync: { label: "Pendiente", className: "bg-yellow-50 text-yellow-700 border-yellow-300" },
+    synced: { label: "Sincronizado", className: "bg-blue-50 text-blue-700 border-blue-300" },
+    completed: { label: "Completado", className: "bg-green-50 text-green-700 border-green-300" },
+    error: { label: "Error", className: "bg-red-50 text-red-700 border-red-300" },
   };
-  const c = config[status] || { label: status, variant: "secondary" as const };
+  const c = config[status] || { label: status, className: "bg-gray-100 text-gray-600 border-gray-300" };
   return (
-    <Badge variant={c.variant} className="text-xs uppercase tracking-wider font-medium">
+    <Badge variant="outline" className={`text-xs uppercase tracking-wider font-medium ${c.className}`}>
       {c.label}
     </Badge>
   );

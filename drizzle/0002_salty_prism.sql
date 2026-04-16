@@ -1,0 +1,2 @@
+ALTER TABLE `purchases` MODIFY COLUMN `status` enum('draft','pending_sync','synced','error','completed') NOT NULL DEFAULT 'draft';--> statement-breakpoint
+ALTER TABLE `transfers` MODIFY COLUMN `status` enum('draft','pending_sync','synced','error','completed') NOT NULL DEFAULT 'draft';

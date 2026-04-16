@@ -48,7 +48,7 @@ const purchasesRouter = router({
       const userContent: any[] = [
         {
           type: "text",
-          text: `Analiza esta ${isImage ? "imagen" : "documento"} de una factura de compra de medicamentos farmacéuticos.
+          text: `Analiza esta ${isImage ? "imagen" : "documento"} de una factura de compra de medicamentos farmacéuticos de Bolivia.
 Extrae la siguiente información en formato JSON:
 {
   "supplier": "nombre del proveedor si es visible",
@@ -56,19 +56,30 @@ Extrae la siguiente información en formato JSON:
   "items": [
     {
       "productName": "nombre exacto del producto/medicamento",
-      "quantity": número_entero_de_unidades,
-      "unitCost": costo_unitario_decimal,
+      "quantity": número_entero_de_unidades_TOTALES,
+      "unitCost": costo_unitario_decimal_por_unidad,
       "subtotal": subtotal_decimal
     }
   ]
 }
 
-INSTRUCCIONES IMPORTANTES:
+INSTRUCCIONES CRÍTICAS PARA CANTIDADES FARMACÉUTICAS:
+- La "quantity" debe ser el NÚMERO TOTAL DE UNIDADES INDIVIDUALES (comprimidos, cápsulas, ampollas, frascos, etc.)
+- Si la factura dice "4" cajas y el producto indica "x10 comp" o "x10 caps" o "x10 cpr", la cantidad es 4 × 10 = 40 unidades
+- Si dice "x30 comp", multiplica: cajas × 30
+- Si dice "x20 caps", multiplica: cajas × 20
+- Presentaciones comunes: "comp" = comprimidos, "caps" = cápsulas, "cpr" = comprimidos, "tab" = tabletas, "grag" = grageas
+- Para jarabes (jbe), gotas, cremas, inyectables: cada frasco/ampolla/tubo cuenta como 1 unidad (NO multiplicar)
+- Si la factura muestra una columna de "cantidad" y otra de "presentación" (ej: x10), SIEMPRE multiplica ambas
+- Si solo ves un número sin indicación de presentación, úsalo directamente como cantidad
+- El "unitCost" debe ser el costo POR UNIDAD INDIVIDUAL, no por caja. Si el precio es por caja, divide: precio_caja / unidades_por_caja
+
+INSTRUCCIONES GENERALES:
 - Extrae TODOS los productos visibles en la factura
 - Si no puedes leer el costo unitario, coloca 0
-- Si no puedes leer el subtotal, calcula cantidad * costo unitario
-- El nombre del producto debe ser lo más exacto posible
-- Si hay abreviaturas, mantenlas tal cual
+- Si no puedes leer el subtotal, calcula quantity * unitCost
+- El nombre del producto debe ser lo más exacto posible, incluyendo la presentación (comp, jbe, gotas, etc.)
+- Si hay abreviaturas farmacéuticas, mantenlas tal cual
 - Responde SOLO con el JSON, sin texto adicional`,
         },
       ];
@@ -90,7 +101,7 @@ INSTRUCCIONES IMPORTANTES:
           {
             role: "system",
             content:
-              "Eres un asistente experto en lectura de facturas farmacéuticas bolivianas. Extraes datos con alta precisión. Responde SOLO en JSON válido.",
+              "Eres un asistente experto en lectura de facturas farmacéuticas bolivianas. Tienes amplio conocimiento de presentaciones de medicamentos (comprimidos, cápsulas, jarabes, gotas, inyectables). Cuando una factura muestra cajas con presentación (ej: x10 comp, x30 caps), SIEMPRE multiplicas cajas por unidades para obtener el total real. Extraes datos con alta precisión. Responde SOLO en JSON válido.",
           },
           { role: "user", content: userContent },
         ],
@@ -185,9 +196,11 @@ INSTRUCCIONES IMPORTANTES:
         ),
         imageUrl: z.string().nullable().optional(),
         imageKey: z.string().nullable().optional(),
+        confirmDirectly: z.boolean().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
+      const status = input.confirmDirectly ? "completed" : "draft";
       const result = await db.createPurchase({
         userId: ctx.user.id,
         branchId: input.branchId,
@@ -197,18 +210,35 @@ INSTRUCCIONES IMPORTANTES:
         items: input.items,
         imageUrl: input.imageUrl,
         imageKey: input.imageKey,
+        status,
       });
 
       // Notify owner
       try {
+        const statusLabel = input.confirmDirectly ? "CONFIRMADA" : "en borrador";
         await notifyOwner({
-          title: "Nueva compra registrada",
+          title: `Compra ${statusLabel}`,
           content: `Compra #${result.id} — ${input.items.length} productos — ${input.totalAmount || 0} BS — Proveedor: ${input.supplier || "N/A"}`,
         });
       } catch (e) {
         console.warn("[Notification] Failed:", e);
       }
 
+      return result;
+    }),
+
+  confirm: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const result = await db.confirmPurchase(input.id, ctx.user.id);
+      try {
+        await notifyOwner({
+          title: "Compra confirmada",
+          content: `Compra #${input.id} ha sido confirmada y completada.`,
+        });
+      } catch (e) {
+        console.warn("[Notification] Failed:", e);
+      }
       return result;
     }),
 });
@@ -346,9 +376,11 @@ INSTRUCCIONES IMPORTANTES:
         ),
         imageUrl: z.string().nullable().optional(),
         imageKey: z.string().nullable().optional(),
+        confirmDirectly: z.boolean().optional(),
       })
     )
     .mutation(async ({ ctx, input }) => {
+      const status = input.confirmDirectly ? "completed" : "draft";
       const result = await db.createTransfer({
         userId: ctx.user.id,
         fromBranchId: input.fromBranchId,
@@ -358,17 +390,34 @@ INSTRUCCIONES IMPORTANTES:
         items: input.items,
         imageUrl: input.imageUrl,
         imageKey: input.imageKey,
+        status,
       });
 
       try {
+        const statusLabel = input.confirmDirectly ? "CONFIRMADA" : "en borrador";
         await notifyOwner({
-          title: "Nueva transferencia registrada",
+          title: `Transferencia ${statusLabel}`,
           content: `Transferencia #${result.id} — ${input.items.length} medicamentos`,
         });
       } catch (e) {
         console.warn("[Notification] Failed:", e);
       }
 
+      return result;
+    }),
+
+  confirm: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      const result = await db.confirmTransfer(input.id, ctx.user.id);
+      try {
+        await notifyOwner({
+          title: "Transferencia confirmada",
+          content: `Transferencia #${input.id} ha sido confirmada y completada.`,
+        });
+      } catch (e) {
+        console.warn("[Notification] Failed:", e);
+      }
       return result;
     }),
 });

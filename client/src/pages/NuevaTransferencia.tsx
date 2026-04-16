@@ -21,6 +21,7 @@ import {
   ArrowLeft,
   Sparkles,
   Check,
+  CheckCircle2,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
@@ -91,7 +92,7 @@ export default function NuevaTransferencia() {
     }
   }, [file, uploadAndExtract]);
 
-  const handleSubmit = useCallback(async () => {
+  const handleSubmit = useCallback(async (confirmDirectly: boolean) => {
     if (!fromBranchId || !toBranchId) {
       toast.error("Seleccione sucursal origen y destino");
       return;
@@ -114,8 +115,13 @@ export default function NuevaTransferencia() {
         items,
         imageUrl: uploadAndExtract.data?.imageUrl || null,
         imageKey: uploadAndExtract.data?.imageKey || null,
+        confirmDirectly,
       });
-      toast.success("Transferencia registrada exitosamente");
+      if (confirmDirectly) {
+        toast.success("Transferencia confirmada y completada exitosamente");
+      } else {
+        toast.success("Transferencia guardada como borrador");
+      }
       setLocation("/transferencias");
     } catch (err: any) {
       toast.error(err.message || "Error al registrar la transferencia");
@@ -399,7 +405,8 @@ export default function NuevaTransferencia() {
                 Cancelar
               </Button>
               <Button
-                onClick={handleSubmit}
+                variant="outline"
+                onClick={() => handleSubmit(false)}
                 disabled={isSubmitting}
                 className="gap-2 uppercase tracking-wider text-xs font-semibold"
               >
@@ -408,7 +415,19 @@ export default function NuevaTransferencia() {
                 ) : (
                   <Save className="h-4 w-4" />
                 )}
-                Registrar Transferencia
+                Guardar Borrador
+              </Button>
+              <Button
+                onClick={() => handleSubmit(true)}
+                disabled={isSubmitting}
+                className="gap-2 uppercase tracking-wider text-xs font-semibold bg-green-700 hover:bg-green-800 text-white"
+              >
+                {isSubmitting ? (
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                ) : (
+                  <CheckCircle2 className="h-4 w-4" />
+                )}
+                Confirmar Transferencia
               </Button>
             </div>
           )}

@@ -2,12 +2,34 @@ import { trpc } from "@/lib/trpc";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Plus, Eye, RotateCcw, Image as ImageIcon } from "lucide-react";
+import { Plus, CheckCircle2, Image as ImageIcon, Loader2 } from "lucide-react";
 import { useLocation } from "wouter";
+import { toast } from "sonner";
+import { useState } from "react";
 
 export default function Compras() {
   const [, setLocation] = useLocation();
+  const utils = trpc.useUtils();
   const { data: purchases, isLoading } = trpc.purchases.list.useQuery();
+  const [confirmingId, setConfirmingId] = useState<number | null>(null);
+
+  const confirmMutation = trpc.purchases.confirm.useMutation({
+    onSuccess: (_data, variables) => {
+      toast.success(`Compra #${variables.id} confirmada exitosamente`);
+      utils.purchases.list.invalidate();
+      utils.dashboard.stats.invalidate();
+      setConfirmingId(null);
+    },
+    onError: (err) => {
+      toast.error(err.message || "Error al confirmar la compra");
+      setConfirmingId(null);
+    },
+  });
+
+  const handleConfirm = (id: number) => {
+    setConfirmingId(id);
+    confirmMutation.mutate({ id });
+  };
 
   return (
     <div className="space-y-6">
@@ -38,7 +60,10 @@ export default function Compras() {
       ) : purchases && purchases.length > 0 ? (
         <div className="space-y-2">
           {purchases.map((p: any) => (
-            <Card key={p.id} className="border-foreground/10 hover:border-foreground/20 transition-colors">
+            <Card
+              key={p.id}
+              className="border-foreground/10 hover:border-foreground/20 transition-colors"
+            >
               <CardContent className="py-4">
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-4">
@@ -56,7 +81,8 @@ export default function Compras() {
                         {p.receiptNumber || `Compra #${p.id}`}
                       </p>
                       <p className="text-xs text-muted-foreground">
-                        {p.supplier || "Sin proveedor"} — {p.branchName || "Central"}
+                        {p.supplier || "Sin proveedor"} —{" "}
+                        {p.branchName || "Central"}
                       </p>
                     </div>
                   </div>
@@ -70,6 +96,21 @@ export default function Compras() {
                       </p>
                     </div>
                     <StatusBadge status={p.status} />
+                    {p.status === "draft" && (
+                      <Button
+                        size="sm"
+                        onClick={() => handleConfirm(p.id)}
+                        disabled={confirmingId === p.id}
+                        className="gap-1 text-xs uppercase tracking-wider font-semibold bg-green-700 hover:bg-green-800 text-white"
+                      >
+                        {confirmingId === p.id ? (
+                          <Loader2 className="h-3 w-3 animate-spin" />
+                        ) : (
+                          <CheckCircle2 className="h-3 w-3" />
+                        )}
+                        Confirmar
+                      </Button>
+                    )}
                   </div>
                 </div>
               </CardContent>
@@ -95,15 +136,16 @@ export default function Compras() {
 }
 
 function StatusBadge({ status }: { status: string }) {
-  const config: Record<string, { label: string; variant: "default" | "secondary" | "destructive" | "outline" }> = {
-    draft: { label: "Borrador", variant: "secondary" },
-    pending_sync: { label: "Pendiente", variant: "outline" },
-    synced: { label: "Sincronizado", variant: "default" },
-    error: { label: "Error", variant: "destructive" },
+  const config: Record<string, { label: string; className: string }> = {
+    draft: { label: "Borrador", className: "bg-gray-100 text-gray-600 border-gray-300" },
+    pending_sync: { label: "Pendiente", className: "bg-yellow-50 text-yellow-700 border-yellow-300" },
+    synced: { label: "Sincronizado", className: "bg-blue-50 text-blue-700 border-blue-300" },
+    completed: { label: "Completado", className: "bg-green-50 text-green-700 border-green-300" },
+    error: { label: "Error", className: "bg-red-50 text-red-700 border-red-300" },
   };
-  const c = config[status] || { label: status, variant: "secondary" as const };
+  const c = config[status] || { label: status, className: "bg-gray-100 text-gray-600 border-gray-300" };
   return (
-    <Badge variant={c.variant} className="text-xs uppercase tracking-wider font-medium">
+    <Badge variant="outline" className={`text-xs uppercase tracking-wider font-medium ${c.className}`}>
       {c.label}
     </Badge>
   );
