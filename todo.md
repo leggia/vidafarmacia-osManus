@@ -63,3 +63,6 @@
 ## Bugs Reportados - 12/04/2026
 - [x] BUG: IA no interpreta correctamente cantidades farmacéuticas (x10 caps, cpr, comp) - debe multiplicar cajas x unidades por caja
 - [x] BUG: Compras se quedan en estado BORRADOR sin opción de confirmar directamente - debe permitir confirmar y completar
+
+## Bugs Reportados - 17/04/2026
+- [x] BUG CRÍTICO: Botón Confirmar generaba error "Failed query: insert into purchases" - RESUELTO: la migración ALTER TABLE para agregar 'completed' al enum de status no estaba aplicada en la base de datos real

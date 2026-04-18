@@ -1,0 +1,9 @@
+{
+  "query": "ALTER TABLE `purchases` MODIFY COLUMN `status` enum('draft','pending_sync','synced','error','completed') NOT NULL DEFAULT 'draft'",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway05.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3C3YedTYyRZ9gp1.root --database ELm6QT6PJVYqbTF7mNfFga --execute ALTER TABLE `purchases` MODIFY COLUMN `status` enum('draft','pending_sync','synced','error','completed') NOT NULL DEFAULT 'draft'",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 462
+}
