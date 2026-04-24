@@ -417,3 +417,57 @@ export async function getDashboardStats(userId: number) {
     recentTransfers,
   };
 }
+
+// ─── Get Purchase With Items (for sync) ───
+export async function getPurchaseWithItems(purchaseId: number) {
+  const db = await getDb();
+  if (!db) return null;
+
+  const [purchase] = await db
+    .select()
+    .from(purchases)
+    .where(eq(purchases.id, purchaseId))
+    .limit(1);
+
+  if (!purchase) return null;
+
+  const items = await db
+    .select()
+    .from(purchaseItems)
+    .where(eq(purchaseItems.purchaseId, purchaseId));
+
+  return { ...purchase, items };
+}
+
+// ─── Update Purchase Sync Status ───
+export async function updatePurchaseSyncStatus(
+  purchaseId: number,
+  status: "completed" | "sync_error",
+  errorMsg?: string
+) {
+  const db = await getDb();
+  if (!db) return;
+
+  await db
+    .update(purchases)
+    .set({
+      status: status as any,
+      syncError: errorMsg || null,
+    })
+    .where(eq(purchases.id, purchaseId));
+}
+
+// ─── Get Purchase By Id (alias) ───
+export async function getPurchaseById(purchaseId: number) {
+  return getPurchaseWithItems(purchaseId);
+}
+
+// ─── Update Purchase Sync Error ───
+export async function updatePurchaseSyncError(purchaseId: number, errorMsg: string) {
+  const db = await getDb();
+  if (!db) return;
+  await db
+    .update(purchases)
+    .set({ syncError: errorMsg, syncAttempts: sql`syncAttempts + 1` })
+    .where(eq(purchases.id, purchaseId));
+}

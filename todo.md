@@ -69,3 +69,11 @@
 
 ## Bugs Reportados - 19/04/2026
 - [x] BUG: Al crear nueva compra el registro no aparecía en el listado - RESUELTO: se agregó invalidación de caché (purchases.list y dashboard.stats) después de crear la compra/transferencia
+
+## Sincronización con inventarios365.com - 20/04/2026
+- [ ] Analizar si inventarios365.com tiene API REST disponible
+- [ ] Implementar servicio de sincronización en el backend (API directa o Puppeteer)
+- [ ] Conectar sincronización al flujo de confirmación de compras
+- [ ] Conectar sincronización al flujo de confirmación de transferencias
+- [ ] Mostrar estado de sincronización en tiempo real en el frontend
+- [ ] Guardar credenciales de inventarios365.com de forma segura en variables de entorno

@@ -8,6 +8,7 @@ import { storagePut } from "./storage";
 import { notifyOwner } from "./_core/notification";
 import { nanoid } from "nanoid";
 import * as db from "./db";
+import { inventarios365 } from "./inventarios365";
 
 // ─── Branches Router ─────────────────────────────────────────────────────────
 const branchesRouter = router({
@@ -213,6 +214,31 @@ INSTRUCCIONES GENERALES:
         status,
       });
 
+      // Sincronizar con inventarios365.com si se confirma directamente
+      if (input.confirmDirectly) {
+        try {
+          const syncResult = await inventarios365.registrarCompra({
+            proveedor: input.supplier || "",
+            tipoComprobante: "BOLETA",
+            numComprobante: input.receiptNumber || String(result.id),
+            almacenNombre: "principal",
+            items: input.items.map((item) => ({
+              nombre: item.productName,
+              cantidad: item.quantity,
+              precio: item.unitCost,
+            })),
+            total: input.totalAmount || 0,
+          });
+          console.log("[Sync] Resultado sincronización compra:", syncResult);
+          if (!syncResult.success) {
+            await db.updatePurchaseSyncError(result.id, syncResult.message);
+          }
+        } catch (syncError: any) {
+          console.error("[Sync] Error sincronizando compra:", syncError?.message);
+          await db.updatePurchaseSyncError(result.id, syncError?.message || "Error desconocido");
+        }
+      }
+
       // Notify owner
       try {
         const statusLabel = input.confirmDirectly ? "CONFIRMADA" : "en borrador";
@@ -230,11 +256,40 @@ INSTRUCCIONES GENERALES:
   confirm: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ ctx, input }) => {
+      // Obtener datos de la compra para sincronizar
+      const purchase = await db.getPurchaseById(input.id);
       const result = await db.confirmPurchase(input.id, ctx.user.id);
+
+      // Sincronizar con inventarios365.com
+      if (purchase) {
+        try {
+          const items = (purchase.items || []).map((item: any) => ({
+            nombre: item.productName || item.product_name || "",
+            cantidad: item.quantity || 1,
+            precio: item.unitCost || item.unit_cost || 0,
+          }));
+          const syncResult = await inventarios365.registrarCompra({
+            proveedor: purchase.supplier || "",
+            tipoComprobante: purchase.receiptType || "BOLETA",
+            numComprobante: purchase.receiptNumber || String(input.id),
+            almacenNombre: "principal",
+            items,
+            total: parseFloat(String(purchase.totalAmount || 0)),
+          });
+          console.log("[Sync] Resultado sincronización compra confirmada:", syncResult);
+          if (!syncResult.success) {
+            await db.updatePurchaseSyncError(input.id, syncResult.message);
+          }
+        } catch (syncError: any) {
+          console.error("[Sync] Error sincronizando compra confirmada:", syncError?.message);
+          await db.updatePurchaseSyncError(input.id, syncError?.message || "Error desconocido");
+        }
+      }
+
       try {
         await notifyOwner({
-          title: "Compra confirmada",
-          content: `Compra #${input.id} ha sido confirmada y completada.`,
+          title: "Compra confirmada y sincronizada",
+          content: `Compra #${input.id} ha sido confirmada y sincronizada con inventarios365.com.`,
         });
       } catch (e) {
         console.warn("[Notification] Failed:", e);
