@@ -44,8 +44,8 @@ export interface DetalleCompra {
 // Estructura del payload para registrar una compra
 export interface RegistrarCompraPayload {
   idproveedor: number;
-  idalmacen: number;
   tipo_comprobante: string;
+  serie_comprobante: string;
   num_comprobante: string;
   impuesto: number;
   total: number;
@@ -272,16 +272,103 @@ class Inventarios365Service {
   // ─────────────────────────────────────────────────────────────────────────
 
   /**
-   * Buscar un artículo por nombre o código en inventarios365.com.
-   * Endpoint: GET /articulo/buscarArticulo?filtro=<nombre>
+   * Extraer palabras clave del nombre de un producto para búsqueda flexible.
+   * Ejemplo: "ACTRON 400 mg x 10 Caps." → ["ACTRON 400", "ACTRON"]
+   */
+  private extractSearchTerms(nombre: string): string[] {
+    // Limpiar el nombre: quitar presentación (x10, x30, mg, caps, comp, etc.)
+    const clean = nombre
+      .toUpperCase()
+      .replace(/\s+X\s*\d+.*/i, "")       // quitar "x 10 Caps" y todo lo que sigue
+      .replace(/\s+\d+\s*(MG|ML|G|MCG|UI|IU|CAPS?|COMP?|TAB|TABL?|CPR|GTS?|JARABE|SUSP|INY|INYEC|AMP|SOBRES?|CREMA|POMADA|GEL|SPRAY|GOTAS|SOLUCION|SOL|POLVO|GRANULADO|EFERVESCENTE|EFE|EFC|EFEC|BLANDA|DURA|RETARD|FORTE|PLUS|MAX|MINI|BEBE|PEDIATRICO|PEDRIATRICO|NIÑOS?|ADULTO|SIMPLE|DOBLE|TRIPLE).*/i, "")
+      .replace(/\s+(MG|ML|G|MCG|UI|IU)\b.*/i, "")  // quitar dosis al final
+      .trim();
+
+    const terms: string[] = [];
+    if (clean && clean !== nombre.toUpperCase()) terms.push(clean);
+
+    // También intentar con las primeras 2-3 palabras del nombre original
+    const words = nombre.trim().split(/\s+/);
+    if (words.length >= 2) terms.push(words.slice(0, 2).join(" "));
+    if (words.length >= 1) terms.push(words[0]);
+
+    // Deduplicar manteniendo orden
+    const seen = new Set<string>();
+    return terms.filter((t) => { if (seen.has(t)) return false; seen.add(t); return true; });
+  }
+
+  /**
+   * Calcular similitud entre dos nombres de productos (0-1).
+   * Usa coincidencia de tokens: cuántos tokens del nombre original aparecen en el candidato.
+   */
+  private calcularSimilitud(original: string, candidato: string): number {
+    const tokenize = (s: string) =>
+      s.toUpperCase()
+        .replace(/[^A-Z0-9\s]/g, " ")
+        .split(/\s+/)
+        .filter((t) => t.length > 1);
+    const tokensOrig = tokenize(original);
+    const tokensCand = tokenize(candidato);
+    if (tokensOrig.length === 0) return 0;
+    let matches = 0;
+    for (const t of tokensOrig) {
+      if (tokensCand.some((c) => c.startsWith(t) || t.startsWith(c))) matches++;
+    }
+    // Penalizar si el candidato tiene tokens extra que no están en el original
+    const extraPenalty = Math.max(0, tokensCand.length - tokensOrig.length) * 0.05;
+    return matches / tokensOrig.length - extraPenalty;
+  }
+
+  /**
+   * Buscar un artículo por nombre en inventarios365.com.
+   * Usa /articulo/listarArticulo?buscar= con búsqueda progresiva por palabras clave.
+   * El endpoint /articulo/buscarArticulo no devuelve resultados (bug del sistema).
    */
   async buscarArticulo(nombre: string): Promise<ArticuloAPI | null> {
     try {
-      const data = await this.get<{ articulos: ArticuloAPI[] }>(
-        `/articulo/buscarArticulo?filtro=${encodeURIComponent(nombre)}`
-      );
-      const articulos: ArticuloAPI[] = data?.articulos || [];
-      return articulos.length > 0 ? articulos[0] : null;
+      const terms = [nombre, ...this.extractSearchTerms(nombre)];
+      let bestOverall: { art: ArticuloAPI; score: number; term: string } | null = null;
+
+      for (const term of terms) {
+        if (!term || term.length < 3) continue;
+        const data = await this.get<{ articulos: ArticuloAPI[] | { data: ArticuloAPI[] } }>(
+          `/articulo/listarArticulo?buscar=${encodeURIComponent(term)}&criterio=todos&idProveedor=`
+        );
+        const raw = data?.articulos;
+        const articulos: ArticuloAPI[] = Array.isArray(raw)
+          ? raw
+          : raw && "data" in raw
+          ? (raw as { data: ArticuloAPI[] }).data
+          : [];
+
+        if (articulos.length === 0) continue;
+
+        // Calcular similitud para cada candidato y elegir el mejor
+        let localBest: { art: ArticuloAPI; score: number } | null = null;
+        for (const art of articulos) {
+          const score = this.calcularSimilitud(nombre, art.nombre);
+          if (!localBest || score > localBest.score) {
+            localBest = { art, score };
+          }
+        }
+
+        if (localBest && (!bestOverall || localBest.score > bestOverall.score)) {
+          bestOverall = { art: localBest.art, score: localBest.score, term };
+        }
+
+        // Si encontramos una coincidencia perfecta (>= 0.8), no seguir buscando
+        if (bestOverall && bestOverall.score >= 0.8) break;
+      }
+
+      if (bestOverall) {
+        console.log(
+          `[Inventarios365] Artículo "${nombre}" → término:"${bestOverall.term}" | match:"${bestOverall.art.nombre}" (ID:${bestOverall.art.id}, score:${bestOverall.score.toFixed(2)})`
+        );
+        return bestOverall.art;
+      }
+
+      console.warn(`[Inventarios365] Artículo "${nombre}" no encontrado con ningún término`);
+      return null;
     } catch (error) {
       console.error(`[Inventarios365] Error buscando artículo "${nombre}":`, error);
       return null;
@@ -450,8 +537,8 @@ class Inventarios365Service {
       // 5. Registrar la compra
       const payload: RegistrarCompraPayload = {
         idproveedor,
-        idalmacen,
         tipo_comprobante: params.tipoComprobante || "BOLETA",
+        serie_comprobante: "",
         num_comprobante: params.numComprobante,
         impuesto: 0,
         total: totalFinal,
