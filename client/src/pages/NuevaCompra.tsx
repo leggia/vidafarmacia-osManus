@@ -113,7 +113,7 @@ export default function NuevaCompra() {
       setIsSubmitting(true);
       try {
         const totalAmount = items.reduce((sum, i) => sum + i.subtotal, 0);
-        await createPurchase.mutateAsync({
+        const result = await createPurchase.mutateAsync({
           branchId: parseInt(branchId),
           receiptNumber,
           supplier,
@@ -127,7 +127,21 @@ export default function NuevaCompra() {
         await utils.purchases.list.invalidate();
         await utils.dashboard.stats.invalidate();
         if (confirmDirectly) {
-          toast.success("Compra confirmada y completada exitosamente");
+          const r = result as any;
+          if (r?.syncSuccess) {
+            toast.success(
+              `✓ Compra registrada en inventarios365.com` +
+              (r.syncIngresoId ? ` (Ingreso ID: ${r.syncIngresoId})` : ""),
+              { duration: 7000 }
+            );
+          } else if (r?.syncMessage) {
+            toast.warning(
+              `Compra confirmada, pero sin sincronizar: ${r.syncMessage}`,
+              { duration: 8000 }
+            );
+          } else {
+            toast.success("Compra confirmada exitosamente");
+          }
         } else {
           toast.success("Compra guardada como borrador");
         }

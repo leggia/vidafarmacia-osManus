@@ -91,6 +91,8 @@ export async function listPurchases(userId: number) {
       createdAt: purchases.createdAt,
       branchId: purchases.branchId,
       branchName: branches.name,
+      syncError: purchases.syncError,
+      syncAttempts: purchases.syncAttempts,
     })
     .from(purchases)
     .leftJoin(branches, eq(purchases.branchId, branches.id))
