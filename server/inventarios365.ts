@@ -434,6 +434,10 @@ class Inventarios365Service {
    * Endpoint: POST /ingreso/registrar
    * Respuesta exitosa: { id: <ingresoId> }
    */
+  /**
+   * Forzar siempre un re-login antes de registrar una compra.
+   * En producción (Cloud Run) las instancias son efímeras y no comparten estado.
+   */
   async registrarCompra(params: {
     proveedor: string;
     tipoComprobante: string;
@@ -447,8 +451,10 @@ class Inventarios365Service {
     }>;
     total: number;
   }): Promise<{ success: boolean; message: string; ingresoId?: number }> {
+    // Forzar siempre re-login para garantizar sesión fresca en producción
+    this.invalidateSession();
     try {
-      // 1. Obtener almacenes y encontrar el correcto
+      // 1. Obtener almacenes y encontrar el correctoo
       const almacenes = await this.listarAlmacenes();
       console.log(
         "[Inventarios365] Almacenes:",
