@@ -7,6 +7,7 @@ import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
+import { inventarios365 } from "../inventarios365";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -43,6 +44,28 @@ async function startServer() {
       createContext,
     })
   );
+  // Endpoint de diagnóstico temporal para probar sincronización desde Cloud Run
+  app.get("/api/diag-sync", async (_req, res) => {
+    const steps: Record<string, unknown> = {};
+    try {
+      // Paso 1: Login
+      steps.step1_login = "iniciando";
+      // Paso 1: Login implícito via listarAlmacenes
+      const almacenes = await inventarios365.listarAlmacenes();
+      steps.step1_login = "OK";
+      steps.step2_almacenes = almacenes.map((a: any) => `${a.id}:${a.nombre_almacen}`);
+      // Paso 3: Buscar artículo de prueba
+      const articulo = await inventarios365.buscarArticulo("ACTRON");
+      steps.step3_buscar_actron = articulo ? `encontrado: ${articulo.nombre} (ID:${articulo.id})` : "NO ENCONTRADO";
+      // Paso 4: Buscar proveedor de prueba
+      const proveedor = await inventarios365.buscarProveedor("BAGO");
+      steps.step4_proveedor_bago = proveedor ? `encontrado: ${proveedor.nombre} (ID:${proveedor.id})` : "NO ENCONTRADO";
+      res.json({ ok: true, steps });
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err?.message, stack: err?.stack?.split("\n").slice(0, 5), steps });
+    }
+  });
+
   // development mode uses Vite, production mode uses static files
   if (process.env.NODE_ENV === "development") {
     await setupVite(app, server);
