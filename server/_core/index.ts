@@ -66,6 +66,28 @@ async function startServer() {
     }
   });
 
+  // Endpoint de diagnóstico completo: prueba registrarCompra real desde Cloud Run
+  app.get("/api/diag-sync-full", async (_req, res) => {
+    try {
+      const result = await inventarios365.registrarCompra({
+        proveedor: "Bago",
+        tipoComprobante: "BOLETA",
+        numComprobante: `DIAG-${Date.now()}`,
+        almacenNombre: "ALMACEN PRINCIPAL",
+        items: [{
+          nombre: "ACTRON 400",
+          cantidad: 1,
+          precio: 10,
+          fechaVencimiento: null,
+        }],
+        total: 10,
+      });
+      res.json({ ok: result.success, result });
+    } catch (err: any) {
+      res.status(500).json({ ok: false, error: err?.message, stack: err?.stack?.split("\n").slice(0, 8) });
+    }
+  });
+
   // development mode uses Vite, production mode uses static files
   if (process.env.NODE_ENV === "development") {
     await setupVite(app, server);
