@@ -102,6 +102,10 @@ async function startServer() {
     console.log(`Port ${preferredPort} is busy, using port ${port} instead`);
   }
 
+  // Timeout extendido a 120s para permitir sincronización con inventarios365.com (puede tardar 30s)
+  server.timeout = 120000;
+  server.keepAliveTimeout = 120000;
+  server.headersTimeout = 125000;
   server.listen(port, () => {
     console.log(`Server running on http://localhost:${port}/`);
   });

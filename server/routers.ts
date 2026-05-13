@@ -215,50 +215,49 @@ INSTRUCCIONES GENERALES:
         status,
       });
 
-       // Sincronizar con inventarios365.com en SEGUNDO PLANO si se confirma directamente
-      // Esto evita el timeout de Cloud Run cuando inventarios365.com tarda 15-20s en el login
+      // Sincronizar con inventarios365.com DIRECTAMENTE (await) — Cloud Run cancela setImmediate
+      let syncSuccess = false;
+      let syncMessage = "";
+      let syncIngresoId: number | undefined;
       if (input.confirmDirectly) {
         const purchaseId = result.id;
-        const purchaseItemsCopy = input.items;
-        const supplierCopy = input.supplier;
-        const receiptNumberCopy = input.receiptNumber;
-        const totalAmountCopy = input.totalAmount;
-        setImmediate(async () => {
-          try {
-            console.log(`[Sync] Iniciando sincronización en segundo plano para compra #${purchaseId}`);
-            const syncResult = await inventarios365.registrarCompra({
-              proveedor: supplierCopy || "",
-              tipoComprobante: "BOLETA",
-              numComprobante: receiptNumberCopy || String(purchaseId),
-              almacenNombre: "principal",
-              items: purchaseItemsCopy.map((item) => ({
-                nombre: item.productName,
-                cantidad: item.quantity,
-                precio: item.unitCost,
-                fechaVencimiento: item.expiryDate || null,
-              })),
-              total: totalAmountCopy || 0,
-            });
-            console.log(`[Sync] Resultado compra #${purchaseId}:`, syncResult);
-            if (syncResult.success) {
-              await db.updatePurchaseSyncStatus(purchaseId, "completed");
-              await notifyOwner({
-                title: "Compra sincronizada con inventarios365 ✓",
-                content: `Compra #${purchaseId} registrada en inventarios365.com (Ingreso ID: ${syncResult.ingresoId})`,
-              }).catch(() => {});
-            } else {
-              await db.updatePurchaseSyncError(purchaseId, syncResult.message);
-              await notifyOwner({
-                title: "Error al sincronizar compra",
-                content: `Compra #${purchaseId}: ${syncResult.message}`,
-              }).catch(() => {});
-            }
-          } catch (syncError: any) {
-            const errMsg = syncError?.message || "Error desconocido";
-            console.error(`[Sync] Error en segundo plano compra #${purchaseId}:`, errMsg);
-            await db.updatePurchaseSyncError(purchaseId, errMsg).catch(() => {});
+        try {
+          console.log(`[Sync] Iniciando sincronización directa para compra #${purchaseId}`);
+          const syncResult = await inventarios365.registrarCompra({
+            proveedor: input.supplier || "",
+            tipoComprobante: "BOLETA",
+            numComprobante: input.receiptNumber || String(purchaseId),
+            almacenNombre: "principal",
+            items: input.items.map((item) => ({
+              nombre: item.productName,
+              cantidad: item.quantity,
+              precio: item.unitCost,
+              fechaVencimiento: item.expiryDate || null,
+            })),
+            total: input.totalAmount || 0,
+          });
+          console.log(`[Sync] Resultado compra #${purchaseId}:`, syncResult);
+          if (syncResult.success) {
+            syncSuccess = true;
+            syncMessage = `Compra registrada en inventarios365.com (Ingreso ID: ${syncResult.ingresoId})`;
+            syncIngresoId = syncResult.ingresoId;
+            await db.updatePurchaseSyncStatus(purchaseId, "completed");
+            await notifyOwner({
+              title: "Compra sincronizada con inventarios365 ✓",
+              content: `Compra #${purchaseId} registrada en inventarios365.com (Ingreso ID: ${syncResult.ingresoId})`,
+            }).catch(() => {});
+          } else {
+            syncSuccess = false;
+            syncMessage = syncResult.message;
+            await db.updatePurchaseSyncError(purchaseId, syncResult.message);
           }
-        });
+        } catch (syncError: any) {
+          const errMsg = syncError?.message || "Error desconocido";
+          syncSuccess = false;
+          syncMessage = errMsg;
+          console.error(`[Sync] Error sincronizando compra #${purchaseId}:`, errMsg);
+          await db.updatePurchaseSyncError(purchaseId, errMsg).catch(() => {});
+        }
       }
       // Notificar al dueño inmediatamente
       try {
@@ -271,11 +270,9 @@ INSTRUCCIONES GENERALES:
       }
       return {
         ...result,
-        syncSuccess: input.confirmDirectly ? true : false,
-        syncMessage: input.confirmDirectly
-          ? "Compra confirmada. Sincronizando con inventarios365.com en segundo plano..."
-          : "",
-        syncIngresoId: undefined,
+        syncSuccess,
+        syncMessage,
+        syncIngresoId,
       };
     }),
 
@@ -286,54 +283,61 @@ INSTRUCCIONES GENERALES:
       const purchase = await db.getPurchaseById(input.id);
       const result = await db.confirmPurchase(input.id, ctx.user.id);
 
-      // 2. Sincronizar con inventarios365.com en SEGUNDO PLANO (no bloquea el request HTTP)
-      // Esto evita el timeout de Cloud Run cuando inventarios365.com tarda 15-20s
+      // 2. Sincronizar con inventarios365.com DIRECTAMENTE (await) — Cloud Run cancela setImmediate
+      let syncSuccess2 = false;
+      let syncMessage2 = "No se pudo obtener los datos de la compra";
+      let syncIngresoId2: number | undefined;
       if (purchase) {
         const purchaseId = input.id;
-        setImmediate(async () => {
-          try {
-            const items = (purchase.items || []).map((item: any) => ({
-              nombre: item.productName || item.product_name || "",
-              cantidad: Number(item.quantity) || 1,
-              precio: parseFloat(String(item.unitCost || item.unit_cost || 0)),
-              fechaVencimiento: item.expiryDate || null,
-            }));
-            console.log(`[Sync] Iniciando sincronización en segundo plano para compra #${purchaseId}`);
-            const syncResult = await inventarios365.registrarCompra({
-              proveedor: purchase.supplier || "",
-              tipoComprobante: purchase.receiptType || "BOLETA",
-              numComprobante: purchase.receiptNumber || String(purchaseId),
-              almacenNombre: "principal",
-              items,
-              total: parseFloat(String(purchase.totalAmount || 0)),
-            });
-            console.log(`[Sync] Resultado compra #${purchaseId}:`, syncResult);
-            if (syncResult.success) {
-              await db.updatePurchaseSyncStatus(purchaseId, "completed");
-              await notifyOwner({
-                title: "Compra sincronizada con inventarios365 ✓",
-                content: `Compra #${purchaseId} registrada en inventarios365.com (Ingreso ID: ${syncResult.ingresoId})`,
-              }).catch(() => {});
-            } else {
-              await db.updatePurchaseSyncError(purchaseId, syncResult.message);
-              await notifyOwner({
-                title: "Error al sincronizar compra",
-                content: `Compra #${purchaseId} confirmada pero no sincronizada: ${syncResult.message}`,
-              }).catch(() => {});
-            }
-          } catch (syncError: any) {
-            console.error(`[Sync] Error en segundo plano compra #${purchaseId}:`, syncError?.message);
-            await db.updatePurchaseSyncError(purchaseId, syncError?.message || "Error desconocido").catch(() => {});
+        try {
+          const items = (purchase.items || []).map((item: any) => ({
+            nombre: item.productName || item.product_name || "",
+            cantidad: Number(item.quantity) || 1,
+            precio: parseFloat(String(item.unitCost || item.unit_cost || 0)),
+            fechaVencimiento: item.expiryDate || null,
+          }));
+          console.log(`[Sync] Iniciando sincronización directa para compra #${purchaseId}`);
+          const syncResult = await inventarios365.registrarCompra({
+            proveedor: purchase.supplier || "",
+            tipoComprobante: purchase.receiptType || "BOLETA",
+            numComprobante: purchase.receiptNumber || String(purchaseId),
+            almacenNombre: "principal",
+            items,
+            total: parseFloat(String(purchase.totalAmount || 0)),
+          });
+          console.log(`[Sync] Resultado compra #${purchaseId}:`, syncResult);
+          if (syncResult.success) {
+            syncSuccess2 = true;
+            syncMessage2 = `Compra registrada en inventarios365.com (Ingreso ID: ${syncResult.ingresoId})`;
+            syncIngresoId2 = syncResult.ingresoId;
+            await db.updatePurchaseSyncStatus(purchaseId, "completed");
+            await notifyOwner({
+              title: "Compra sincronizada con inventarios365 ✓",
+              content: `Compra #${purchaseId} registrada en inventarios365.com (Ingreso ID: ${syncResult.ingresoId})`,
+            }).catch(() => {});
+          } else {
+            syncSuccess2 = false;
+            syncMessage2 = syncResult.message;
+            await db.updatePurchaseSyncError(purchaseId, syncResult.message);
+            await notifyOwner({
+              title: "Error al sincronizar compra",
+              content: `Compra #${purchaseId}: ${syncResult.message}`,
+            }).catch(() => {});
           }
-        });
+        } catch (syncError: any) {
+          const errMsg = syncError?.message || "Error desconocido";
+          syncSuccess2 = false;
+          syncMessage2 = errMsg;
+          console.error(`[Sync] Error sincronizando compra #${purchaseId}:`, errMsg);
+          await db.updatePurchaseSyncError(purchaseId, errMsg).catch(() => {});
+        }
       }
-
-      // 3. Responder inmediatamente al usuario (la sync ocurre en segundo plano)
+      // 3. Responder al usuario con el resultado real de la sincronización
       return {
         ...result,
-        syncSuccess: true,
-        syncMessage: "Compra confirmada. Sincronizando con inventarios365.com en segundo plano...",
-        syncIngresoId: undefined as number | undefined,
+        syncSuccess: syncSuccess2,
+        syncMessage: syncMessage2,
+        syncIngresoId: syncIngresoId2,
       };
     }),
 });
