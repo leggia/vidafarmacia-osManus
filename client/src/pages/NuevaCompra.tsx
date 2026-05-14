@@ -49,6 +49,8 @@ export default function NuevaCompra() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [extracted, setExtracted] = useState(false);
   const [showExpiry, setShowExpiry] = useState(false);
+  const [receiptType, setReceiptType] = useState<"BOLETA" | "FACTURA">("FACTURA");
+  const [almacenNombre, setAlmacenNombre] = useState("ALMACEN PRINCIPAL");
 
   const utils = trpc.useUtils();
   const uploadAndExtract = trpc.purchases.uploadAndExtract.useMutation();
@@ -119,7 +121,9 @@ export default function NuevaCompra() {
         const result = await createPurchase.mutateAsync({
           branchId: parseInt(branchId),
           receiptNumber,
+          receiptType,
           supplier,
+          almacenNombre,
           totalAmount,
           items: items.map(i => ({
             productName: i.productName,
@@ -159,7 +163,7 @@ export default function NuevaCompra() {
       }
       setIsSubmitting(false);
     },
-    [branchId, items, receiptNumber, supplier, createPurchase, setLocation, uploadAndExtract.data, utils]
+    [branchId, items, receiptNumber, receiptType, supplier, almacenNombre, createPurchase, setLocation, uploadAndExtract.data, utils]
   );
 
   const updateItem = (index: number, field: keyof ExtractedItem, value: any) => {
@@ -296,6 +300,31 @@ export default function NuevaCompra() {
                         {b.name}
                       </SelectItem>
                     ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs font-bold uppercase tracking-wider">Tipo de Comprobante</Label>
+                <Select value={receiptType} onValueChange={(v: any) => setReceiptType(v)}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="FACTURA">FACTURA</SelectItem>
+                    <SelectItem value="BOLETA">BOLETA</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <Label className="text-xs font-bold uppercase tracking-wider">Almacén</Label>
+                <Select value={almacenNombre} onValueChange={setAlmacenNombre}>
+                  <SelectTrigger>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="ALMACEN PRINCIPAL">ALMACEN PRINCIPAL</SelectItem>
+                    <SelectItem value="Almacen Lanza">Almacen Lanza</SelectItem>
+                    <SelectItem value="Almacen Petrolera">Almacen Petrolera</SelectItem>
                   </SelectContent>
                 </Select>
               </div>

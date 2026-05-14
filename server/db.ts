@@ -105,6 +105,7 @@ export async function createPurchase(data: {
   userId: number;
   branchId: number;
   receiptNumber?: string;
+  receiptType?: string;
   supplier?: string;
   totalAmount?: number;
   imageUrl?: string | null;
@@ -122,6 +123,7 @@ export async function createPurchase(data: {
     userId: data.userId,
     branchId: data.branchId,
     receiptNumber: data.receiptNumber || null,
+    receiptType: data.receiptType || "BOLETA",
     supplier: data.supplier || null,
     totalAmount: String(data.totalAmount || 0),
     imageUrl: data.imageUrl || null,

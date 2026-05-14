@@ -185,7 +185,9 @@ INSTRUCCIONES GENERALES:
       z.object({
         branchId: z.number(),
         receiptNumber: z.string().optional(),
+        receiptType: z.enum(["BOLETA", "FACTURA"]).optional(),
         supplier: z.string().optional(),
+        almacenNombre: z.string().optional(),
         totalAmount: z.number().optional(),
         items: z.array(
           z.object({
@@ -207,6 +209,7 @@ INSTRUCCIONES GENERALES:
         userId: ctx.user.id,
         branchId: input.branchId,
         receiptNumber: input.receiptNumber,
+        receiptType: input.receiptType || "BOLETA",
         supplier: input.supplier,
         totalAmount: input.totalAmount,
         items: input.items,
@@ -225,9 +228,9 @@ INSTRUCCIONES GENERALES:
           console.log(`[Sync] Iniciando sincronización directa para compra #${purchaseId}`);
           const syncResult = await inventarios365.registrarCompra({
             proveedor: input.supplier || "",
-            tipoComprobante: "BOLETA",
+            tipoComprobante: input.receiptType || "BOLETA",
             numComprobante: input.receiptNumber || String(purchaseId),
-            almacenNombre: "principal",
+            almacenNombre: input.almacenNombre || "principal",
             items: input.items.map((item) => ({
               nombre: item.productName,
               cantidad: item.quantity,
