@@ -44,12 +44,12 @@ export interface DetalleCompra {
 // Estructura del payload para registrar una compra
 export interface RegistrarCompraPayload {
   idproveedor: number;
+  idalmacen: number;
   tipo_comprobante: string;
-  serie_comprobante: string;
   num_comprobante: string;
   impuesto: number;
   total: number;
-  data: DetalleCompra[];
+  inventarios: DetalleCompra[];
 }
 
 // Estructura de artículo devuelto por la API
@@ -84,6 +84,7 @@ class Inventarios365Service {
   // Cookies de sesión almacenadas como string "key=value; key2=value2"
   private xsrfToken: string | null = null;
   private laravelSession: string | null = null;
+  private csrfToken: string | null = null; // Token CSRF sin codificar (para header X-CSRF-TOKEN)
   private lastLogin: number = 0;
   private SESSION_TTL = 90 * 60 * 1000; // 90 minutos (las cookies duran 2h)
 
@@ -175,6 +176,9 @@ class Inventarios365Service {
         throw new Error("No se pudo obtener el _token del formulario de login");
       }
 
+      // Guardar el CSRF token para usarlo en headers posteriores
+      this.csrfToken = formToken;
+
       // ── Paso 2: POST / con credenciales ────────────────────────────────────
       const cookieGet = [
         initialXsrf ? `XSRF-TOKEN=${initialXsrf}` : "",
@@ -262,6 +266,8 @@ class Inventarios365Service {
       headers: {
         Cookie: cookie,
         "X-XSRF-TOKEN": xsrfDecoded,
+        "X-CSRF-TOKEN": this.csrfToken || "",
+        "X-Requested-With": "XMLHttpRequest",
         "Content-Type": "application/json",
         Referer: `${BASE_URL}/main`,
       },
@@ -545,12 +551,12 @@ class Inventarios365Service {
       // 5. Registrar la compra
       const payload: RegistrarCompraPayload = {
         idproveedor,
+        idalmacen,
         tipo_comprobante: params.tipoComprobante || "BOLETA",
-        serie_comprobante: "",
         num_comprobante: params.numComprobante,
         impuesto: 0,
         total: totalFinal,
-        data: arrayDetalle,
+        inventarios: arrayDetalle,
       };
 
       console.log(
@@ -558,13 +564,17 @@ class Inventarios365Service {
         JSON.stringify(payload, null, 2)
       );
 
-      const respData = await this.post<{ id?: number; error?: string }>(
+      const respData = await this.post<{ id?: number; error?: string; message?: string }>(
         "/ingreso/registrar",
         payload
       );
 
       if (respData?.error) {
         return { success: false, message: respData.error };
+      }
+
+      if (!respData?.id && !respData?.message) {
+        return { success: false, message: "Respuesta inválida del servidor" };
       }
 
       const advertencias =
@@ -574,7 +584,7 @@ class Inventarios365Service {
 
       return {
         success: true,
-        message: `Compra registrada en inventarios365.com (ID: ${respData?.id})${advertencias}`,
+        message: `Compra registrada en inventarios365.com${advertencias}`,
         ingresoId: respData?.id,
       };
     } catch (error: any) {
