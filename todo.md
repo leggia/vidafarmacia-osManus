@@ -1,104 +1,97 @@
-# VidaFarma-OS - TODO
+# VidaFarma-OS — Estado del Proyecto
 
-## Base de Datos y Esquema
-- [x] Tabla de sucursales (branches)
-- [x] Tabla de productos (products)
-- [x] Tabla de compras (purchases) con estados
-- [x] Tabla de items de compra (purchase_items)
-- [x] Tabla de transferencias (transfers) con estados
-- [x] Tabla de items de transferencia (transfer_items)
-- [x] Tabla de cola de tareas pendientes (task_queue)
-- [x] Tabla de historial de operaciones (operation_history)
+## ✅ Completado
 
-## Tema Visual Swiss Style
-- [x] Configurar paleta de colores: blanco prístino, acentos rojos, negro nítido
-- [x] Tipografía sans-serif (Inter) con sistema de grilla estricto
-- [x] Layout Dashboard con sidebar y navegación modular
+### Autenticación
+- [x] Reemplazado OAuth de Manus por login simple propio (`/login`)
+- [x] Usuario y contraseña configurables via `ADMIN_USER` / `ADMIN_PASS` en `.env`
+- [x] Sin dependencia de servidores externos de Manus
 
-## Módulo de Compras
-- [x] Página de listado de compras con filtros y estados
-- [x] Upload de foto/PDF de factura con almacenamiento S3
-- [x] Extracción automática con IA (visión artificial) de productos, cantidades, proveedor
-- [x] Vista previa y edición de datos extraídos antes de confirmar
-- [x] Registro de compra en base de datos local
-- [x] Preparación de datos para sincronización con inventarios365.com
+### Storage
+- [x] Reemplazado storage proxy de Manus por almacenamiento local en `/uploads`
+- [x] Archivos servidos via `/api/storage/`
+- [x] Sin dependencia de `BUILT_IN_FORGE_API_URL` ni `BUILT_IN_FORGE_API_KEY`
 
-## Módulo de Transferencias
-- [x] Página de listado de transferencias con filtros y estados
-- [x] Upload de foto de medicamentos a transferir
-- [x] Extracción automática con IA de productos y cantidades
-- [x] Selección de sucursal origen y destino
-- [x] Vista previa y edición de datos extraídos
-- [x] Registro de transferencia en base de datos local
+### IA — Extracción de Facturas
+- [x] Reemplazado Manus Forge API por Groq (gratis, sin restricción geográfica Bolivia)
+- [x] Modelo: `meta-llama/llama-4-scout-17b-16e-instruct` (soporta visión)
+- [x] PDFs convertidos a imagen PNG via `pdf2pic` antes de enviar a Groq
+- [x] Imágenes convertidas a base64 para compatibilidad con Groq
+- [x] `response_format` cambiado de `json_schema` a `json_object` (compatible Groq)
+- [x] Configurar via `BUILT_IN_FORGE_API_KEY=tu_groq_key` en `.env`
 
-## Cola de Tareas Pendientes
-- [x] Sistema de cola para tareas no ejecutadas
-- [x] Vista de tareas pendientes con opción de reintento
-- [x] Ejecución manual de tareas en cola
+### Base de Datos
+- [x] MySQL configurado y tablas creadas con drizzle-kit push
+- [x] `DATABASE_URL` configurado en `.env`
 
-## Historial de Operaciones
-- [x] Registro completo de compras y transferencias
-- [x] Estados: completado, pendiente, error
-- [x] Opción de reintento para operaciones fallidas
+### Cache de Productos
+- [x] Nuevo servicio `productos-cache.ts` con cache local de 5000 productos
+- [x] Actualización automática cada 24 horas
+- [x] Matching fuzzy local para búsqueda instantánea sin llamadas a API
+- [x] Fallback a API si producto no está en cache
+- [x] Endpoints `/cache/estadisticas`, `/cache/actualizar`, `/cache/listar`
 
-## Alertas y Notificaciones
-- [x] Alerta cuando sincronización falla
-- [x] Alerta cuando cola de pendientes supera umbral
-- [x] Alerta cuando compra/transferencia se completa exitosamente
+### Integración con inventarios365.com
+- [x] Login en 2 pasos funcional (GET token → POST credenciales)
+- [x] Endpoint `/almacen/selectAlmacen` funcionando
+- [x] Endpoint `/inventarios/registrar` funcionando
+- [x] Búsqueda de artículos integrada con cache local
 
-## Backend / API
-- [x] Router tRPC para sucursales
-- [x] Router tRPC para compras
-- [x] Router tRPC para transferencias
-- [x] Router tRPC para cola de tareas
-- [x] Router tRPC para historial
-- [x] Integración LLM con visión artificial para extracción de datos
-- [x] Helpers de almacenamiento S3 para imágenes/PDFs
+## 🔧 Variables de entorno requeridas (.env)
 
-## Testing
-- [x] Tests vitest para autenticación y logout
-- [x] Tests vitest para validación de inputs en todos los routers
-- [x] Tests vitest para protección de rutas (auth required)
+```env
+NODE_ENV=development
+DATABASE_URL=mysql://vidafarma:vidafarma2026@localhost:3306/vidafarma
+SESSION_SECRET=vidafarma-secret-2026
+JWT_SECRET=vidafarma-jwt-secret-2026
+PORT=3000
+VITE_APP_ID=vidafarma
+ADMIN_USER=admin
+ADMIN_PASS=vidafarma2026
+ADMIN_EMAIL=admin@vidafarma.com
+BUILT_IN_FORGE_API_KEY=tu_groq_api_key_aqui
+```
 
-## Bugs Reportados - 12/04/2026
-- [x] BUG: IA no interpreta correctamente cantidades farmacéuticas (x10 caps, cpr, comp) - debe multiplicar cajas x unidades por caja
-- [x] BUG: Compras se quedan en estado BORRADOR sin opción de confirmar directamente - debe permitir confirmar y completar
+## 🚧 Pendiente
 
-## Bugs Reportados - 17/04/2026
-- [x] BUG CRÍTICO: Botón Confirmar generaba error "Failed query: insert into purchases" - RESUELTO: la migración ALTER TABLE para agregar 'completed' al enum de status no estaba aplicada en la base de datos real
+- [ ] Probar extracción completa de factura PDF con Groq
+- [ ] Verificar sincronización completa de compra en inventarios365.com
+- [ ] Implementar cache de productos (descarga inicial de 5000 productos)
+- [ ] Despliegue en Oracle Free Tier o Railway para 24/7
+- [ ] Soporte para facturas con múltiples páginas PDF
+- [ ] Agregar más usuarios admin desde la interfaz
 
-## Bugs Reportados - 19/04/2026
-- [x] BUG: Al crear nueva compra el registro no aparecía en el listado - RESUELTO: se agregó invalidación de caché (purchases.list y dashboard.stats) después de crear la compra/transferencia
+## 🚀 Cómo ejecutar localmente
 
-## Sincronización con inventarios365.com - 20/04/2026
-- [ ] Analizar si inventarios365.com tiene API REST disponible
-- [ ] Implementar servicio de sincronización en el backend (API directa o Puppeteer)
-- [ ] Conectar sincronización al flujo de confirmación de compras
-- [ ] Conectar sincronización al flujo de confirmación de transferencias
-- [ ] Mostrar estado de sincronización en tiempo real en el frontend
-- [ ] Guardar credenciales de inventarios365.com de forma segura en variables de entorno
+```bash
+# 1. Clonar repo
+git clone https://github.com/leggia/vidafarmacia-osManus.git
+cd vidafarmacia-osManus
 
+# 2. Instalar dependencias
+pnpm install
+pnpm add pdf2pic
 
-## Optimización de Recursos - 14/05/2026
-- [x] Remover notificaciones por correo en flujo de compras (innecesarias, gastan recursos)
-- [x] Remover notificaciones por correo en flujo de transferencias
-- [x] Verificar que sincronización funciona correctamente (prueba end-to-end exitosa: Ingreso ID 27)
-- [x] Documentar el problema: la sincronización es asíncrona y tarda ~30 segundos
+# 3. Instalar poppler (para PDF)
+sudo apt-get install -y poppler-utils
 
-## Correcciones Críticas - 22/05/2026 - ¡¡¡SINCRONIZACIÓN FUNCIONANDO!!!
-- [x] Agregar selector de tipo de comprobante (FACTURA/BOLETA) en formulario de compras
-- [x] Agregar selector de almacén/sucursal en formulario de compras
-- [x] Pasar receiptType y almacenNombre desde el frontend al backend
-- [x] Remover notificaciones por correo innecesarias
-- [x] Diagnosticar fallo de sincronización: faltaba header X-CSRF-TOKEN
-- [x] Encontrar ruta correcta: /inventarios/registrar (no /ingreso/registrar ni /registrar)
-- [x] Usar payload con estructura inventarios[] (no data[])
-- [x] Convertir precios a strings en el payload
-- [x] Usar idproveedor: 0
-- [x] Verificación exitosa: TEST-MANUAL-FINAL-001 registrado en inventarios365.com
+# 4. Configurar .env (ver variables arriba)
 
-## Próximas Mejoras
-- [ ] Crear UI de mapeo manual de artículos cuando la búsqueda automática falla
-- [ ] Agregar historial y logs detallados de sincronización
-- [ ] Crear documentación para desplegar en servidor propio (Docker, VPS, etc.)
-- [ ] Mejorar algoritmo de similitud para mejor matching de artículos
+# 5. Iniciar MySQL y crear base de datos
+sudo service mysql start
+sudo mysql -e "CREATE DATABASE IF NOT EXISTS vidafarma; ..."
+DATABASE_URL=... npx drizzle-kit push
+
+# 6. Ejecutar
+pnpm dev
+```
+
+## 📋 Flujo de una compra
+
+1. Usuario sube foto o PDF de factura
+2. Sistema guarda archivo en `/uploads`
+3. IA (Groq/Llama 4 Scout) extrae productos, proveedor, número de comprobante
+4. Usuario revisa y corrige si es necesario
+5. Sistema busca productos en cache local (fuzzy matching)
+6. Sistema registra compra en inventarios365.com via API
+7. Confirmación al usuario
