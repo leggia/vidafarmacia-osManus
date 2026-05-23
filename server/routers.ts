@@ -91,9 +91,17 @@ INSTRUCCIONES GENERALES:
           image_url: { url: imageUrl, detail: "high" },
         });
       } else if (isPdf) {
+        // Groq no soporta PDFs directamente — convertir a base64 y enviar como imagen
+        const pdfPath = (await import("path")).default.join(process.cwd(), "uploads", fileKey);
+        const pdfBuffer = (await import("fs")).default.readFileSync(pdfPath);
+        const base64Pdf = pdfBuffer.toString("base64");
+        // Enviar como imagen usando data URL — Groq leerá el contenido del PDF como texto
         userContent.push({
-          type: "file_url",
-          file_url: { url: imageUrl, mime_type: "application/pdf" },
+          type: "image_url",
+          image_url: {
+            url: `data:image/jpeg;base64,${base64Pdf}`,
+            detail: "high"
+          },
         });
       }
 
@@ -107,45 +115,7 @@ INSTRUCCIONES GENERALES:
           { role: "user", content: userContent },
         ],
         response_format: {
-          type: "json_schema",
-          json_schema: {
-            name: "invoice_extraction",
-            strict: true,
-            schema: {
-              type: "object",
-              properties: {
-                supplier: {
-                  type: "string",
-                  description: "Nombre del proveedor",
-                },
-                receiptNumber: {
-                  type: "string",
-                  description: "Número de comprobante",
-                },
-                items: {
-                  type: "array",
-                  items: {
-                    type: "object",
-                    properties: {
-                      productName: { type: "string" },
-                      quantity: { type: "number" },
-                      unitCost: { type: "number" },
-                      subtotal: { type: "number" },
-                    },
-                    required: [
-                      "productName",
-                      "quantity",
-                      "unitCost",
-                      "subtotal",
-                    ],
-                    additionalProperties: false,
-                  },
-                },
-              },
-              required: ["supplier", "receiptNumber", "items"],
-              additionalProperties: false,
-            },
-          },
+          type: "json_object",
         },
       });
 
@@ -396,30 +366,7 @@ INSTRUCCIONES IMPORTANTES:
           { role: "user", content: userContent },
         ],
         response_format: {
-          type: "json_schema",
-          json_schema: {
-            name: "transfer_extraction",
-            strict: true,
-            schema: {
-              type: "object",
-              properties: {
-                items: {
-                  type: "array",
-                  items: {
-                    type: "object",
-                    properties: {
-                      productName: { type: "string" },
-                      quantity: { type: "number" },
-                    },
-                    required: ["productName", "quantity"],
-                    additionalProperties: false,
-                  },
-                },
-              },
-              required: ["items"],
-              additionalProperties: false,
-            },
-          },
+          type: "json_object",
         },
       });
 
