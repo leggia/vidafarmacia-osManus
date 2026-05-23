@@ -241,6 +241,10 @@ INSTRUCCIONES GENERALES:
             syncMessage = `Compra registrada en inventarios365.com (Ingreso ID: ${syncResult.ingresoId})`;
             syncIngresoId = syncResult.ingresoId;
             await db.updatePurchaseSyncStatus(purchaseId, "completed");
+            // Si hubo productos no encontrados, informar al usuario
+            if (syncResult.productosNoEncontrados && syncResult.productosNoEncontrados.length > 0) {
+              syncMessage += ` | Productos no encontrados: ${syncResult.productosNoEncontrados.map((p: any) => p.nombre).join(", ")}`;
+            }
           } else {
             syncSuccess = false;
             syncMessage = syncResult.message;
@@ -260,6 +264,7 @@ INSTRUCCIONES GENERALES:
         syncSuccess,
         syncMessage,
         syncIngresoId,
+        productosNoEncontrados: (syncResult as any)?.productosNoEncontrados || [],
       };
     }),
 

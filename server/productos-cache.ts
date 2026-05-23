@@ -98,7 +98,13 @@ class ProductosCacheService {
     }
   }
 
-  buscarLocal(nombre: string): ArticuloAPI | null {
+  buscarLocal(nombre: string, idProveedor?: number): ArticuloAPI | null {
+    // Filtrar por proveedor si está disponible para mayor precisión
+    const pool = idProveedor && this.cache
+      ? this.cache.productos.filter(p => (p as any).idproveedor === idProveedor)
+      : this.cache?.productos || [];
+    const useFiltered = pool.length > 0;
+    if (!this.cache || this.cache.productos.length === 0) return null;
     if (!this.cache || this.cache.productos.length === 0) return null;
 
     const tokenize = (s: string) =>
@@ -116,7 +122,8 @@ class ProductosCacheService {
 
     let mejorMatch: { art: ArticuloAPI; score: number } | null = null;
 
-    for (const art of this.cache.productos) {
+    const searchPool = useFiltered ? pool : this.cache.productos;
+    for (const art of searchPool) {
       const tokensCandidato = tokenize(art.nombre);
 
       // REGLA 1: El token principal DEBE estar presente en el candidato

@@ -333,22 +333,23 @@ class Inventarios365Service {
    * Usa /articulo/listarArticulo?buscar= con búsqueda progresiva por palabras clave.
    * El endpoint /articulo/buscarArticulo no devuelve resultados (bug del sistema).
    */
-  async buscarArticulo(nombre: string): Promise<ArticuloAPI | null> {
+  async buscarArticulo(nombre: string, idProveedor?: number): Promise<ArticuloAPI | null> {
     try {
-      // 1. Buscar primero en cache local (instantáneo)
+      // 1. Buscar primero en cache local filtrando por proveedor si está disponible
       const { productosCache } = await import("./productos-cache");
-      const local = productosCache.buscarLocal(nombre);
+      const local = productosCache.buscarLocal(nombre, idProveedor);
       if (local) return local;
 
       // 2. Fallback: buscar en API si no está en cache
       console.log(`[Inventarios365] "${nombre}" no en cache, buscando en API...`);
       const terms = [nombre, ...this.extractSearchTerms(nombre)];
       let bestOverall: { art: ArticuloAPI; score: number; term: string } | null = null;
+      const proveedorParam = idProveedor ? String(idProveedor) : "";
 
       for (const term of terms) {
         if (!term || term.length < 3) continue;
         const data = await this.get<{ articulos: ArticuloAPI[] | { data: ArticuloAPI[] } }>(
-          `/articulo/listarArticulo?buscar=${encodeURIComponent(term)}&criterio=todos&idProveedor=`
+          `/articulo/listarArticulo?buscar=${encodeURIComponent(term)}&criterio=todos&idProveedor=${proveedorParam}`
         );
         const raw = data?.articulos;
         const articulos: ArticuloAPI[] = Array.isArray(raw)
@@ -395,10 +396,10 @@ class Inventarios365Service {
    * Listar artículos con búsqueda opcional.
    * Endpoint: GET /articulo/listarArticulo?buscar=&criterio=todos&idProveedor=
    */
-  async listarArticulos(buscar = ""): Promise<ArticuloAPI[]> {
+  async listarArticulos(buscar = "", idProveedor = ""): Promise<ArticuloAPI[]> {
     try {
       const data = await this.get<{ articulos: ArticuloAPI[] | { data: ArticuloAPI[] } }>(
-        `/articulo/listarArticulo?buscar=${encodeURIComponent(buscar)}&criterio=todos&idProveedor=`
+        `/articulo/listarArticulo?buscar=${encodeURIComponent(buscar)}&criterio=todos&idProveedor=${idProveedor}`
       );
       const raw = data?.articulos;
       if (Array.isArray(raw)) return raw;
@@ -521,23 +522,25 @@ class Inventarios365Service {
         );
       }
 
-      // 3. Buscar cada artículo y construir el arrayDetalle
+      // 3. Buscar cada artículo filtrando por proveedor y construir el arrayDetalle
       const arrayDetalle: DetalleCompra[] = [];
       const erroresArticulos: string[] = [];
+      const productosNoEncontrados: { nombre: string; cantidad: number; precio?: number }[] = [];
 
       for (const item of params.items) {
-        const articulo = await this.buscarArticulo(item.nombre);
+        // Buscar primero con filtro de proveedor para mayor precisión
+        const articulo = await this.buscarArticulo(item.nombre, idproveedor || undefined);
         if (articulo) {
           const precioCosto =
-            item.precio ?? parseFloat(String(articulo.precio_costo_unid)) ?? 0;  // Esto es un número
+            item.precio ?? parseFloat(String(articulo.precio_costo_unid)) ?? 0;
           arrayDetalle.push({
             idarticulo: articulo.id,
             idalmacen,
             codigo: articulo.codigo,
             articulo: articulo.nombre,
-            precio: String(precioCosto.toFixed(4)),  // Convertir a STRING con 4 decimales
-            precio_paquete: String((parseFloat(String(articulo.precio_costo_paq)) ?? 0).toFixed(4)),  // STRING
-            precio_venta: String((parseFloat(String(articulo.precio_uno)) ?? 0).toFixed(4)),  // STRING
+            precio: String(precioCosto.toFixed(4)),
+            precio_paquete: String((parseFloat(String(articulo.precio_costo_paq)) ?? 0).toFixed(4)),
+            precio_venta: String((parseFloat(String(articulo.precio_uno)) ?? 0).toFixed(4)),
             unidad_x_paquete: articulo.unidad_envase ?? 1,
             fecha_vencimiento: item.fechaVencimiento ?? null,
             cantidad: item.cantidad,
@@ -547,8 +550,13 @@ class Inventarios365Service {
           );
         } else {
           erroresArticulos.push(item.nombre);
+          productosNoEncontrados.push({
+            nombre: item.nombre,
+            cantidad: item.cantidad,
+            precio: item.precio,
+          });
           console.warn(
-            `[Inventarios365] ✗ Artículo "${item.nombre}" no encontrado`
+            `[Inventarios365] ✗ Artículo "${item.nombre}" no encontrado — requiere creación manual`
           );
         }
       }
@@ -556,7 +564,8 @@ class Inventarios365Service {
       if (arrayDetalle.length === 0) {
         return {
           success: false,
-          message: `No se encontró ningún artículo en inventarios365.com. No encontrados: ${erroresArticulos.join(", ")}`,
+          message: `No se encontró ningún artículo en inventarios365.com.`,
+          productosNoEncontrados,
         };
       }
 
