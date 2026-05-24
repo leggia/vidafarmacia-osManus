@@ -149,7 +149,7 @@ class ProductosCacheService {
     }
 
     // REGLA 4: Umbral mínimo alto — 0.75 para evitar falsos positivos
-    if (mejorMatch && mejorMatch.score >= 0.75) {
+    if (mejorMatch && mejorMatch.score >= 0.65) {
       console.log(`[Cache] "${nombre}" → "${mejorMatch.art.nombre}" (score:${mejorMatch.score.toFixed(2)})`);
       return mejorMatch.art;
     }

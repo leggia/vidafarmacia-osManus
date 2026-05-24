@@ -34,6 +34,13 @@ interface ExtractedItem {
   expiryDate?: string | null;
 }
 
+interface ProductoNoEncontrado {
+  nombre: string;
+  cantidad: number;
+  precio?: number;
+  busqueda?: string;
+}
+
 export default function NuevaCompra() {
   const [, setLocation] = useLocation();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -51,6 +58,8 @@ export default function NuevaCompra() {
   const [showExpiry, setShowExpiry] = useState(false);
   const [receiptType, setReceiptType] = useState<"BOLETA" | "FACTURA">("FACTURA");
   const [almacenNombre, setAlmacenNombre] = useState("ALMACEN PRINCIPAL");
+  const [productosNoEncontrados, setProductosNoEncontrados] = useState<ProductoNoEncontrado[]>([]);
+  const [busquedaProducto, setBusquedaProducto] = useState<Record<number, string>>({});
 
   const utils = trpc.useUtils();
   const uploadAndExtract = trpc.purchases.uploadAndExtract.useMutation();
@@ -146,6 +155,16 @@ export default function NuevaCompra() {
               (r.syncIngresoId ? ` (Ingreso ID: ${r.syncIngresoId})` : ""),
               { duration: 7000 }
             );
+            if (r.productosNoEncontrados?.length > 0) {
+              setProductosNoEncontrados(r.productosNoEncontrados);
+              toast.warning(`${r.productosNoEncontrados.length} producto(s) no encontrados — revisa el panel`, { duration: 8000 });
+              return; // No redirigir, mostrar panel
+            }
+          } else if (r?.syncMessage?.includes("No se encontró ningún artículo")) {
+            // Todos los productos fallaron — mostrar panel
+            setProductosNoEncontrados(items.map(i => ({ nombre: i.productName, cantidad: i.quantity, precio: i.unitCost })));
+            toast.warning("Ningún producto encontrado en el sistema. Búscalos o créalos manualmente.", { duration: 8000 });
+            return;
           } else if (r?.syncMessage) {
             toast.warning(
               `Compra confirmada, pero sin sincronizar: ${r.syncMessage}`,
@@ -507,6 +526,77 @@ export default function NuevaCompra() {
           )}
         </div>
       </div>
+
+      {/* Panel de Productos No Encontrados */}
+      {productosNoEncontrados.length > 0 && (
+        <div className="border border-yellow-400 rounded-lg bg-yellow-50 dark:bg-yellow-950 p-4 space-y-4">
+          <div className="flex items-center justify-between">
+            <h3 className="font-semibold text-yellow-800 dark:text-yellow-200 text-sm uppercase tracking-wider">
+              ⚠️ {productosNoEncontrados.length} Producto(s) No Encontrados en el Sistema
+            </h3>
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={() => setProductosNoEncontrados([])}
+              className="text-yellow-700 hover:text-yellow-900 text-xs"
+            >
+              Cerrar
+            </Button>
+          </div>
+          <p className="text-xs text-yellow-700 dark:text-yellow-300">
+            Estos productos no pudieron emparejarse con tu inventario. Búscalos manualmente o créalos como nuevos.
+          </p>
+          <div className="space-y-3">
+            {productosNoEncontrados.map((p, idx) => (
+              <div key={idx} className="bg-white dark:bg-gray-900 rounded-lg p-3 border border-yellow-200 space-y-2">
+                <div className="flex items-start justify-between gap-2">
+                  <div>
+                    <p className="font-medium text-sm">{p.nombre}</p>
+                    <p className="text-xs text-muted-foreground">
+                      Cant: {p.cantidad} {p.precio ? `| Precio unit: ${p.precio}` : ""}
+                    </p>
+                  </div>
+                  <span className="text-xs bg-yellow-100 text-yellow-800 px-2 py-0.5 rounded-full whitespace-nowrap">No encontrado</span>
+                </div>
+                <div className="flex gap-2">
+                  <Input
+                    placeholder="Buscar en sistema..."
+                    className="h-7 text-xs"
+                    value={busquedaProducto[idx] || ""}
+                    onChange={(e) => setBusquedaProducto(prev => ({ ...prev, [idx]: e.target.value }))}
+                  />
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    className="h-7 text-xs whitespace-nowrap"
+                    onClick={() => {
+                      const term = busquedaProducto[idx] || p.nombre;
+                      window.open(
+                        `https://vidafarmacia.inventarios365.com/main#/productos?buscar=${encodeURIComponent(term)}`,
+                        "_blank"
+                      );
+                    }}
+                  >
+                    🔍 Buscar
+                  </Button>
+                  <Button
+                    size="sm"
+                    className="h-7 text-xs whitespace-nowrap bg-blue-600 hover:bg-blue-700 text-white"
+                    onClick={() => {
+                      window.open(
+                        `https://vidafarmacia.inventarios365.com/main#/productos/nuevo`,
+                        "_blank"
+                      );
+                    }}
+                  >
+                    ➕ Crear
+                  </Button>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
