@@ -103,11 +103,13 @@ INSTRUCCIONES PARA NOMBRE DEL PRODUCTO:
 - Ignora códigos internos del proveedor, códigos de barras o referencias numéricas al inicio del nombre.
 
 INSTRUCCIONES PARA FECHA DE VENCIMIENTO:
-- Busca columnas como "Venc.", "Vencimiento", "Fecha Venc.", "Exp.", "Expiry"
-- Si la factura tiene una columna de vencimiento, extrae la fecha para cada producto
-- Formato preferido: MM/YYYY (ej: 12/2026) o DD/MM/YYYY (ej: 31/12/2026)
+- Busca columnas llamadas "VCTO", "Venc.", "Vencimiento", "Fecha Venc.", "Exp.", "Expiry", "F.Venc"
+- El formato más común en Bolivia es MM/YYYY (ej: 06/2027) o MM/AAAA
+- IMPORTANTE: En facturas de Bagó y similares, la columna "VCTO" contiene la fecha de vencimiento de cada producto
+- Extrae la fecha de vencimiento para CADA producto individualmente
+- Si la fecha aparece como "06/2027" extráela exactamente así
 - Si un producto no tiene fecha de vencimiento visible, usa null
-- NO inventes fechas — si no está visible, usa null
+- NO inventes fechas — si no está en la fila del producto, usa null
 
 INSTRUCCIONES CRÍTICAS PARA CANTIDADES FARMACÉUTICAS:
 - La "quantity" debe ser el NÚMERO TOTAL DE UNIDADES INDIVIDUALES (comprimidos, cápsulas, ampollas, frascos, etc.)
