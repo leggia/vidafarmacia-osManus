@@ -34,22 +34,24 @@ async function startServer() {
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
-  // Correr migraciones automáticamente en producción
-  if (process.env.NODE_ENV === "production") {
-    try {
-      console.log("[DB] Corriendo migraciones...");
-      const { execSync } = await import("child_process");
-      execSync("npx drizzle-kit push --force", { stdio: "inherit" });
-      console.log("[DB] Migraciones completadas");
-    } catch (e) {
-      console.warn("[DB] Error en migraciones (puede ser normal si ya están aplicadas):", e);
-    }
-  }
-
-  // Health check endpoint para Railway
+  // Health check endpoint — responde inmediatamente para Railway
   app.get("/api/health", (_req, res) => {
-    res.json({ status: "ok", timestamp: new Date().toISOString() });
+    res.json({ status: "ok", version: "1.0.0", timestamp: new Date().toISOString() });
   });
+
+  // Migraciones en background (no bloquea el arranque)
+  if (process.env.NODE_ENV === "production") {
+    setTimeout(async () => {
+      try {
+        console.log("[DB] Corriendo migraciones en background...");
+        const { execSync } = await import("child_process");
+        execSync("npx drizzle-kit push --force", { stdio: "inherit" });
+        console.log("[DB] Migraciones completadas");
+      } catch (e) {
+        console.warn("[DB] Error en migraciones:", e);
+      }
+    }, 3000);
+  }
 
   // Servir archivos subidos localmente
   app.use("/api/storage", express.static(
