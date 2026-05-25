@@ -213,8 +213,8 @@ const resolveApiUrl = () =>
   "https://api.groq.com/openai/v1/chat/completions";
 
 const assertApiKey = () => {
-  if (!ENV.forgeApiKey) {
-    throw new Error("GROQ_API_KEY is not configured. Add BUILT_IN_FORGE_API_KEY=your_groq_key to .env");
+  if (!ENV.groqApiKey) {
+    throw new Error("GROQ_API_KEY no configurado. Agrega BUILT_IN_FORGE_API_KEY en .env");
   }
 };
 
@@ -311,7 +311,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     method: "POST",
     headers: {
       "content-type": "application/json",
-      authorization: `Bearer ${ENV.forgeApiKey}`,
+      authorization: `Bearer ${ENV.groqApiKey}`,
     },
     body: JSON.stringify(payload),
   });

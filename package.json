@@ -112,5 +112,6 @@
     "overrides": {
       "tailwindcss>nanoid": "3.3.7"
     }
-  }
+  },
+  "description": "VidaFarma OS - Sistema de gesti\u00f3n de inventario y compras para farmacias"
 }
