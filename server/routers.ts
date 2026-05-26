@@ -9,6 +9,7 @@ import { storagePut } from "./storage";
 import { nanoid } from "nanoid";
 import * as db from "./db";
 import { inventarios365 } from "./inventarios365";
+import { inventarios365Router } from "./inventarios365-router";
 
 // Helper: leer archivo local y convertir a base64 para Groq
 async function fileToBase64DataUrl(fileKey: string, mimeType: string): Promise<string> {
@@ -166,14 +167,22 @@ INSTRUCCIONES GENERALES:
       };
 
       // Reintentar hasta 3 veces si falla el parsing
+      const llmMessages = [
+        {
+          role: "system" as const,
+          content:
+            "Eres un asistente experto en lectura de facturas farmacéuticas bolivianas. Tienes amplio conocimiento de presentaciones de medicamentos (comprimidos, cápsulas, jarabes, gotas, inyectables). Cuando una factura muestra cajas con presentación (ej: x10 comp, x30 caps), SIEMPRE multiplicas cajas por unidades para obtener el total real. Extraes datos con alta precisión. Responde SOLO en JSON válido.",
+        },
+        { role: "user" as const, content: userContent },
+      ];
       for (let intento = 0; intento < 3; intento++) {
         try {
           let resultToUse = llmResult;
           if (intento > 0) {
             console.log(`[LLM] Reintento ${intento} de extracción...`);
             await new Promise(r => setTimeout(r, 1000 * intento));
-            resultToUse = await invoke({
-              messages,
+            resultToUse = await invokeLLM({
+              messages: llmMessages,
               response_format: { type: "json_object" },
             });
           }
@@ -628,6 +637,7 @@ export const appRouter = router({
   operationHistory: operationHistoryRouter,
   cache: cacheRouter,
   confirmaciones: confirmacionesRouter,
+  inventarios365: inventarios365Router,
 });
 
 export type AppRouter = typeof appRouter;

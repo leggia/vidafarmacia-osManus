@@ -11,6 +11,8 @@ import {
   transferItems,
   taskQueue,
   operationHistory,
+  inventarios365Products,
+  InsertInventarios365Product,
 } from "../drizzle/schema";
 import { ENV } from "./_core/env";
 
@@ -485,4 +487,82 @@ export async function updatePurchaseSyncError(purchaseId: number, errorMsg: stri
     .update(purchases)
     .set({ syncError: errorMsg, syncAttempts: sql`syncAttempts + 1` })
     .where(eq(purchases.id, purchaseId));
+}
+
+
+// ─── Inventarios365 Products Cache ───
+export async function upsertInventarios365Product(data: InsertInventarios365Product) {
+  const db = await getDb();
+  if (!db) return;
+  try {
+    await db
+      .insert(inventarios365Products)
+      .values(data)
+      .onDuplicateKeyUpdate({
+        set: {
+          codigo: data.codigo,
+          nombre: data.nombre,
+          precio_costo: data.precio_costo,
+          precio_venta: data.precio_venta,
+          stock: data.stock,
+          lastSyncedAt: new Date(),
+        },
+      });
+  } catch (error) {
+    console.error("[DB] Error upserting inventarios365 product:", error);
+  }
+}
+
+export async function bulkUpsertInventarios365Products(products: InsertInventarios365Product[]) {
+  const db = await getDb();
+  if (!db) return;
+  try {
+    for (const product of products) {
+      await upsertInventarios365Product(product);
+    }
+    console.log(`[DB] ${products.length} productos de inventarios365 sincronizados`);
+  } catch (error) {
+    console.error("[DB] Error bulk upserting inventarios365 products:", error);
+  }
+}
+
+export async function getInventarios365ProductByName(nombre: string) {
+  const db = await getDb();
+  if (!db) return null;
+  const result = await db
+    .select()
+    .from(inventarios365Products)
+    .where(sql`LOWER(nombre) LIKE LOWER(${`%${nombre}%`})`)
+    .limit(1);
+  return result[0] || null;
+}
+
+export async function searchInventarios365Products(query: string, limit = 10) {
+  const db = await getDb();
+  if (!db) return [];
+  return db
+    .select()
+    .from(inventarios365Products)
+    .where(sql`LOWER(nombre) LIKE LOWER(${`%${query}%`}) OR LOWER(codigo) LIKE LOWER(${`%${query}%`})`)
+    .limit(limit);
+}
+
+export async function getInventarios365ProductCount() {
+  const db = await getDb();
+  if (!db) return 0;
+  const [result] = await db
+    .select({ count: sql<number>`count(*)` })
+    .from(inventarios365Products);
+  return result?.count || 0;
+}
+
+export async function clearInventarios365ProductsCache() {
+  const db = await getDb();
+  if (!db) return;
+  try {
+    await db.delete(inventarios365Products);
+    console.log("[DB] Cache de productos de inventarios365 limpiado");
+  } catch (error) {
+    console.error("[DB] Error clearing inventarios365 products cache:", error);
+  }
 }

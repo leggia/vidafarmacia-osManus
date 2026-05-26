@@ -33,9 +33,9 @@ export interface DetalleCompra {
   idalmacen: number;
   codigo: string;
   articulo: string;
-  precio: string;  // STRING para mantener precisión decimal
-  precio_paquete: string;  // STRING
-  precio_venta: string;  // STRING
+  precio: string;
+  precio_paquete: string;
+  precio_venta: string;
   unidad_x_paquete: number;
   fecha_vencimiento: string | null;
   cantidad: number;
@@ -44,8 +44,8 @@ export interface DetalleCompra {
 // Estructura del payload para registrar una compra
 export interface RegistrarCompraPayload {
   idproveedor: number;
-  idalmacen: number;
   tipo_comprobante: string;
+  serie_comprobante: string;
   num_comprobante: string;
   impuesto: number;
   total: number;
@@ -84,14 +84,13 @@ class Inventarios365Service {
   // Cookies de sesión almacenadas como string "key=value; key2=value2"
   private xsrfToken: string | null = null;
   private laravelSession: string | null = null;
-  private csrfToken: string | null = null; // Token CSRF sin codificar (para header X-CSRF-TOKEN)
   private lastLogin: number = 0;
   private SESSION_TTL = 90 * 60 * 1000; // 90 minutos (las cookies duran 2h)
 
   constructor() {
     this.client = axios.create({
       baseURL: BASE_URL,
-      timeout: 60000, // 60s — inventarios365.com puede tardar hasta 15s en el GET de login
+      timeout: 30000,
       // No seguir redirecciones automáticamente para capturar cookies
       maxRedirects: 0,
       validateStatus: (status) => status < 500,
@@ -145,7 +144,6 @@ class Inventarios365Service {
       // ── Paso 1: GET / para obtener CSRF token y cookies iniciales ──────────
       const getResp = await axios.get(`${BASE_URL}/`, {
         maxRedirects: 5,
-        timeout: 60000,
         validateStatus: () => true,
         headers: {
           "User-Agent":
@@ -176,9 +174,6 @@ class Inventarios365Service {
         throw new Error("No se pudo obtener el _token del formulario de login");
       }
 
-      // Guardar el CSRF token para usarlo en headers posteriores
-      this.csrfToken = formToken;
-
       // ── Paso 2: POST / con credenciales ────────────────────────────────────
       const cookieGet = [
         initialXsrf ? `XSRF-TOKEN=${initialXsrf}` : "",
@@ -194,7 +189,6 @@ class Inventarios365Service {
 
       const postResp = await axios.post(`${BASE_URL}/`, formData.toString(), {
         maxRedirects: 0,
-        timeout: 60000,
         validateStatus: (s) => s < 400,
         headers: {
           "Content-Type": "application/x-www-form-urlencoded",
@@ -266,13 +260,10 @@ class Inventarios365Service {
       headers: {
         Cookie: cookie,
         "X-XSRF-TOKEN": xsrfDecoded,
-        "X-CSRF-TOKEN": this.csrfToken || "",
-        "X-Requested-With": "XMLHttpRequest",
         "Content-Type": "application/json",
         Referer: `${BASE_URL}/main`,
       },
     });
-    console.log(`[Inventarios365] POST ${path} response:`, JSON.stringify(resp.data));
     return resp.data;
   }
 
@@ -482,10 +473,6 @@ class Inventarios365Service {
    * Endpoint: POST /ingreso/registrar
    * Respuesta exitosa: { id: <ingresoId> }
    */
-  /**
-   * Forzar siempre un re-login antes de registrar una compra.
-   * En producción (Cloud Run) las instancias son efímeras y no comparten estado.
-   */
   async registrarCompra(params: {
     proveedor: string;
     tipoComprobante: string;
@@ -497,13 +484,17 @@ class Inventarios365Service {
       precio?: number;
       fechaVencimiento?: string | null;
     }>;
-    total: number;
-  }): Promise<{ success: boolean; message: string; ingresoId?: number }> {
-    // Forzar siempre re-login para garantizar sesión fresca en producción
-    this.invalidateSession();
+    total?: number;
+  }): Promise<{
+    success: boolean;
+    message: string;
+    ingresoId?: number;
+    productosNoEncontrados?: Array<{ nombre: string; nombreLimpio?: string; cantidad: number; precio?: number }>;
+  }> {
+    const productosNoEncontrados: { nombre: string; nombreLimpio?: string; cantidad: number; precio?: number }[] = [];
     try {
-      // 1. Obtener almacenes y encontrar el correctoo
-      const almacenes = await this.listarAlmacenes();
+      // 1. Listar almacenes
+      const almacenes = await this.listarAlmacenes();;
       console.log(
         "[Inventarios365] Almacenes:",
         almacenes.map((a) => `${a.id}:${a.nombre_almacen}`)
@@ -527,7 +518,7 @@ class Inventarios365Service {
       }
 
       // 2. Buscar el proveedor
-      let idproveedor = 0;  // Usar 0 como valor por defecto (como hace la interfaz web)
+      let idproveedor = 1;
       const proveedor = await this.buscarProveedor(params.proveedor);
       if (proveedor) {
         idproveedor = proveedor.id;
@@ -536,14 +527,13 @@ class Inventarios365Service {
         );
       } else {
         console.warn(
-          `[Inventarios365] Proveedor "${params.proveedor}" no encontrado, usando ID 0`
+          `[Inventarios365] Proveedor "${params.proveedor}" no encontrado, usando ID 1`
         );
       }
 
       // 3. Buscar cada artículo filtrando por proveedor y construir el arrayDetalle
       const arrayDetalle: DetalleCompra[] = [];
       const erroresArticulos: string[] = [];
-      const productosNoEncontrados: { nombre: string; cantidad: number; precio?: number }[] = [];
 
       for (const item of params.items) {
         // Buscar primero con filtro de proveedor para mayor precisión
@@ -591,8 +581,8 @@ class Inventarios365Service {
 
       // 4. Calcular total si no se proporcionó
       const totalFinal =
-        params.total > 0
-          ? params.total
+        (params.total ?? 0) > 0
+          ? params.total!
           : arrayDetalle.reduce(
               (sum, d) => sum + parseFloat(d.precio) * d.cantidad,
               0
@@ -601,10 +591,10 @@ class Inventarios365Service {
       // 5. Registrar la compra
       const payload: RegistrarCompraPayload = {
         idproveedor,
-        idalmacen,
-        tipo_comprobante: params.tipoComprobante,
+        tipo_comprobante: params.tipoComprobante || "BOLETA",
+        serie_comprobante: "",
         num_comprobante: params.numComprobante,
-        impuesto: 0.18,  // Impuesto por defecto
+        impuesto: 0,
         total: totalFinal,
         data: arrayDetalle,
       };
@@ -623,10 +613,6 @@ class Inventarios365Service {
         return { success: false, message: respData.error };
       }
 
-      if (!respData?.id && !respData?.message) {
-        return { success: false, message: "Respuesta inválida del servidor" };
-      }
-
       const advertencias =
         erroresArticulos.length > 0
           ? ` (Artículos no encontrados: ${erroresArticulos.join(", ")})`
@@ -634,8 +620,9 @@ class Inventarios365Service {
 
       return {
         success: true,
-        message: `Compra registrada en inventarios365.com${advertencias}`,
+        message: `Compra registrada en inventarios365.com (ID: ${respData?.id})${advertencias}`,
         ingresoId: respData?.id,
+        productosNoEncontrados,
       };
     } catch (error: any) {
       console.error(
@@ -647,6 +634,7 @@ class Inventarios365Service {
         message: `Error al sincronizar: ${
           error?.response?.data?.message || error?.message || "Error desconocido"
         }`,
+        productosNoEncontrados,
       };
     }
   }
@@ -733,6 +721,21 @@ class Inventarios365Service {
           error?.response?.data?.message || error?.message || "Error desconocido"
         }`,
       };
+    }
+  }
+
+  /**
+   * Descargar todos los productos de inventarios365.com.
+   */
+  async descargarTodosLosProductos(): Promise<ArticuloAPI[]> {
+    try {
+      console.log("[Inventarios365] Iniciando descarga de todos los productos...");
+      const productos = await this.listarArticulos("", "");
+      console.log(`[Inventarios365] ${productos.length} productos descargados`);
+      return productos;
+    } catch (error) {
+      console.error("[Inventarios365] Error descargando productos:", error);
+      return [];
     }
   }
 

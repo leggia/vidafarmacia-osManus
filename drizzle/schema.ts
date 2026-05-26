@@ -189,3 +189,20 @@ export const productosCache = mysqlTable("productos_cache", {
 
 export type ProductoCache = typeof productosCache.$inferSelect;
 export type InsertProductoCache = typeof productosCache.$inferInsert;
+
+
+// ─── Inventarios365 Products (Productos de inventarios365.com) ────────────────
+export const inventarios365Products = mysqlTable("inventarios365_products", {
+  id: int("id").autoincrement().primaryKey(),
+  idarticulo: int("idarticulo").notNull().unique(), // ID del artículo en inventarios365
+  codigo: varchar("codigo", { length: 100 }).notNull(),
+  nombre: varchar("nombre", { length: 500 }).notNull(),
+  precio_costo: decimal("precio_costo", { precision: 12, scale: 4 }).default("0"),
+  precio_venta: decimal("precio_venta", { precision: 12, scale: 4 }).default("0"),
+  stock: int("stock").default(0),
+  lastSyncedAt: timestamp("lastSyncedAt").defaultNow().onUpdateNow().notNull(),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type Inventarios365Product = typeof inventarios365Products.$inferSelect;
+export type InsertInventarios365Product = typeof inventarios365Products.$inferInsert;

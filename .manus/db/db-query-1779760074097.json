@@ -1,0 +1,9 @@
+{
+  "query": "CREATE TABLE `inventarios365_products` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`idarticulo` int NOT NULL,\n\t`codigo` varchar(100) NOT NULL,\n\t`nombre` varchar(500) NOT NULL,\n\t`precio_costo` decimal(12,4) DEFAULT '0',\n\t`precio_venta` decimal(12,4) DEFAULT '0',\n\t`stock` int DEFAULT 0,\n\t`lastSyncedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,\n\t`createdAt` timestamp NOT NULL DEFAULT (now()),\n\tCONSTRAINT `inventarios365_products_id` PRIMARY KEY(`id`),\n\tCONSTRAINT `inventarios365_products_idarticulo_unique` UNIQUE(`idarticulo`)\n);",
+  "command": "mysql --batch --raw --column-names --default-character-set=utf8mb4 --host gateway05.us-east-1.prod.aws.tidbcloud.com --port 4000 --user 3C3YedTYyRZ9gp1.root --database ELm6QT6PJVYqbTF7mNfFga --execute CREATE TABLE `inventarios365_products` (\n\t`id` int AUTO_INCREMENT NOT NULL,\n\t`idarticulo` int NOT NULL,\n\t`codigo` varchar(100) NOT NULL,\n\t`nombre` varchar(500) NOT NULL,\n\t`precio_costo` decimal(12,4) DEFAULT '0',\n\t`precio_venta` decimal(12,4) DEFAULT '0',\n\t`stock` int DEFAULT 0,\n\t`lastSyncedAt` timestamp NOT NULL DEFAULT (now()) ON UPDATE CURRENT_TIMESTAMP,\n\t`createdAt` timestamp NOT NULL DEFAULT (now()),\n\tCONSTRAINT `inventarios365_products_id` PRIMARY KEY(`id`),\n\tCONSTRAINT `inventarios365_products_idarticulo_unique` UNIQUE(`idarticulo`)\n);",
+  "rows": [],
+  "messages": [],
+  "stdout": "",
+  "stderr": "",
+  "execution_time_ms": 675
+}
