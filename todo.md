@@ -137,3 +137,48 @@ OWNER_NAME=Tu Nombre
 3. Documentación de despliegue
 4. Testing en producción
 5. Lanzamiento oficial
+
+
+## 🔧 Correcciones - 26/05/2026 - Extracción de PDF y Fotos
+
+### Problema Identificado
+- Error: "Could not execute GraphicsMagick/ImageMagick: gm convert"
+- Causa: pdf2pic requería GraphicsMagick que no estaba instalado en el servidor
+- Impacto: No se podían procesar PDFs ni fotos
+
+### Soluciones Implementadas
+
+#### 1. Nuevo Módulo pdf-processor.ts
+- Creado servicio centralizado para procesamiento de archivos
+- Estrategia de fallback múltiple:
+  * Intenta pdf2pic (si GraphicsMagick disponible)
+  * Si falla, extrae texto del PDF con pdf-parse
+  * Manejo seguro de errores
+
+#### 2. Actualización de Dependencias
+- Instalado: pdfjs-dist, canvas, pdf-parse
+- Estos paquetes funcionan sin dependencias del sistema
+
+#### 3. Corrección de Routers
+- uploadAndExtract (Compras): Ahora maneja PDF y fotos correctamente
+- uploadAndExtract (Transferencias): Mismo tratamiento
+- Lógica mejorada para fallback a OCR si no se puede convertir imagen
+
+#### 4. Validación Frontend Mejorada
+- NuevaCompra.tsx: Validación de tipos y tamaño de archivo
+- NuevaTransferencia.tsx: Mismo tratamiento
+- Tipos aceptados: JPG, PNG, WebP, PDF
+- Tamaño máximo: 10MB
+
+### Flujo Actual
+1. Usuario sube archivo (foto o PDF)
+2. Frontend valida tipo y tamaño
+3. Backend intenta convertir a imagen
+4. Si falla, extrae texto del PDF
+5. IA procesa imagen o texto
+6. Extrae datos de factura/medicamentos
+
+### Estado
+- 13 tests vitest pasando
+- Servidor corriendo sin errores
+- Procesamiento de archivos robusto con fallback

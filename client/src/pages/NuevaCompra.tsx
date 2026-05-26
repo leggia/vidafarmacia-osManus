@@ -90,6 +90,19 @@ export default function NuevaCompra() {
     (e: React.ChangeEvent<HTMLInputElement>) => {
       const selected = e.target.files?.[0];
       if (!selected) return;
+      
+      const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
+      if (!validTypes.includes(selected.type)) {
+        toast.error('Solo JPG, PNG, WebP o PDF');
+        return;
+      }
+      
+      const maxSize = 10 * 1024 * 1024;
+      if (selected.size > maxSize) {
+        toast.error('Archivo muy grande (máx 10MB)');
+        return;
+      }
+      
       setFile(selected);
       setExtracted(false);
       setItems([]);

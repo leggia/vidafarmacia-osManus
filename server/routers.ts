@@ -11,7 +11,7 @@ import * as db from "./db";
 import { inventarios365 } from "./inventarios365";
 import { inventarios365Router } from "./inventarios365-router";
 
-// Helper: leer archivo local y convertir a base64 para Groq
+// Helper: leer archivo local y convertir a base64 para Groq (DEPRECADO - usar imageToBase64)
 async function fileToBase64DataUrl(fileKey: string, mimeType: string): Promise<string> {
   const pathMod = (await import("path")).default;
   const fsMod = (await import("fs")).default;
@@ -20,28 +20,8 @@ async function fileToBase64DataUrl(fileKey: string, mimeType: string): Promise<s
   return `data:${mimeType};base64,${buffer.toString("base64")}`;
 }
 
-// Helper: convertir PDF a base64 PNG usando pdf2pic
-async function pdfToBase64Png(fileKey: string): Promise<string> {
-  const pathMod = (await import("path")).default;
-  const fsMod = (await import("fs")).default;
-  const { fromPath } = await import("pdf2pic");
-  const pdfPath = pathMod.join(process.cwd(), "uploads", fileKey);
-  const outputDir = pathMod.join(process.cwd(), "uploads", "pdf-pages");
-  if (!fsMod.existsSync(outputDir)) fsMod.mkdirSync(outputDir, { recursive: true });
-  const converter = fromPath(pdfPath, {
-    density: 150,
-    saveFilename: pathMod.basename(fileKey, ".pdf"),
-    savePath: outputDir,
-    format: "png",
-    width: 1200,
-    height: 1600,
-  });
-  const result = await converter(1);
-  if (!result.path || !fsMod.existsSync(result.path)) throw new Error("No se pudo convertir PDF");
-  const buffer = fsMod.readFileSync(result.path);
-  try { fsMod.unlinkSync(result.path); } catch {}
-  return `data:image/png;base64,${buffer.toString("base64")}`;
-}
+// Importar procesador de PDFs
+import { pdfToBase64Png, imageToBase64, extractTextFromPdf } from "./pdf-processor";
 
 
 // ─── Branches Router ─────────────────────────────────────────────────────────
@@ -133,17 +113,35 @@ INSTRUCCIONES GENERALES:
         },
       ];
 
-      // Convertir archivo a base64 para Groq (no acepta URLs relativas)
+      // Convertir archivo a base64 para Groq
+      let dataUrl: string | null = null;
       try {
-        const dataUrl = isImage
-          ? await fileToBase64DataUrl(fileKey, input.mimeType)
-          : await pdfToBase64Png(fileKey);
-        userContent.push({
-          type: "image_url",
-          image_url: { url: dataUrl, detail: "high" },
-        });
+        if (isImage) {
+          dataUrl = await imageToBase64(fileKey);
+        } else if (isPdf) {
+          dataUrl = await pdfToBase64Png(fileKey);
+          if (!dataUrl) {
+            const pdfText = await extractTextFromPdf(fileKey);
+            if (pdfText.trim()) {
+              userContent.push({
+                type: "text",
+                text: `TEXTO EXTRAIDO DEL PDF:\n${pdfText}\n\n`,
+              });
+              dataUrl = null;
+            } else {
+              throw new Error("No se pudo procesar PDF");
+            }
+          }
+        }
+        
+        if (dataUrl) {
+          userContent.push({
+            type: "image_url",
+            image_url: { url: dataUrl, detail: "high" },
+          });
+        }
       } catch (fileError: any) {
-        throw new Error(`No se pudo procesar el archivo: ${fileError.message}`);
+        throw new Error(`No se pudo procesar archivo: ${fileError.message}`);
       }
 
       const llmResult = await invokeLLM({
@@ -424,16 +422,35 @@ INSTRUCCIONES IMPORTANTES:
       ];
 
       // Convertir archivo a base64 para Groq
+      let dataUrl: string | null = null;
+      const isPdf = input.mimeType === "application/pdf";
       try {
-        const dataUrl = isImage
-          ? await fileToBase64DataUrl(fileKey, input.mimeType)
-          : await pdfToBase64Png(fileKey);
-        userContent.push({
-          type: "image_url",
-          image_url: { url: dataUrl, detail: "high" },
-        });
+        if (isImage) {
+          dataUrl = await imageToBase64(fileKey);
+        } else if (isPdf) {
+          dataUrl = await pdfToBase64Png(fileKey);
+          if (!dataUrl) {
+            const pdfText = await extractTextFromPdf(fileKey);
+            if (pdfText.trim()) {
+              userContent.push({
+                type: "text",
+                text: `TEXTO EXTRAIDO DEL PDF:\n${pdfText}\n\n`,
+              });
+              dataUrl = null;
+            } else {
+              throw new Error("No se pudo procesar PDF");
+            }
+          }
+        }
+        
+        if (dataUrl) {
+          userContent.push({
+            type: "image_url",
+            image_url: { url: dataUrl, detail: "high" },
+          });
+        }
       } catch (fileError: any) {
-        throw new Error(`No se pudo procesar el archivo: ${fileError.message}`);
+        throw new Error(`No se pudo procesar archivo: ${fileError.message}`);
       }
 
       const llmResult = await invokeLLM({
