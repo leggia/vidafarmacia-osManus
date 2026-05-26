@@ -34,6 +34,9 @@ async function startServer() {
   // Configure body parser with larger size limit for file uploads
   app.use(express.json({ limit: "50mb" }));
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
+  // Confiar en el proxy de Railway para HTTPS
+  app.set("trust proxy", 1);
+
   // Health check endpoint — responde inmediatamente para Railway
   app.get("/api/health", (_req, res) => {
     res.json({ status: "ok", version: "1.0.0", timestamp: new Date().toISOString() });
