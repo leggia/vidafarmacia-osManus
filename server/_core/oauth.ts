@@ -145,6 +145,8 @@ export function registerOAuthRoutes(app: Express) {
     }
 
     try {
+      console.log("[Auth] Login attempt for:", usuario);
+      console.log("[Auth] JWT_SECRET configured:", !!process.env.JWT_SECRET);
       const openId = `local-${crypto.createHash("md5").update(usuario).digest("hex")}`;
 
       await db.upsertUser({
