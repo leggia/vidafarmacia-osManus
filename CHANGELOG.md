@@ -2,6 +2,15 @@
 
 Formato: [Semantic Versioning](https://semver.org/)
 
+## [1.0.1] — 2026-05-25
+
+### Corregido
+- Fecha de vencimiento ahora se envía correctamente a inventarios365 (YYYY-MM-DD → MM/YYYY)
+- Panel de productos no encontrados siempre visible cuando hay productos sin emparejar
+- Mensaje claro cuando la compra no se registra por falta de emparejamientos
+- Búsqueda de productos sin filtro de proveedor cuando el proveedor no existe en sistema
+- idproveedor ya no hardcodeado a 1 cuando proveedor no se encuentra
+
 ---
 
 ## [1.0.0] — 2026-05-24

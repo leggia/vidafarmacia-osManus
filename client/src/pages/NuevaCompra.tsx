@@ -199,11 +199,13 @@ export default function NuevaCompra() {
               toast.warning(`${r.productosNoEncontrados.length} producto(s) no encontrados — revisa el panel`, { duration: 8000 });
               return; // No redirigir, mostrar panel
             }
-          } else if (r?.syncMessage?.includes("No se encontró ningún artículo")) {
-            // Todos los productos fallaron — mostrar panel
-            setProductosNoEncontrados(items.map(i => ({ nombre: i.productName, cantidad: i.quantity, precio: i.unitCost })));
-            toast.warning("Ningún producto encontrado en el sistema. Búscalos o créalos manualmente.", { duration: 8000 });
-            return;
+          } else if (r?.productosNoEncontrados?.length > 0) {
+            // Hay productos no encontrados — mostrar panel siempre
+            setProductosNoEncontrados(r.productosNoEncontrados);
+            if (!r?.syncSuccess) {
+              toast.warning(`⚠️ ${r.syncMessage}`, { duration: 8000 });
+            }
+            return; // No redirigir, mostrar panel
           } else if (r?.syncMessage) {
             toast.warning(
               `Compra confirmada, pero sin sincronizar: ${r.syncMessage}`,

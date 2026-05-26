@@ -284,17 +284,23 @@ INSTRUCCIONES GENERALES:
           syncResultData = syncResult;
           if (syncResult.success) {
             syncSuccess = true;
-            syncMessage = `Compra registrada en inventarios365.com (Ingreso ID: ${syncResult.ingresoId})`;
+            const noEncontrados = syncResult.productosNoEncontrados || [];
+            if (noEncontrados.length > 0) {
+              syncMessage = `Compra registrada parcialmente. ${noEncontrados.length} producto(s) no encontrados en el sistema.`;
+            } else {
+              syncMessage = `Compra registrada exitosamente en inventarios365.com`;
+            }
             syncIngresoId = syncResult.ingresoId;
             await db.updatePurchaseSyncStatus(purchaseId, "completed");
-            // Si hubo productos no encontrados, informar al usuario
-            if (syncResult.productosNoEncontrados && syncResult.productosNoEncontrados.length > 0) {
-              syncMessage += ` | Productos no encontrados: ${syncResult.productosNoEncontrados.map((p: any) => p.nombre).join(", ")}`;
-            }
+          } else if (syncResult.productosNoEncontrados && syncResult.productosNoEncontrados.length > 0) {
+            // No se registró nada pero hay productos para emparejar
+            syncSuccess = false;
+            syncMessage = `No se registró la compra — ${syncResult.productosNoEncontrados.length} producto(s) requieren emparejamiento manual.`;
+            await db.updatePurchaseSyncError(purchaseId, syncMessage);
           } else {
             syncSuccess = false;
-            syncMessage = syncResult.message;
-            await db.updatePurchaseSyncError(purchaseId, syncResult.message);
+            syncMessage = syncResult.message || "Error al sincronizar con inventarios365.com";
+            await db.updatePurchaseSyncError(purchaseId, syncMessage);
           }
         } catch (syncError: any) {
           const errMsg = syncError?.message || "Error desconocido";

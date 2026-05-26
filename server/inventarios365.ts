@@ -518,7 +518,7 @@ class Inventarios365Service {
       }
 
       // 2. Buscar el proveedor
-      let idproveedor = 1;
+      let idproveedor: number | undefined = undefined;
       const proveedor = await this.buscarProveedor(params.proveedor);
       if (proveedor) {
         idproveedor = proveedor.id;
@@ -527,17 +527,17 @@ class Inventarios365Service {
         );
       } else {
         console.warn(
-          `[Inventarios365] Proveedor "${params.proveedor}" no encontrado, usando ID 1`
+          `[Inventarios365] Proveedor "${params.proveedor}" no encontrado — buscando productos sin filtro de proveedor`
         );
       }
 
-      // 3. Buscar cada artículo filtrando por proveedor y construir el arrayDetalle
+      // 3. Buscar cada artículo (con filtro de proveedor si se encontró, sin filtro si no)
       const arrayDetalle: DetalleCompra[] = [];
       const erroresArticulos: string[] = [];
 
       for (const item of params.items) {
-        // Buscar primero con filtro de proveedor para mayor precisión
-        const articulo = await this.buscarArticulo(item.nombre, idproveedor || undefined, params.proveedor);
+        // Buscar con filtro de proveedor si existe, sino buscar en todo el inventario
+        const articulo = await this.buscarArticulo(item.nombre, idproveedor, params.proveedor);
         if (articulo) {
           const precioCosto =
             item.precio ?? parseFloat(String(articulo.precio_costo_unid)) ?? 0;
@@ -550,7 +550,14 @@ class Inventarios365Service {
             precio_paquete: String((parseFloat(String(articulo.precio_costo_paq)) ?? 0).toFixed(4)),
             precio_venta: String((parseFloat(String(articulo.precio_uno)) ?? 0).toFixed(4)),
             unidad_x_paquete: articulo.unidad_envase ?? 1,
-            fecha_vencimiento: item.fechaVencimiento ?? null,
+            fecha_vencimiento: (() => {
+              const f = item.fechaVencimiento;
+              if (!f) return null;
+              // Convertir YYYY-MM-DD → MM/YYYY para inventarios365
+              const match = f.match(/^(\d{4})-(\d{2})-\d{2}$/);
+              if (match) return `${match[2]}/${match[1]}`;
+              return f;
+            })(),
             cantidad: item.cantidad,
           });
           console.log(
