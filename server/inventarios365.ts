@@ -491,7 +491,6 @@ class Inventarios365Service {
     ingresoId?: number;
     productosNoEncontrados?: Array<{ nombre: string; nombreLimpio?: string; cantidad: number; precio?: number }>;
   }> {
-    const productosNoEncontrados: { nombre: string; nombreLimpio?: string; cantidad: number; precio?: number }[] = [];
     try {
       // 1. Listar almacenes
       const almacenes = await this.listarAlmacenes();;
@@ -534,6 +533,8 @@ class Inventarios365Service {
       // 3. Buscar cada artículo (con filtro de proveedor si se encontró, sin filtro si no)
       const arrayDetalle: DetalleCompra[] = [];
       const erroresArticulos: string[] = [];
+      const productosNoEncontrados: { nombre: string; nombreLimpio?: string; cantidad: number; precio?: number; sugerencia?: any }[] = [];
+      const productosEmparejados: { nombreFactura: string; nombreSistema: string; id: number }[] = [];
 
       for (const item of params.items) {
         // Buscar con filtro de proveedor si existe, sino buscar en todo el inventario
