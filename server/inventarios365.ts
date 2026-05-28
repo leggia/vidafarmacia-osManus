@@ -555,9 +555,11 @@ class Inventarios365Service {
         const score = articulo ? ((articulo as any)._score ?? 1.0) : 0;
         const nombreLimpio = item.nombre.replace(/^\d+\s+/, "").trim();
 
-        // Score >= 0.80 o es de confirmaciones (score=1) → registrar directo
-        // Score < 0.80 → requiere confirmación manual
-        if (articulo && score >= 0.80) {
+        // Con filtro de proveedor: threshold 0.50 (resultados ya son del proveedor correcto)
+        // Sin filtro de proveedor: threshold 0.80 (más estricto para evitar falsos positivos)
+        const threshold = idproveedor ? 0.50 : 0.80;
+
+        if (articulo && score >= threshold) {
           const precioCosto =
             item.precio ?? parseFloat(String(articulo.precio_costo_unid)) ?? 0;
           arrayDetalle.push({
