@@ -302,21 +302,33 @@ class Inventarios365Service {
    * Usa coincidencia de tokens: cuántos tokens del nombre original aparecen en el candidato.
    */
   private calcularSimilitud(original: string, candidato: string): number {
-    const tokenize = (s: string) =>
+    const normalizar = (s: string) =>
       s.toUpperCase()
+        .normalize("NFD").replace(/[̀-ͯ]/g, "") // quitar tildes
         .replace(/[^A-Z0-9\s]/g, " ")
         .split(/\s+/)
         .filter((t) => t.length > 1);
-    const tokensOrig = tokenize(original);
-    const tokensCand = tokenize(candidato);
+
+    const tokensOrig = normalizar(original);
+    const tokensCand = normalizar(candidato);
     if (tokensOrig.length === 0) return 0;
+
+    // El primer token (nombre principal) debe coincidir obligatoriamente
+    const tokenPrincipal = tokensOrig[0];
+    const tokenPrincipalPresente = tokensCand.some(
+      c => c.startsWith(tokenPrincipal) || tokenPrincipal.startsWith(c)
+    );
+    if (!tokenPrincipalPresente) return 0;
+
     let matches = 0;
     for (const t of tokensOrig) {
       if (tokensCand.some((c) => c.startsWith(t) || t.startsWith(c))) matches++;
     }
-    // Penalizar si el candidato tiene tokens extra que no están en el original
-    const extraPenalty = Math.max(0, tokensCand.length - tokensOrig.length) * 0.05;
-    return matches / tokensOrig.length - extraPenalty;
+
+    // Score bidireccional: penalizar tokens extra en candidato
+    const scoreAdelante = matches / tokensOrig.length;
+    const scoreAtras = matches / tokensCand.length;
+    return (scoreAdelante + scoreAtras) / 2;
   }
 
   /**
@@ -390,7 +402,8 @@ class Inventarios365Service {
         console.log(
           `[Inventarios365] Artículo "${nombre}" → término:"${bestOverall.term}" | match:"${bestOverall.art.nombre}" (ID:${bestOverall.art.id}, score:${bestOverall.score.toFixed(2)})`
         );
-        return bestOverall.art;
+        // Incluir _score en el resultado para que registrarCompra pueda decidir
+        return { ...bestOverall.art, _score: bestOverall.score } as any;
       }
 
       console.warn(`[Inventarios365] Artículo "${nombre}" no encontrado con ningún término`);
