@@ -313,11 +313,21 @@ INSTRUCCIONES GENERALES:
       }
 
       return {
-        ...result,
+        id: result.id,
         syncSuccess,
         syncMessage,
         syncIngresoId,
-        productosNoEncontrados: syncResultData?.productosNoEncontrados || [],
+        productosNoEncontrados: (syncResultData?.productosNoEncontrados || []).map((p: any) => ({
+          nombre: p.nombre,
+          nombreLimpio: p.nombreLimpio,
+          cantidad: p.cantidad,
+          precio: p.precio,
+          sugerencia: p.sugerencia,
+        })),
+        productosEmparejados: (syncResultData?.productosEmparejados || []).map((p: any) => ({
+          nombreFactura: p.nombreFactura,
+          nombreSistema: p.nombreSistema,
+        })),
       };
     }),
 

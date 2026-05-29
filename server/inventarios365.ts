@@ -633,10 +633,7 @@ class Inventarios365Service {
         data: arrayDetalle,
       };
 
-      console.log(
-        "[Inventarios365] POST /ingreso/registrar →",
-        JSON.stringify(payload, null, 2)
-      );
+      console.log(`[Inventarios365] POST /ingreso/registrar → ${payload.data?.length || 0} productos, total: ${payload.total}`);
 
       const respData = await this.post<{ id?: number; error?: string; message?: string }>(
         "/ingreso/registrar",
