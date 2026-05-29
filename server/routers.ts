@@ -269,7 +269,7 @@ INSTRUCCIONES GENERALES:
         try {
           console.log(`[Sync] Iniciando sincronización directa para compra #${purchaseId}`);
           // Timeout de 25s para evitar corte de conexión Railway (30s limit)
-          const syncPromise = inventarios365.registrarCompra({
+          const syncResult = await inventarios365.registrarCompra({
             proveedor: input.supplier || "",
             tipoComprobante: input.receiptType || "BOLETA",
             numComprobante: input.receiptNumber || String(purchaseId),
