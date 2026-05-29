@@ -268,7 +268,8 @@ INSTRUCCIONES GENERALES:
         const purchaseId = result.id;
         try {
           console.log(`[Sync] Iniciando sincronización directa para compra #${purchaseId}`);
-          const syncResult = await inventarios365.registrarCompra({
+          // Timeout de 25s para evitar corte de conexión Railway (30s limit)
+          const syncPromise = inventarios365.registrarCompra({
             proveedor: input.supplier || "",
             tipoComprobante: input.receiptType || "BOLETA",
             numComprobante: input.receiptNumber || String(purchaseId),
