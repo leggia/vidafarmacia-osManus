@@ -314,21 +314,12 @@ INSTRUCCIONES GENERALES:
       }
 
       return {
-        id: result.id,
+        ...result,
         syncSuccess,
         syncMessage,
         syncIngresoId,
-        productosNoEncontrados: (syncResultData?.productosNoEncontrados || []).map((p: any) => ({
-          nombre: p.nombre,
-          nombreLimpio: p.nombreLimpio,
-          cantidad: p.cantidad,
-          precio: p.precio,
-          sugerencia: p.sugerencia,
-        })),
-        productosEmparejados: (syncResultData?.productosEmparejados || []).map((p: any) => ({
-          nombreFactura: p.nombreFactura,
-          nombreSistema: p.nombreSistema,
-        })),
+        productosNoEncontrados: syncResultData?.productosNoEncontrados || [],
+        productosEmparejados: syncResultData?.productosEmparejados || [],
       };
     }),
 
