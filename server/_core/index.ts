@@ -8,6 +8,9 @@ import { appRouter } from "../routers";
 import { createContext } from "./context";
 import { serveStatic, setupVite } from "./vite";
 import { inventarios365 } from "../inventarios365";
+import { getDb } from "../db";
+import { sql } from "drizzle-orm";
+import { productosCache } from "../productos-cache";
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -40,15 +43,11 @@ async function startServer() {
   // Endpoint admin para limpiar cache (solo en producción)
   app.post("/api/admin/clear-cache", async (_req, res) => {
     try {
-      const { getDb } = await import("../db");
-      const { productosCache: pc } = await import("../drizzle/schema");
       const db = await getDb();
       if (db) {
-        await db.delete(pc);
+        await db.execute(sql`DELETE FROM productos_cache`);
         console.log("[Admin] Cache de productos limpiado");
-        res.json({ success: true, message: "Cache limpiado. Se recargará automáticamente." });
-        // Recargar en background
-        const { productosCache } = await import("../productos-cache");
+        res.json({ success: true, message: "Cache limpiado. Se recargará en el próximo uso." });
         productosCache.actualizar(true).catch(console.error);
       } else {
         res.status(500).json({ success: false, message: "DB no disponible" });
