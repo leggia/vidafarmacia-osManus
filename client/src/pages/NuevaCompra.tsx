@@ -222,9 +222,16 @@ export default function NuevaCompra() {
             if (r.productosEmparejados?.length > 0) {
               const mapa: Record<string, string> = {};
               for (const p of r.productosEmparejados) {
-                mapa[p.nombreFactura] = p.nombreSistema;
+                // Key = nombre en sistema (lo que muestra la tabla)
+                // Value = nombre original factura (para tooltip)
+                mapa[p.nombreSistema] = p.nombreFactura;
               }
               setProductosEmparejados(mapa);
+              // Actualizar items con nombres del sistema
+              setItems(prev => prev.map(item => {
+                const emp = r.productosEmparejados.find((p: any) => p.nombreFactura === item.productName);
+                return emp ? { ...item, productName: emp.nombreSistema } : item;
+              }));
             }
             if (r.productosNoEncontrados?.length > 0) {
               setProductosNoEncontrados(r.productosNoEncontrados);
@@ -503,14 +510,14 @@ export default function NuevaCompra() {
                       <div className={showExpiry ? "col-span-4" : "col-span-5"}>
                         <div className="relative">
                           <Input
-                            value={productosEmparejados[item.productName] || item.productName}
+                            value={item.productName}
                             onChange={(e) => updateItem(idx, "productName", e.target.value)}
-                            className={`text-sm h-9 ${productosEmparejados[item.productName] ? "border-green-500 bg-green-50 dark:bg-green-950 pr-7" : ""}`}
+                            className={`text-sm h-9 ${productosEmparejados[item.productName] !== undefined ? "border-green-500 bg-green-50 dark:bg-green-950 pr-7" : ""}`}
                             placeholder="Nombre del producto"
-                            title={productosEmparejados[item.productName] ? `Factura: ${item.productName}` : ""}
+                            title={productosEmparejados[item.productName] ? `Factura original: ${productosEmparejados[item.productName]}` : ""}
                           />
-                          {productosEmparejados[item.productName] && (
-                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-green-500 text-sm">✓</span>
+                          {productosEmparejados[item.productName] !== undefined && (
+                            <span className="absolute right-2 top-1/2 -translate-y-1/2 text-green-500 text-sm font-bold">✓</span>
                           )}
                         </div>
                       </div>

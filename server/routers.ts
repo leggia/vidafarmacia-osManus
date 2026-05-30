@@ -314,12 +314,27 @@ INSTRUCCIONES GENERALES:
       }
 
       return {
-        ...result,
+        id: result.id,
+        status: result.status,
         syncSuccess,
         syncMessage,
         syncIngresoId,
-        productosNoEncontrados: syncResultData?.productosNoEncontrados || [],
-        productosEmparejados: syncResultData?.productosEmparejados || [],
+        productosNoEncontrados: (syncResultData?.productosNoEncontrados || []).map((p: any) => ({
+          nombre: p.nombre,
+          nombreLimpio: p.nombreLimpio,
+          cantidad: p.cantidad,
+          precio: p.precio,
+          sugerencia: p.sugerencia ? {
+            id: p.sugerencia.id,
+            nombre: p.sugerencia.nombre,
+            codigo: p.sugerencia.codigo,
+            score: p.sugerencia.score,
+          } : undefined,
+        })),
+        productosEmparejados: (syncResultData?.productosEmparejados || []).map((p: any) => ({
+          nombreFactura: String(p.nombreFactura || ""),
+          nombreSistema: String(p.nombreSistema || ""),
+        })),
       };
     }),
 
