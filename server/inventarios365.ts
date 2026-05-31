@@ -505,9 +505,11 @@ class Inventarios365Service {
     ingresoId?: number;
     productosNoEncontrados?: Array<{ nombre: string; nombreLimpio?: string; cantidad: number; precio?: number }>;
   }> {
+    // Forzar re-login para garantizar sesión fresca en Railway
+    this.invalidateSession();
     try {
       // 1. Listar almacenes
-      const almacenes = await this.listarAlmacenes();;
+      const almacenes = await this.listarAlmacenes();
       console.log(
         "[Inventarios365] Almacenes:",
         almacenes.map((a) => `${a.id}:${a.nombre_almacen}`)
