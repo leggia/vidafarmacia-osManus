@@ -800,6 +800,84 @@ class Inventarios365Service {
     this.laravelSession = null;
     this.lastLogin = 0;
   }
+
+  /**
+   * Diagnóstico: registra una compra de prueba capturando TODA la respuesta cruda.
+   */
+  async diagnosticoRegistro(): Promise<any> {
+    this.invalidateSession();
+    await this.login();
+
+    const diagnostico: any = {
+      sesion: {
+        xsrfToken: this.xsrfToken ? "presente" : "AUSENTE",
+        csrfToken: this.csrfToken ? "presente" : "AUSENTE",
+        laravelSession: this.laravelSession ? "presente" : "AUSENTE",
+      },
+    };
+
+    // Buscar un artículo real para la prueba
+    const articulos = await this.listarArticulos("DICLOSAN", "97");
+    if (!articulos || articulos.length === 0) {
+      diagnostico.error = "No se encontró artículo de prueba";
+      return diagnostico;
+    }
+    const art = articulos[0];
+    diagnostico.articuloPrueba = { id: art.id, nombre: art.nombre, codigo: art.codigo };
+
+    const cookie = this.buildCookieHeader();
+    const xsrfDecoded = this.xsrfToken ? decodeURIComponent(this.xsrfToken) : "";
+
+    const payload = {
+      idproveedor: 97,
+      idalmacen: 1,
+      tipo_comprobante: "FACTURA",
+      num_comprobante: `DIAG-${Date.now()}`,
+      impuesto: 0,
+      total: 10,
+      inventarios: [{
+        idarticulo: art.id,
+        idalmacen: 1,
+        codigo: art.codigo,
+        articulo: art.nombre,
+        precio: "10.0000",
+        precio_paquete: "0.0000",
+        precio_venta: "0.0000",
+        unidad_x_paquete: 1,
+        fecha_vencimiento: null,
+        cantidad: 1,
+      }],
+    };
+    diagnostico.payload = payload;
+    diagnostico.numComprobante = payload.num_comprobante;
+
+    // Hacer el POST capturando TODO
+    try {
+      const resp = await this.client.post("/inventarios/registrar", payload, {
+        headers: {
+          Cookie: cookie,
+          "X-XSRF-TOKEN": xsrfDecoded,
+          "X-CSRF-TOKEN": this.csrfToken || "",
+          "X-Requested-With": "XMLHttpRequest",
+          "Content-Type": "application/json",
+          Referer: `${BASE_URL}/main`,
+        },
+        maxRedirects: 0,
+        validateStatus: () => true,
+      });
+      diagnostico.respuesta = {
+        status: resp.status,
+        statusText: resp.statusText,
+        headers: resp.headers,
+        data: resp.data,
+        location: resp.headers?.location || null,
+      };
+    } catch (e: any) {
+      diagnostico.errorPost = e.message;
+    }
+
+    return diagnostico;
+  }
 }
 
 // Singleton del servicio

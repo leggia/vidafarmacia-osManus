@@ -57,6 +57,16 @@ async function startServer() {
     }
   });
 
+  // Endpoint de diagnóstico — registra compra de prueba y devuelve respuesta cruda
+  app.get("/api/admin/test-registro", async (_req, res) => {
+    try {
+      const result = await inventarios365.diagnosticoRegistro();
+      res.json(result);
+    } catch (e: any) {
+      res.status(500).json({ error: e.message, stack: e.stack });
+    }
+  });
+
   // Health check endpoint — responde inmediatamente para Railway
   app.get("/api/health", (_req, res) => {
     res.json({ status: "ok", version: "1.0.0", timestamp: new Date().toISOString() });
