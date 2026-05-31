@@ -260,7 +260,10 @@ class Inventarios365Service {
       headers: {
         Cookie: cookie,
         "X-XSRF-TOKEN": xsrfDecoded,
+        "X-Requested-With": "XMLHttpRequest",
+        Accept: "application/json",
         "Content-Type": "application/json",
+        Origin: BASE_URL,
         Referer: `${BASE_URL}/main`,
       },
     });
