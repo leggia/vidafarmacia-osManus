@@ -44,8 +44,8 @@ export interface DetalleCompra {
 // Estructura del payload para registrar una compra
 export interface RegistrarCompraPayload {
   idproveedor: number;
+  idalmacen: number;
   tipo_comprobante: string;
-  serie_comprobante: string;
   num_comprobante: string;
   impuesto: number;
   total: number;
@@ -631,10 +631,10 @@ class Inventarios365Service {
       // 5. Registrar la compra
       const payload: RegistrarCompraPayload = {
         idproveedor,
+        idalmacen,
         tipo_comprobante: params.tipoComprobante || "BOLETA",
-        serie_comprobante: "",
         num_comprobante: params.numComprobante,
-        impuesto: 0.18,
+        impuesto: 0,
         total: totalFinal,
         inventarios: arrayDetalle,
       };
