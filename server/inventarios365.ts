@@ -629,19 +629,19 @@ class Inventarios365Service {
         tipo_comprobante: params.tipoComprobante || "BOLETA",
         serie_comprobante: "",
         num_comprobante: params.numComprobante,
-        impuesto: 0,
+        impuesto: 0.18,
         total: totalFinal,
         inventarios: arrayDetalle,
       };
 
-      console.log(`[Inventarios365] POST /ingreso/registrar → ${payload.data?.length || 0} productos, total: ${payload.total}`);
+      console.log(`[Inventarios365] POST /inventarios/registrar → ${payload.inventarios?.length || 0} productos, total: ${payload.total}`);
 
       const respData = await this.post<{ id?: number; error?: string; message?: string }>(
-        "/ingreso/registrar",
+        "/inventarios/registrar",
         payload
       );
 
-      console.log(`[Inventarios365] POST /ingreso/registrar response:`, JSON.stringify(respData));
+      console.log(`[Inventarios365] POST /inventarios/registrar response:`, JSON.stringify(respData));
 
       if (respData?.error) {
         console.error(`[Inventarios365] Error del servidor:`, respData.error);
