@@ -648,9 +648,8 @@ class Inventarios365Service {
         return { success: false, message: respData.error };
       }
 
-      if (!respData?.id) {
-        console.error(`[Inventarios365] Sin ID en respuesta:`, respData);
-        return { success: false, message: `Respuesta inesperada: ${JSON.stringify(respData)}` };
+      if (!respData?.id && !respData?.message) {
+        return { success: false, message: `Respuesta inválida: ${JSON.stringify(respData)}` };
       }
 
       const advertencias =
