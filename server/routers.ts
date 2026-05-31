@@ -286,23 +286,16 @@ INSTRUCCIONES GENERALES:
           syncResultData = syncResult;
           if (syncResult.success) {
             syncSuccess = true;
-            const noEncontrados = syncResult.productosNoEncontrados || [];
-            if (noEncontrados.length > 0) {
-              syncMessage = `Compra registrada parcialmente. ${noEncontrados.length} producto(s) no encontrados en el sistema.`;
-            } else {
-              syncMessage = `Compra registrada exitosamente en inventarios365.com`;
-            }
+            syncMessage = `Compra registrada en inventarios365.com (Ingreso ID: ${syncResult.ingresoId})`;
             syncIngresoId = syncResult.ingresoId;
             await db.updatePurchaseSyncStatus(purchaseId, "completed");
-          } else if (syncResult.productosNoEncontrados && syncResult.productosNoEncontrados.length > 0) {
-            // No se registró nada pero hay productos para emparejar
-            syncSuccess = false;
-            syncMessage = `No se registró la compra — ${syncResult.productosNoEncontrados.length} producto(s) requieren emparejamiento manual.`;
-            await db.updatePurchaseSyncError(purchaseId, syncMessage);
+            if (syncResult.productosNoEncontrados && syncResult.productosNoEncontrados.length > 0) {
+              syncMessage += ` | Productos no encontrados: ${syncResult.productosNoEncontrados.map((p: any) => p.nombre).join(", ")}`;
+            }
           } else {
             syncSuccess = false;
-            syncMessage = syncResult.message || "Error al sincronizar con inventarios365.com";
-            await db.updatePurchaseSyncError(purchaseId, syncMessage);
+            syncMessage = syncResult.message;
+            await db.updatePurchaseSyncError(purchaseId, syncResult.message);
           }
         } catch (syncError: any) {
           const errMsg = syncError?.message || "Error desconocido";
@@ -314,27 +307,12 @@ INSTRUCCIONES GENERALES:
       }
 
       return {
-        id: result.id,
-        status: result.status,
+        ...result,
         syncSuccess,
         syncMessage,
         syncIngresoId,
-        productosNoEncontrados: (syncResultData?.productosNoEncontrados || []).map((p: any) => ({
-          nombre: p.nombre,
-          nombreLimpio: p.nombreLimpio,
-          cantidad: p.cantidad,
-          precio: p.precio,
-          sugerencia: p.sugerencia ? {
-            id: p.sugerencia.id,
-            nombre: p.sugerencia.nombre,
-            codigo: p.sugerencia.codigo,
-            score: p.sugerencia.score,
-          } : undefined,
-        })),
-        productosEmparejados: (syncResultData?.productosEmparejados || []).map((p: any) => ({
-          nombreFactura: String(p.nombreFactura || ""),
-          nombreSistema: String(p.nombreSistema || ""),
-        })),
+        productosNoEncontrados: syncResultData?.productosNoEncontrados || [],
+        productosEmparejados: syncResultData?.productosEmparejados || [],
       };
     }),
 

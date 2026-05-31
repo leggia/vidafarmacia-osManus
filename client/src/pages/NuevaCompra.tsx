@@ -161,9 +161,25 @@ export default function NuevaCompra() {
             if (result.supplier) setSupplier(result.supplier);
             if (result.receiptNumber) setReceiptNumber(result.receiptNumber);
             setExtracted(true);
-            toast.success(
-              `Se extrajeron ${result.items.length} productos de la imagen`
-            );
+            toast.success(`Se extrajeron ${result.items.length} productos de la imagen`);
+            // Pre-buscar matches para mostrar checks antes de sincronizar
+            const provNombre = result.supplier || "";
+            for (let i = 0; i < result.items.length; i++) {
+              const nombre = result.items[i].productName;
+              const primeraPalabra = nombre.replace(/^\d+\s+/, "").split(" ")[0];
+              try {
+                const inp = encodeURIComponent(JSON.stringify({ json: { termino: primeraPalabra, nombreProveedor: provNombre } }));
+                const res = await fetch(`/api/trpc/confirmaciones.buscarArticulo?input=${inp}`);
+                const data = await res.json();
+                const arts = data?.result?.data?.json || data?.result?.data || [];
+                if (arts.length > 0) {
+                  setProductosEmparejados(prev => ({ ...prev, [arts[0].nombre]: nombre }));
+                  setItems(prev => prev.map((item, idx) =>
+                    idx === i ? { ...item, productName: arts[0].nombre } : item
+                  ));
+                }
+              } catch {}
+            }
           } else {
             toast.error("No se pudieron extraer productos de la imagen");
           }
