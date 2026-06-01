@@ -850,14 +850,15 @@ class Inventarios365Service {
     const xsrfDecoded = this.xsrfToken ? decodeURIComponent(this.xsrfToken) : "";
     diagnostico.pruebas = {};
 
-    // Registrar con TODOS los nombres de fecha y LEER el producto de vuelta
+    // Registrar normal, luego probar endpoints para actualizar vencimiento por separado
     const prodTest = productos[0];
     const fechaTest = "2029-03-15";
-    const replicaExacta: any = {
+    const numComp = `REPLICA-${Date.now()}`;
+    const baseReg: any = {
       idproveedor: 0,
       idalmacen: 1,
       tipo_comprobante: "FACTURA",
-      num_comprobante: `REPLICA-${Date.now()}`,
+      num_comprobante: numComp,
       impuesto: 0.18,
       total: 4,
       data: [{
@@ -871,44 +872,54 @@ class Inventarios365Service {
         unidad_x_paquete: 1,
         fecha_vencimiento: fechaTest,
         vencimiento: fechaTest,
-        fecha_vto: fechaTest,
-        fechaVencimiento: fechaTest,
         cantidad: 1,
       }],
     };
-    diagnostico.replicaPayload = replicaExacta;
+    const hdrs = {
+      Cookie: cookie,
+      "X-XSRF-TOKEN": xsrfDecoded,
+      "X-CSRF-TOKEN": this.csrfToken || "",
+      "X-Requested-With": "XMLHttpRequest",
+      "Content-Type": "application/json",
+      Referer: `${BASE_URL}/main`,
+    };
     try {
-      const resp = await this.client.post("/ingreso/registrar", replicaExacta, {
-        headers: {
-          Cookie: cookie,
-          "X-XSRF-TOKEN": xsrfDecoded,
-          "X-CSRF-TOKEN": this.csrfToken || "",
-          "X-Requested-With": "XMLHttpRequest",
-          "Content-Type": "application/json",
-          Referer: `${BASE_URL}/main`,
-        },
-        maxRedirects: 0,
-        validateStatus: () => true,
+      const resp = await this.client.post("/ingreso/registrar", baseReg, {
+        headers: hdrs, maxRedirects: 0, validateStatus: () => true,
       });
-      diagnostico.pruebas["REGISTRO"] = {
-        comprobante: replicaExacta.num_comprobante,
-        producto: prodTest.nombre,
-        status: resp.status,
-        data: resp.data,
-      };
+      diagnostico.pruebas["1_REGISTRO"] = { comprobante: numComp, status: resp.status, data: resp.data };
+    } catch (e: any) {
+      diagnostico.pruebas["1_REGISTRO"] = { error: e.message };
+    }
 
-      // Leer el producto de vuelta para ver si guardó la fecha
-      await new Promise(r => setTimeout(r, 1500));
+    // Probar endpoints candidatos para guardar el vencimiento del artículo
+    const endpointsVcto = [
+      { url: "/articulo/actualizarVencimiento", body: { idarticulo: prodTest.id, vencimiento: fechaTest } },
+      { url: "/articulo/editar", body: { id: prodTest.id, vencimiento: fechaTest } },
+      { url: "/articulo/actualizar", body: { id: prodTest.id, vencimiento: fechaTest } },
+      { url: "/inventario/actualizarVencimiento", body: { idarticulo: prodTest.id, vencimiento: fechaTest } },
+    ];
+    for (const ep of endpointsVcto) {
+      try {
+        const r = await this.client.post(ep.url, ep.body, { headers: hdrs, maxRedirects: 0, validateStatus: () => true });
+        diagnostico.pruebas[`2_${ep.url}`] = { status: r.status, data: typeof r.data === "string" ? r.data.substring(0, 100) : r.data };
+      } catch (e: any) {
+        diagnostico.pruebas[`2_${ep.url}`] = { error: e.message };
+      }
+    }
+
+    // Leer el producto al final
+    await new Promise(r => setTimeout(r, 1000));
+    try {
       const artDespues = await this.listarArticulos(prodTest.nombre.split(" ")[0], "");
       const encontrado = artDespues.find((a: any) => a.id === prodTest.id);
       diagnostico.productoTrasRegistro = encontrado ? {
         nombre: encontrado.nombre,
         vencimiento: (encontrado as any).vencimiento,
-        fecha_vencimiento: (encontrado as any).fecha_vencimiento,
         stock: (encontrado as any).stock,
       } : "no encontrado";
     } catch (e: any) {
-      diagnostico.pruebas["REGISTRO"] = { error: e.message };
+      diagnostico.errorLectura = e.message;
     }
 
         return diagnostico;
