@@ -411,6 +411,12 @@ INSTRUCCIONES GENERALES:
         syncIngresoId: syncIngresoId2,
       };
     }),
+
+  delete: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ ctx, input }) => {
+      return db.deletePurchase(input.id, ctx.user.id);
+    }),
 });
 
 // ─── Transfers Router ────────────────────────────────────────────────────────

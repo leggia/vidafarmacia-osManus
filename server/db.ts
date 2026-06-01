@@ -480,6 +480,18 @@ export async function getPurchaseById(purchaseId: number) {
   return getPurchaseWithItems(purchaseId);
 }
 
+// ─── Delete Purchase ───
+export async function deletePurchase(purchaseId: number, userId: number) {
+  const db = await getDb();
+  if (!db) return { success: false };
+  // Borrar items primero (FK), luego la compra
+  await db.delete(purchaseItems).where(eq(purchaseItems.purchaseId, purchaseId));
+  await db
+    .delete(purchases)
+    .where(and(eq(purchases.id, purchaseId), eq(purchases.userId, userId)));
+  return { success: true };
+}
+
 // ─── Update Purchase Sync Error ───
 export async function updatePurchaseSyncError(purchaseId: number, errorMsg: string) {
   const db = await getDb();

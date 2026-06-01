@@ -4,7 +4,7 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
   Plus, CheckCircle2, Image as ImageIcon, Loader2,
-  RefreshCw, AlertCircle, ExternalLink, Package, Zap
+  RefreshCw, AlertCircle, ExternalLink, Package, Zap, Trash2
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
@@ -48,6 +48,21 @@ export default function Compras() {
       { id },
       { onSettled: () => toast.dismiss(`sync-${id}`) }
     );
+  };
+
+  const deleteMutation = trpc.purchases.delete.useMutation({
+    onSuccess: () => {
+      toast.success("Compra eliminada de la lista");
+      utils.purchases.list.invalidate();
+      utils.dashboard.stats.invalidate();
+    },
+    onError: (err) => toast.error(err.message || "Error al eliminar"),
+  });
+
+  const handleDelete = (id: number, receiptNumber: string) => {
+    if (confirm(`¿Eliminar la compra ${receiptNumber || "#" + id} de la lista? Esto NO la borra de inventarios365.com, solo de esta lista local.`)) {
+      deleteMutation.mutate({ id });
+    }
   };
 
   // Reintentar sincronización para todas las compras con error
@@ -241,6 +256,18 @@ export default function Compras() {
                         <span className="hidden sm:inline">Ver en inv365</span>
                       </a>
                     )}
+
+                    {/* Eliminar de la lista */}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => handleDelete(p.id, p.receiptNumber)}
+                      disabled={deleteMutation.isPending}
+                      className="gap-1 text-xs text-red-600 hover:text-red-800 hover:bg-red-50"
+                      title="Eliminar de la lista (no afecta inventarios365)"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                    </Button>
                   </div>
                 </div>
               </CardContent>

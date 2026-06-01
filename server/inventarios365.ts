@@ -852,19 +852,24 @@ class Inventarios365Service {
     };
     diagnostico.payload = payload;
     diagnostico.numComprobante = payload.num_comprobante;
-
     diagnostico.pruebas = {};
 
-    // Probar diferentes combinaciones de endpoint + nombre de campo
-    const combos = [
-      { endpoint: "/inventarios/registrar", campo: "inventarios" },
-      { endpoint: "/ingreso/registrar", campo: "data" },
-      { endpoint: "/ingreso/registrar", campo: "detalle" },
-      { endpoint: "/compra/registrar", campo: "inventarios" },
-    ];
-
-    for (const combo of combos) {
-      const numComp = `DIAG-${Date.now()}-${Math.floor(Math.random()*1000)}`;
+    // Probar el endpoint correcto con diferentes nombres de campo de fecha
+    const camposFecha = ["fecha_vencimiento", "vencimiento", "fecha_vto", "fechaVencimiento", "fecha_caducidad"];
+    for (const campoFecha of camposFecha) {
+      const numComp = `DIAGFV-${Date.now()}-${Math.floor(Math.random()*1000)}`;
+      const detalle: any = {
+        idarticulo: art.id,
+        idalmacen: 1,
+        codigo: art.codigo,
+        articulo: art.nombre,
+        precio: "10.0000",
+        precio_paquete: "0.0000",
+        precio_venta: "0.0000",
+        unidad_x_paquete: 1,
+        cantidad: 1,
+      };
+      detalle[campoFecha] = "12/2027"; // fecha de prueba MM/YYYY
       const base: any = {
         idproveedor: 97,
         idalmacen: 1,
@@ -872,11 +877,10 @@ class Inventarios365Service {
         num_comprobante: numComp,
         impuesto: 0,
         total: 10,
+        data: [detalle],
       };
-      base[combo.campo] = payload.data;
-      const key = `${combo.endpoint} [${combo.campo}]`;
       try {
-        const resp = await this.client.post(combo.endpoint, base, {
+        const resp = await this.client.post("/ingreso/registrar", base, {
           headers: {
             Cookie: cookie,
             "X-XSRF-TOKEN": xsrfDecoded,
@@ -888,13 +892,13 @@ class Inventarios365Service {
           maxRedirects: 0,
           validateStatus: () => true,
         });
-        diagnostico.pruebas[key] = {
+        diagnostico.pruebas[`fecha:${campoFecha}`] = {
           numComprobante: numComp,
           status: resp.status,
           data: resp.data,
         };
       } catch (e: any) {
-        diagnostico.pruebas[key] = { error: e.message };
+        diagnostico.pruebas[`fecha:${campoFecha}`] = { error: e.message };
       }
     }
 

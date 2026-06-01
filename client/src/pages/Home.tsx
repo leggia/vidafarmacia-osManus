@@ -118,7 +118,8 @@ export default function Home() {
                 {stats.recentPurchases.map((p: any) => (
                   <div
                     key={p.id}
-                    className="flex items-center justify-between py-2 border-b border-border last:border-0"
+                    className="flex items-center justify-between py-2 border-b border-border last:border-0 cursor-pointer hover:bg-muted/50 rounded px-2 -mx-2 transition-colors"
+                    onClick={() => setLocation("/compras")}
                   >
                     <div className="flex items-center gap-3">
                       <div className="h-2 w-2 rounded-full bg-primary" />
