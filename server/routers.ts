@@ -640,6 +640,14 @@ const confirmacionesRouter = router({
       return { success: true };
     }),
 
+  // Buscar confirmación guardada para un producto específico
+  buscarConfirmacion: publicProcedure
+    .input(z.object({ proveedor: z.string(), nombreFactura: z.string() }))
+    .query(async ({ input }) => {
+      const { confirmacionesService } = await import("./confirmaciones");
+      return await confirmacionesService.buscar(input.proveedor, input.nombreFactura);
+    }),
+
   // Buscar artículo en sistema para confirmar manualmente
   buscarArticulo: publicProcedure
     .input(z.object({ termino: z.string(), idProveedor: z.number().optional(), nombreProveedor: z.string().optional() }))

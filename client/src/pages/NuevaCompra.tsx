@@ -29,6 +29,7 @@ import { toast } from "sonner";
 
 interface ExtractedItem {
   productName: string;
+  nombreFacturaOriginal?: string; // Nombre original que extrajo el LLM (para confirmaciones)
   quantity: number;
   unitCost: number;
   subtotal: number;
@@ -154,9 +155,12 @@ export default function NuevaCompra() {
             mimeType: file.type,
           });
           if (result.items && result.items.length > 0) {
-            const mappedItems = result.items.map((i: any) => ({ ...i, expiryDate: convertExpiryDate(i.expiryDate) || null }));
+            const mappedItems = result.items.map((i: any) => ({
+              ...i,
+              nombreFacturaOriginal: i.productName,
+              expiryDate: convertExpiryDate(i.expiryDate) || null,
+            }));
         setItems(mappedItems);
-        // Auto-mostrar columna de vencimiento si hay fechas extraídas
         if (mappedItems.some((i: any) => i.expiryDate)) {
           setShowExpiry(true);
         }
@@ -164,20 +168,19 @@ export default function NuevaCompra() {
             if (result.receiptNumber) setReceiptNumber(result.receiptNumber);
             setExtracted(true);
             toast.success(`Se extrajeron ${result.items.length} productos de la imagen`);
-            // Pre-buscar matches para mostrar checks antes de sincronizar
+            // Pre-buscar SOLO confirmaciones guardadas (match seguro, no por similitud)
             const provNombre = result.supplier || "";
             for (let i = 0; i < result.items.length; i++) {
               const nombre = result.items[i].productName;
-              const primeraPalabra = nombre.replace(/^\d+\s+/, "").split(" ")[0];
               try {
-                const inp = encodeURIComponent(JSON.stringify({ json: { termino: primeraPalabra, nombreProveedor: provNombre } }));
-                const res = await fetch(`/api/trpc/confirmaciones.buscarArticulo?input=${inp}`);
+                const inp = encodeURIComponent(JSON.stringify({ json: { proveedor: provNombre, nombreFactura: nombre } }));
+                const res = await fetch(`/api/trpc/confirmaciones.buscarConfirmacion?input=${inp}`);
                 const data = await res.json();
-                const arts = data?.result?.data?.json || data?.result?.data || [];
-                if (arts.length > 0) {
-                  setProductosEmparejados(prev => ({ ...prev, [arts[0].nombre]: nombre }));
+                const conf = data?.result?.data?.json || data?.result?.data || null;
+                if (conf && conf.nombreSistema) {
+                  setProductosEmparejados(prev => ({ ...prev, [conf.nombreSistema]: nombre }));
                   setItems(prev => prev.map((item, idx) =>
-                    idx === i ? { ...item, productName: arts[0].nombre } : item
+                    idx === i ? { ...item, productName: conf.nombreSistema } : item
                   ));
                 }
               } catch {}
@@ -647,7 +650,7 @@ export default function NuevaCompra() {
                                 size="sm"
                                 className="h-7 text-xs bg-green-600 hover:bg-green-700 text-white ml-2 whitespace-nowrap"
                                 onClick={async () => {
-                                  const nombreFactura = productosEmparejados[item.productName] || item.productName;
+                                  const nombreFactura = item.nombreFacturaOriginal || productosEmparejados[item.productName] || item.productName;
                                   await confirmarEmparejamiento.mutateAsync({
                                     proveedor: supplier || "Desconocido",
                                     nombreFactura: nombreFactura,
