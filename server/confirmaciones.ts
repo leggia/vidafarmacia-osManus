@@ -55,15 +55,19 @@ class ConfirmacionesService {
       const db = await getDb();
       if (!db) return;
 
-      // Verificar si ya existe
-      const rows = await db.select().from(confirmacionesTable)
-        .where(and(
-          eq(confirmacionesTable.proveedor, proveedor),
-          eq(confirmacionesTable.nombreFactura, nombreFactura)
-        ));
+      const provNorm = this.normalizar(proveedor);
+      const nombreNorm = this.normalizar(nombreFactura);
 
-      if (rows.length > 0) {
-        // Actualizar existente
+      // Buscar TODAS las confirmaciones y comparar normalizadas
+      // (evita duplicados cuando el nombre tiene variaciones de mayúsculas/tildes/espacios)
+      const todas = await db.select().from(confirmacionesTable);
+      const existente = todas.find(row =>
+        this.normalizar(row.proveedor) === provNorm &&
+        this.normalizar(row.nombreFactura) === nombreNorm
+      );
+
+      if (existente) {
+        // Actualizar la existente (corrige emparejamientos previos incorrectos)
         await db.update(confirmacionesTable)
           .set({
             articuloId: articulo.id,
@@ -71,7 +75,8 @@ class ConfirmacionesService {
             articuloCodigo: articulo.codigo,
             valido: 1,
           })
-          .where(eq(confirmacionesTable.id, rows[0].id));
+          .where(eq(confirmacionesTable.id, existente.id));
+        console.log(`[Confirmaciones] 🔄 Actualizado: "${nombreFactura}" (${proveedor}) → "${articulo.nombre}" (ID:${articulo.id})`);
       } else {
         // Insertar nuevo
         await db.insert(confirmacionesTable).values({
@@ -82,9 +87,8 @@ class ConfirmacionesService {
           articuloCodigo: articulo.codigo,
           valido: 1,
         });
+        console.log(`[Confirmaciones] 💾 Guardado nuevo: "${nombreFactura}" (${proveedor}) → "${articulo.nombre}" (ID:${articulo.id})`);
       }
-
-      console.log(`[Confirmaciones] 💾 Guardado: "${nombreFactura}" (${proveedor}) → "${articulo.nombre}" (ID:${articulo.id})`);
     } catch (error) {
       console.error("[Confirmaciones] Error guardando:", error);
     }
