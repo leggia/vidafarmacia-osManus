@@ -90,18 +90,17 @@ export default function NuevaCompra() {
   const [buscando, setBuscando] = useState<Record<number, boolean>>({});
   const [filaEmparejando, setFilaEmparejando] = useState<number | null>(null);
 
+  const utils = trpc.useUtils();
+
   // Auto-buscar cuando aparecen productos no encontrados
   const buscarProducto = async (idx: number, term: string, proveedorNombre: string) => {
     if (!term || term.length < 3) return;
     setBuscando(prev => ({ ...prev, [idx]: true }));
     try {
-      const input = encodeURIComponent(JSON.stringify({ json: { termino: term, nombreProveedor: proveedorNombre } }));
-      const res = await fetch(`/api/trpc/confirmaciones.buscarArticulo?input=${input}`, {
-        headers: { "Content-Type": "application/json" }
+      const resultados = await utils.confirmaciones.buscarArticulo.fetch({
+        termino: term,
+        nombreProveedor: proveedorNombre,
       });
-      const data = await res.json();
-      // tRPC v11 response format
-      const resultados = data?.result?.data?.json || data?.result?.data || [];
       setResultadosBusqueda(prev => ({ ...prev, [idx]: Array.isArray(resultados) ? resultados : [] }));
     } catch (e) {
       console.error("Error buscando:", e);
@@ -109,7 +108,6 @@ export default function NuevaCompra() {
     setBuscando(prev => ({ ...prev, [idx]: false }));
   };
 
-  const utils = trpc.useUtils();
   const uploadAndExtract = trpc.purchases.uploadAndExtract.useMutation();
   const createPurchase = trpc.purchases.create.useMutation();
   const confirmarEmparejamiento = trpc.confirmaciones.confirmar.useMutation();
@@ -173,10 +171,10 @@ export default function NuevaCompra() {
             for (let i = 0; i < result.items.length; i++) {
               const nombre = result.items[i].productName;
               try {
-                const inp = encodeURIComponent(JSON.stringify({ json: { proveedor: provNombre, nombreFactura: nombre } }));
-                const res = await fetch(`/api/trpc/confirmaciones.buscarConfirmacion?input=${inp}`);
-                const data = await res.json();
-                const conf = data?.result?.data?.json || data?.result?.data || null;
+                const conf = await utils.confirmaciones.buscarConfirmacion.fetch({
+                  proveedor: provNombre,
+                  nombreFactura: nombre,
+                });
                 if (conf && conf.nombreSistema) {
                   setProductosEmparejados(prev => ({ ...prev, [conf.nombreSistema]: nombre }));
                   setItems(prev => prev.map((item, idx) =>
