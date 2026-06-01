@@ -154,60 +154,47 @@ INSTRUCCIONES GENERALES:
         throw new Error(`No se pudo procesar archivo: ${fileError.message}`);
       }
 
-      const llmResult = await invokeLLM({
-        messages: [
-          {
-            role: "system",
-            content:
-              "Eres un asistente experto en lectura de facturas farmacéuticas bolivianas. Tienes amplio conocimiento de presentaciones de medicamentos (comprimidos, cápsulas, jarabes, gotas, inyectables). Cuando una factura muestra cajas con presentación (ej: x10 comp, x30 caps), SIEMPRE multiplicas cajas por unidades para obtener el total real. Extraes datos con alta precisión. Responde SOLO en JSON válido.",
-          },
-          { role: "user", content: userContent },
-        ],
-        response_format: {
-          type: "json_object",
-        },
-      });
-
       let extracted: any = {
         supplier: "",
         receiptNumber: "",
         items: [],
       };
 
-      // Reintentar hasta 3 veces si falla el parsing
+      // Reintentar hasta 3 veces si falla el parsing o el LLM (cubre error 400 por tokens)
       const llmMessages = [
         {
           role: "system" as const,
           content:
-            "Eres un asistente experto en lectura de facturas farmacéuticas bolivianas. Tienes amplio conocimiento de presentaciones de medicamentos (comprimidos, cápsulas, jarabes, gotas, inyectables). Cuando una factura muestra cajas con presentación (ej: x10 comp, x30 caps), SIEMPRE multiplicas cajas por unidades para obtener el total real. Extraes datos con alta precisión. Responde SOLO en JSON válido.",
+            "Eres un asistente experto en lectura de facturas farmacéuticas bolivianas. Tienes amplio conocimiento de presentaciones de medicamentos (comprimidos, cápsulas, jarabes, gotas, inyectables). Cuando una factura muestra cajas con presentación (ej: x10 comp, x30 caps), SIEMPRE multiplicas cajas por unidades para obtener el total real. Extraes datos con alta precisión. Responde SOLO en JSON válido y completo.",
         },
         { role: "user" as const, content: userContent },
       ];
+      let extraccionExitosa = false;
       for (let intento = 0; intento < 3; intento++) {
         try {
-          let resultToUse = llmResult;
           if (intento > 0) {
             console.log(`[LLM] Reintento ${intento} de extracción...`);
             await new Promise(r => setTimeout(r, 1000 * intento));
-            resultToUse = await invokeLLM({
-              messages: llmMessages,
-              response_format: { type: "json_object" },
-            });
           }
+          const resultToUse = await invokeLLM({
+            messages: llmMessages,
+            response_format: { type: "json_object" },
+          });
           const rawContent = resultToUse.choices[0]?.message?.content;
           console.log(`[LLM] Respuesta raw (intento ${intento + 1}):`, String(rawContent || "").substring(0, 200));
           if (typeof rawContent === "string" && rawContent.trim()) {
-            // Limpiar posibles bloques markdown
             const clean = rawContent.replace(/```json|```/g, "").trim();
             extracted = JSON.parse(clean);
-            break; // Éxito
+            extraccionExitosa = true;
+            break;
           }
-        } catch (e) {
-          console.error(`[LLM] Error parsing intento ${intento + 1}:`, e);
-          if (intento === 2) {
-            console.error("[LLM] Todos los intentos fallaron, usando extracción vacía");
-          }
+        } catch (e: any) {
+          console.error(`[LLM] Error intento ${intento + 1}:`, e?.message || e);
         }
+      }
+
+      if (!extraccionExitosa) {
+        throw new Error("No se pudo extraer la factura. Puede tener demasiados productos o baja calidad de imagen. Intenta de nuevo o usa una foto más clara.");
       }
 
       console.log("[LLM] Extracción completada:", JSON.stringify(extracted, null, 2).substring(0, 500));
