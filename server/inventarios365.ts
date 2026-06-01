@@ -49,7 +49,7 @@ export interface RegistrarCompraPayload {
   num_comprobante: string;
   impuesto: number;
   total: number;
-  inventarios: DetalleCompra[];
+  data: DetalleCompra[];
 }
 
 // Estructura de artículo devuelto por la API
@@ -643,17 +643,17 @@ class Inventarios365Service {
         num_comprobante: params.numComprobante,
         impuesto: 0,
         total: totalFinal,
-        inventarios: arrayDetalle,
+        data: arrayDetalle,
       };
 
-      console.log(`[Inventarios365] POST /inventarios/registrar → ${payload.inventarios?.length || 0} productos, total: ${payload.total}`);
+      console.log(`[Inventarios365] POST /ingreso/registrar → ${payload.data?.length || 0} productos, total: ${payload.total}`);
 
       const respData = await this.post<{ id?: number; error?: string; message?: string }>(
-        "/inventarios/registrar",
+        "/ingreso/registrar",
         payload
       );
 
-      console.log(`[Inventarios365] POST /inventarios/registrar response:`, JSON.stringify(respData));
+      console.log(`[Inventarios365] POST /ingreso/registrar response:`, JSON.stringify(respData));
 
       if (respData?.error) {
         console.error(`[Inventarios365] Error del servidor:`, respData.error);
@@ -871,7 +871,7 @@ class Inventarios365Service {
         impuesto: 0,
         total: 10,
       };
-      base[combo.campo] = payload.inventarios;
+      base[combo.campo] = payload.data;
       const key = `${combo.endpoint} [${combo.campo}]`;
       try {
         const resp = await this.client.post(combo.endpoint, base, {
