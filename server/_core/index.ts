@@ -58,6 +58,22 @@ async function startServer() {
   });
 
   // Endpoint de diagnóstico — registra compra de prueba y devuelve respuesta cruda
+  // Endpoint para limpiar confirmaciones incorrectas
+  app.post("/api/admin/clear-confirmaciones", async (_req, res) => {
+    try {
+      const db = await getDb();
+      if (db) {
+        await db.execute(sql`DELETE FROM confirmaciones`);
+        console.log("[Admin] Confirmaciones limpiadas");
+        res.json({ success: true, message: "Confirmaciones limpiadas. Vuelve a emparejar." });
+      } else {
+        res.status(500).json({ success: false, message: "DB no disponible" });
+      }
+    } catch (e: any) {
+      res.status(500).json({ success: false, message: e.message });
+    }
+  });
+
   app.get("/api/admin/test-registro", async (_req, res) => {
     try {
       const result = await inventarios365.diagnosticoRegistro();

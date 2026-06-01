@@ -68,16 +68,26 @@ Extrae la siguiente información en formato JSON:
 {
   "supplier": "nombre del proveedor si es visible",
   "receiptNumber": "número de comprobante/factura si es visible",
+  "totalFactura": total_general_de_la_factura_decimal,
   "items": [
     {
       "productName": "nombre comercial del medicamento SIN códigos numéricos del proveedor",
       "quantity": número_entero_de_unidades_TOTALES,
       "unitCost": costo_unitario_decimal_por_unidad,
-      "subtotal": subtotal_decimal,
+      "subtotal": subtotal_de_la_linea_CON_descuento_aplicado,
       "expiryDate": "fecha de vencimiento en formato MM/YYYY o DD/MM/YYYY si aparece, sino null"
     }
   ]
 }
+
+INSTRUCCIONES CRÍTICAS PARA PRECIOS (MUY IMPORTANTE):
+- Cada línea de la factura tiene: CANTIDAD, PRECIO UNITARIO, y un IMPORTE/SUBTOTAL de esa línea
+- El "subtotal" es el IMPORTE TOTAL de esa línea (lo que aparece en la columna derecha de cada fila)
+- El "unitCost" SIEMPRE debe ser: subtotal_de_la_linea ÷ quantity
+- NUNCA pongas el subtotal/importe como unitCost. Si una línea dice cantidad 20 e importe 400, entonces unitCost = 400/20 = 20
+- Si hay columna de DESCUENTO o "Dscto", el subtotal debe ser DESPUÉS del descuento (el importe neto que realmente se paga)
+- Ejemplo descuento: si precio lista 31, cantidad 6, importe con descuento 150 → unitCost = 150/6 = 25
+- VERIFICACIÓN: la suma de todos los "subtotal" debe ser aproximadamente igual al "totalFactura". Si no cuadra, revisa los precios
 
 INSTRUCCIONES PARA NOMBRE DEL PRODUCTO:
 - Extrae SOLO el nombre comercial. Si la fila tiene un código numérico al inicio (ej: "400180 QUETOROL 20 TAB"), extrae SOLO "QUETOROL 20 TAB" sin el código.
@@ -202,22 +212,51 @@ INSTRUCCIONES GENERALES:
 
       console.log("[LLM] Extracción completada:", JSON.stringify(extracted, null, 2).substring(0, 500));
 
+      // Validación y corrección de precios usando subtotal de cada línea
+      const itemsCorregidos = (extracted.items || []).map((item: any) => {
+        const cantidad = Math.max(1, Math.round(item.quantity || 1));
+        const subtotal = Math.max(0, item.subtotal || 0);
+        let unitCost = Math.max(0, item.unitCost || 0);
+
+        // Si tenemos subtotal y cantidad, el precio unitario REAL es subtotal/cantidad
+        // Esto corrige el caso donde el LLM confunde subtotal con unitCost
+        if (subtotal > 0 && cantidad > 0) {
+          const unitCostCalculado = subtotal / cantidad;
+          // Si el unitCost difiere mucho del calculado, usar el calculado
+          // (el subtotal es más confiable porque incluye descuentos)
+          if (Math.abs(unitCost - unitCostCalculado) > 0.01) {
+            console.log(`[Precio] "${item.productName}": unitCost ${unitCost} → ${unitCostCalculado.toFixed(4)} (subtotal ${subtotal}/${cantidad})`);
+            unitCost = unitCostCalculado;
+          }
+        }
+
+        return {
+          productName: item.productName || "",
+          productNameFactura: item.productName || "",
+          quantity: cantidad,
+          unitCost: Number(unitCost.toFixed(4)),
+          subtotal: subtotal > 0 ? subtotal : Number((cantidad * unitCost).toFixed(2)),
+          expiryDate: item.expiryDate || null,
+        };
+      });
+
+      // Validar suma contra total de factura
+      const sumaSubtotales = itemsCorregidos.reduce((acc: number, it: any) => acc + it.subtotal, 0);
+      const totalFactura = extracted.totalFactura || 0;
+      if (totalFactura > 0 && Math.abs(sumaSubtotales - totalFactura) > totalFactura * 0.05) {
+        console.warn(`[Precio] ⚠️ Suma de subtotales (${sumaSubtotales.toFixed(2)}) no coincide con total factura (${totalFactura}). Revisar precios.`);
+      }
+
       return {
         imageUrl,
         imageKey,
         supplier: extracted.supplier || "",
         receiptNumber: extracted.receiptNumber || "",
-        items: (extracted.items || []).map((item: any) => ({
-          productName: item.productName || "",
-          productNameFactura: item.productName || "", // Nombre original de la factura
-          quantity: Math.max(1, Math.round(item.quantity || 1)),
-          unitCost: Math.max(0, item.unitCost || 0),
-          subtotal: Math.max(
-            0,
-            item.subtotal || (item.quantity || 1) * (item.unitCost || 0)
-          ),
-          expiryDate: item.expiryDate || null,
-        })),
+        totalFactura: totalFactura,
+        avisoTotal: (totalFactura > 0 && Math.abs(sumaSubtotales - totalFactura) > totalFactura * 0.05)
+          ? `La suma de productos (${sumaSubtotales.toFixed(2)}) no coincide con el total de la factura (${totalFactura}). Revisa los precios.`
+          : null,
+        items: itemsCorregidos,
       };
     }),
 

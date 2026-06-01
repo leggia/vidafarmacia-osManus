@@ -352,13 +352,15 @@ class Inventarios365Service {
       // 0. Buscar en confirmaciones aprendidas (máxima prioridad)
       if (proveedor) {
         const { confirmacionesService } = await import("./confirmaciones");
-        const confirmacion = await confirmacionesService.buscar(proveedor, nombreBuscar);
-        if (!confirmacion) await confirmacionesService.buscar(proveedor, nombre); // fallback nombre original
+        let confirmacion = await confirmacionesService.buscar(proveedor, nombreBuscar);
+        if (!confirmacion) confirmacion = await confirmacionesService.buscar(proveedor, nombre);
         if (confirmacion) {
+          console.log(`[Confirmaciones] ✅ "${nombreBuscar}" (${proveedor}) → "${confirmacion.nombreSistema}" (ID:${confirmacion.id})`);
           return {
             id: confirmacion.id,
             nombre: confirmacion.nombreSistema,
             codigo: confirmacion.codigo,
+            _score: 1.0,
           } as any;
         }
       }
