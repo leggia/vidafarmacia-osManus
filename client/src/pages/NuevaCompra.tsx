@@ -216,6 +216,14 @@ export default function NuevaCompra() {
         toast.error("Agregue al menos un producto");
         return;
       }
+      // Solo al confirmar (sincronizar): exigir que todos estén emparejados
+      if (confirmDirectly) {
+        const sinEmparejar = items.filter(it => productosEmparejados[it.productName] === undefined);
+        if (sinEmparejar.length > 0) {
+          toast.error(`No se puede registrar: ${sinEmparejar.length} producto(s) sin emparejar. Empareja todos antes de confirmar la compra completa.`, { duration: 6000 });
+          return;
+        }
+      }
       setIsSubmitting(true);
       try {
         const totalAmount = items.reduce((sum, i) => sum + i.subtotal, 0);
@@ -301,7 +309,7 @@ export default function NuevaCompra() {
       }
       setIsSubmitting(false);
     },
-    [branchId, items, receiptNumber, receiptType, supplier, almacenNombre, createPurchase, setLocation, uploadAndExtract.data, utils]
+    [branchId, items, receiptNumber, receiptType, supplier, almacenNombre, createPurchase, setLocation, uploadAndExtract.data, utils, productosEmparejados]
   );
 
   const updateItem = (index: number, field: keyof ExtractedItem, value: any) => {
@@ -318,6 +326,13 @@ export default function NuevaCompra() {
   const removeItem = (index: number) => {
     setItems((prev) => prev.filter((_, i) => i !== index));
   };
+
+  // Un producto está emparejado si su nombre actual existe como clave en productosEmparejados
+  // (productosEmparejados mapea nombreSistema → nombreFactura)
+  const itemEmparejado = (item: ExtractedItem) =>
+    productosEmparejados[item.productName] !== undefined;
+  const todosEmparejados = items.length > 0 && items.every(itemEmparejado);
+  const cantidadSinEmparejar = items.filter(it => !itemEmparejado(it)).length;
 
   const addEmptyItem = () => {
     setItems((prev) => [
@@ -730,8 +745,9 @@ export default function NuevaCompra() {
               </Button>
               <Button
                 onClick={() => handleSubmit(true)}
-                disabled={isSubmitting}
-                className="gap-2 uppercase tracking-wider text-xs font-semibold bg-green-700 hover:bg-green-800 text-white"
+                disabled={isSubmitting || !todosEmparejados}
+                title={!todosEmparejados ? `Faltan ${cantidadSinEmparejar} producto(s) por emparejar` : ""}
+                className="gap-2 uppercase tracking-wider text-xs font-semibold bg-green-700 hover:bg-green-800 text-white disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isSubmitting ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -741,6 +757,11 @@ export default function NuevaCompra() {
                 Confirmar y Sincronizar
               </Button>
             </div>
+          )}
+          {extracted && !todosEmparejados && (
+            <p className="text-xs text-amber-600 dark:text-amber-400 text-right mt-2">
+              ⚠️ Faltan {cantidadSinEmparejar} producto(s) por emparejar. Usa la lupa 🔍 en cada fila para emparejarlos con el sistema antes de registrar la compra completa.
+            </p>
           )}
         </div>
       </div>
