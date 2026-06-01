@@ -665,6 +665,7 @@ class Inventarios365Service {
       };
 
       console.log(`[Inventarios365] POST /ingreso/registrar → ${payload.data?.length || 0} productos, total: ${payload.total}`);
+      console.log(`[Fecha] Payload fechas:`, JSON.stringify(payload.data?.map((d: any) => ({ articulo: d.articulo, fecha_vencimiento: d.fecha_vencimiento }))));
 
       const respData = await this.post<{ id?: number; error?: string; message?: string }>(
         "/ingreso/registrar",
