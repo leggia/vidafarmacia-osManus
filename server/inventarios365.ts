@@ -849,65 +849,55 @@ class Inventarios365Service {
     const xsrfDecoded = this.xsrfToken ? decodeURIComponent(this.xsrfToken) : "";
     diagnostico.pruebas = {};
 
-    // Probar combinaciones con LOTE + fecha (hipótesis: sistema requiere lote para guardar vcto)
-    const pruebasConfig = [
-      { campos: { fecha_vencimiento: "2027-12-31", lote: "TEST01" } },
-      { campos: { fecha_vencimiento: "2027-12-31", num_lote: "TEST02" } },
-      { campos: { vencimiento: "2027-12-31", lote: "TEST03" } },
-      { campos: { fecha_vencimiento: "31/12/2027", lote: "TEST04" } },
-      { campos: { fecha_vto: "2027-12-31", lote: "TEST05" } },
-    ];
-
-    for (let i = 0; i < pruebasConfig.length; i++) {
-      const cfg = pruebasConfig[i];
-      const prod = productos[i] || productos[0];
-      const numComp = `FV${i + 1}-${Object.keys(cfg.campos).join("-")}`;
-      const detalle: any = {
-        idarticulo: prod.id,
+    // RÉPLICA EXACTA del payload manual que SÍ guardó la fecha (NOVADOL idarticulo 4790)
+    // Comparamos para encontrar la diferencia con nuestro registro
+    const prodTest = productos[0];
+    const replicaExacta: any = {
+      idproveedor: 0,
+      idalmacen: 1,
+      tipo_comprobante: "FACTURA",
+      num_comprobante: `REPLICA-${Date.now()}`,
+      impuesto: 0.18,
+      total: 4,
+      data: [{
+        idarticulo: prodTest.id,
         idalmacen: 1,
-        codigo: prod.codigo,
-        articulo: prod.nombre,
-        precio: "1.0000",
+        codigo: prodTest.codigo,
+        articulo: prodTest.nombre,
+        precio: "4.0000",
         precio_paquete: "0.0000",
-        precio_venta: "0.0000",
+        precio_venta: "5.0000",
         unidad_x_paquete: 1,
+        fecha_vencimiento: "2028-05-31",
         cantidad: 1,
+      }],
+    };
+    diagnostico.replicaPayload = replicaExacta;
+    try {
+      const resp = await this.client.post("/ingreso/registrar", replicaExacta, {
+        headers: {
+          Cookie: cookie,
+          "X-XSRF-TOKEN": xsrfDecoded,
+          "X-CSRF-TOKEN": this.csrfToken || "",
+          "X-Requested-With": "XMLHttpRequest",
+          "Content-Type": "application/json",
+          Referer: `${BASE_URL}/main`,
+        },
+        maxRedirects: 0,
+        validateStatus: () => true,
+      });
+      diagnostico.pruebas["REPLICA_EXACTA"] = {
+        comprobante: replicaExacta.num_comprobante,
+        producto: prodTest.nombre,
+        status: resp.status,
+        data: resp.data,
+        instruccion: "Verifica en stock si este producto quedó con fecha 2028-05-31",
       };
-      Object.assign(detalle, cfg.campos);
-      const base: any = {
-        idproveedor: 97,
-        idalmacen: 1,
-        tipo_comprobante: "FACTURA",
-        num_comprobante: numComp,
-        impuesto: 0,
-        total: 1,
-        data: [detalle],
-      };
-      try {
-        const resp = await this.client.post("/ingreso/registrar", base, {
-          headers: {
-            Cookie: cookie,
-            "X-XSRF-TOKEN": xsrfDecoded,
-            "X-CSRF-TOKEN": this.csrfToken || "",
-            "X-Requested-With": "XMLHttpRequest",
-            "Content-Type": "application/json",
-            Referer: `${BASE_URL}/main`,
-          },
-          maxRedirects: 0,
-          validateStatus: () => true,
-        });
-        diagnostico.pruebas[numComp] = {
-          producto: prod.nombre,
-          campos: cfg.campos,
-          status: resp.status,
-          data: resp.data,
-        };
-      } catch (e: any) {
-        diagnostico.pruebas[numComp] = { error: e.message };
-      }
+    } catch (e: any) {
+      diagnostico.pruebas["REPLICA_EXACTA"] = { error: e.message };
     }
 
-    return diagnostico;
+        return diagnostico;
   }
 }
 
