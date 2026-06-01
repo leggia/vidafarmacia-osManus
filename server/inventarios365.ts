@@ -850,9 +850,9 @@ class Inventarios365Service {
     const xsrfDecoded = this.xsrfToken ? decodeURIComponent(this.xsrfToken) : "";
     diagnostico.pruebas = {};
 
-    // RÉPLICA EXACTA del payload manual que SÍ guardó la fecha (NOVADOL idarticulo 4790)
-    // Comparamos para encontrar la diferencia con nuestro registro
+    // Registrar con TODOS los nombres de fecha y LEER el producto de vuelta
     const prodTest = productos[0];
+    const fechaTest = "2029-03-15";
     const replicaExacta: any = {
       idproveedor: 0,
       idalmacen: 1,
@@ -869,7 +869,10 @@ class Inventarios365Service {
         precio_paquete: "0.0000",
         precio_venta: "5.0000",
         unidad_x_paquete: 1,
-        fecha_vencimiento: "2028-05-31",
+        fecha_vencimiento: fechaTest,
+        vencimiento: fechaTest,
+        fecha_vto: fechaTest,
+        fechaVencimiento: fechaTest,
         cantidad: 1,
       }],
     };
@@ -887,15 +890,25 @@ class Inventarios365Service {
         maxRedirects: 0,
         validateStatus: () => true,
       });
-      diagnostico.pruebas["REPLICA_EXACTA"] = {
+      diagnostico.pruebas["REGISTRO"] = {
         comprobante: replicaExacta.num_comprobante,
         producto: prodTest.nombre,
         status: resp.status,
         data: resp.data,
-        instruccion: "Verifica en stock si este producto quedó con fecha 2028-05-31",
       };
+
+      // Leer el producto de vuelta para ver si guardó la fecha
+      await new Promise(r => setTimeout(r, 1500));
+      const artDespues = await this.listarArticulos(prodTest.nombre.split(" ")[0], "");
+      const encontrado = artDespues.find((a: any) => a.id === prodTest.id);
+      diagnostico.productoTrasRegistro = encontrado ? {
+        nombre: encontrado.nombre,
+        vencimiento: (encontrado as any).vencimiento,
+        fecha_vencimiento: (encontrado as any).fecha_vencimiento,
+        stock: (encontrado as any).stock,
+      } : "no encontrado";
     } catch (e: any) {
-      diagnostico.pruebas["REPLICA_EXACTA"] = { error: e.message };
+      diagnostico.pruebas["REGISTRO"] = { error: e.message };
     }
 
         return diagnostico;
