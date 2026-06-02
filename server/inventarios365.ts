@@ -488,6 +488,24 @@ class Inventarios365Service {
   }
 
   /**
+   * Actualizar el precio de venta de un producto.
+   * Endpoint: POST /articulo/actualizarPrecioVenta con { id, precio_uno }
+   */
+  async actualizarPrecioVenta(idarticulo: number, precioUno: number): Promise<boolean> {
+    try {
+      const respData = await this.post<any>("/articulo/actualizarPrecioVenta", {
+        id: idarticulo,
+        precio_uno: precioUno,
+      });
+      console.log(`[Inventarios365] Precio actualizado: artículo ${idarticulo} → ${precioUno} Bs`, JSON.stringify(respData).substring(0, 100));
+      return true;
+    } catch (error: any) {
+      console.error(`[Inventarios365] Error actualizando precio del artículo ${idarticulo}:`, error?.message);
+      return false;
+    }
+  }
+
+  /**
    * Crear un producto nuevo. POST /articulo/registrar (multipart form-data)
    */
   async crearProducto(params: {
@@ -623,6 +641,7 @@ class Inventarios365Service {
       cantidad: number;
       precio?: number;
       fechaVencimiento?: string | null;
+      nuevoPrecioVenta?: number | null;
     }>;
     total?: number;
   }): Promise<{
@@ -677,6 +696,7 @@ class Inventarios365Service {
       const erroresArticulos: string[] = [];
       const productosNoEncontrados: { nombre: string; nombreLimpio?: string; cantidad: number; precio?: number; sugerencia?: any }[] = [];
       const productosEmparejados: { nombreFactura: string; nombreSistema: string; id: number }[] = [];
+      const preciosActualizar: { id: number; precio: number; nombre: string }[] = [];
 
       for (const item of params.items) {
         // Buscar con filtro de proveedor si existe, sino buscar en todo el inventario
@@ -707,6 +727,10 @@ class Inventarios365Service {
           });
           console.log(`[Inventarios365] ✓ "${item.nombre}" → "${articulo.nombre}" (ID:${articulo.id}, score:${score.toFixed(2)})`);
           productosEmparejados.push({ nombreFactura: item.nombre, nombreSistema: articulo.nombre, id: articulo.id });
+          // Si el usuario definió un nuevo precio de venta distinto, marcarlo para actualizar
+          if (item.nuevoPrecioVenta != null && item.nuevoPrecioVenta > 0) {
+            preciosActualizar.push({ id: articulo.id, precio: item.nuevoPrecioVenta, nombre: articulo.nombre });
+          }
         } else {
           // Score bajo o no encontrado — agregar a panel de confirmación
           erroresArticulos.push(item.nombre);
@@ -796,6 +820,18 @@ class Inventarios365Service {
           console.log(`[Inventarios365] PASO 2 response:`, JSON.stringify(respVcto));
         } catch (e: any) {
           console.warn(`[Inventarios365] PASO 2 (vencimientos) falló, pero el ingreso ya se guardó:`, e?.message);
+        }
+      }
+
+      // Paso 3: Actualizar precios de venta que el usuario modificó
+      if (preciosActualizar.length > 0) {
+        console.log(`[Inventarios365] PASO 3: Actualizando ${preciosActualizar.length} precio(s) de venta`);
+        for (const p of preciosActualizar) {
+          try {
+            await this.actualizarPrecioVenta(p.id, p.precio);
+          } catch (e: any) {
+            console.warn(`[Inventarios365] No se pudo actualizar precio de "${p.nombre}":`, e?.message);
+          }
         }
       }
 
