@@ -23,6 +23,8 @@ import {
   Check,
   CheckCircle2,
   Calendar,
+  Camera,
+  Image as ImageIcon,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
@@ -67,6 +69,55 @@ function precioParaMargen(costo: number, margenObjetivo = 0.23): number {
 
 const MARGEN_MINIMO = 20; // % mínimo aceptable
 
+// Detecta si el dispositivo es móvil
+const esMobil = typeof navigator !== "undefined" && /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent);
+
+// Comprime una imagen grande (foto de celular) antes de subir.
+// Las fotos de celular pesan 3-8MB; comprimir acelera subida y procesamiento.
+async function comprimirImagen(file: File, maxLado = 1600, calidad = 0.8): Promise<File> {
+  // Solo comprimir imágenes (no PDF)
+  if (!file.type.startsWith("image/")) return file;
+  // Si ya es pequeña, no comprimir
+  if (file.size < 800 * 1024) return file;
+
+  return new Promise((resolve) => {
+    const img = new Image();
+    const url = URL.createObjectURL(file);
+    img.onload = () => {
+      URL.revokeObjectURL(url);
+      let { width, height } = img;
+      // Redimensionar manteniendo proporción
+      if (width > maxLado || height > maxLado) {
+        if (width > height) {
+          height = Math.round((height * maxLado) / width);
+          width = maxLado;
+        } else {
+          width = Math.round((width * maxLado) / height);
+          height = maxLado;
+        }
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = width;
+      canvas.height = height;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) { resolve(file); return; }
+      ctx.drawImage(img, 0, 0, width, height);
+      canvas.toBlob(
+        (blob) => {
+          if (!blob) { resolve(file); return; }
+          // Si la compresión no ayudó, usar el original
+          if (blob.size >= file.size) { resolve(file); return; }
+          resolve(new File([blob], file.name.replace(/\.[^.]+$/, ".jpg"), { type: "image/jpeg" }));
+        },
+        "image/jpeg",
+        calidad
+      );
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); resolve(file); };
+    img.src = url;
+  });
+}
+
 // Convierte fecha MM/YYYY o DD/MM/YYYY a formato YYYY-MM-DD para input date
 function convertExpiryDate(date: string | null | undefined): string | null {
   if (!date) return null;
@@ -94,6 +145,7 @@ function convertExpiryDate(date: string | null | undefined): string | null {
 export default function NuevaCompra() {
   const [, setLocation] = useLocation();
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const cameraInputRef = useRef<HTMLInputElement>(null);
   const { data: branchesData } = trpc.branches.list.useQuery();
 
   const [file, setFile] = useState<File | null>(null);
@@ -143,26 +195,41 @@ export default function NuevaCompra() {
   const buscarArticuloQuery = trpc.confirmaciones.buscarArticulo.useQuery;
 
   const handleFileSelect = useCallback(
-    (e: React.ChangeEvent<HTMLInputElement>) => {
+    async (e: React.ChangeEvent<HTMLInputElement>) => {
       const selected = e.target.files?.[0];
       if (!selected) return;
-      
-      const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf'];
-      if (!validTypes.includes(selected.type)) {
-        toast.error('Solo JPG, PNG, WebP o PDF');
+
+      const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf', 'image/heic', 'image/heif'];
+      if (!validTypes.includes(selected.type) && !selected.type.startsWith("image/")) {
+        toast.error('Solo imágenes (JPG, PNG) o PDF');
         return;
       }
-      
-      const maxSize = 10 * 1024 * 1024;
+
+      const maxSize = 25 * 1024 * 1024; // 25MB antes de comprimir (fotos de celular)
       if (selected.size > maxSize) {
-        toast.error('Archivo muy grande (máx 10MB)');
+        toast.error('Archivo muy grande (máx 25MB)');
         return;
       }
-      
-      setFile(selected);
+
+      // Comprimir si es imagen grande (acelera subida y procesamiento)
+      let archivoFinal = selected;
+      if (selected.type.startsWith("image/")) {
+        try {
+          const original = selected.size;
+          archivoFinal = await comprimirImagen(selected);
+          if (archivoFinal.size < original) {
+            const ahorroKB = Math.round((original - archivoFinal.size) / 1024);
+            console.log(`[Imagen] Comprimida: ${Math.round(original/1024)}KB → ${Math.round(archivoFinal.size/1024)}KB (-${ahorroKB}KB)`);
+          }
+        } catch {
+          archivoFinal = selected;
+        }
+      }
+
+      setFile(archivoFinal);
       setExtracted(false);
       setItems([]);
-      const url = URL.createObjectURL(selected);
+      const url = URL.createObjectURL(archivoFinal);
       setPreviewUrl(url);
     },
     []
@@ -446,15 +513,49 @@ export default function NuevaCompra() {
                   </div>
                 </div>
               ) : (
-                <div
-                  onClick={() => fileInputRef.current?.click()}
-                  className="border-2 border-dashed border-foreground/20 rounded p-8 text-center cursor-pointer hover:border-primary/50 transition-colors"
-                >
-                  <Upload className="h-8 w-8 mx-auto text-muted-foreground mb-3" />
-                  <p className="text-sm font-medium">Haga clic para subir</p>
-                  <p className="text-xs text-muted-foreground mt-1">JPG, PNG o PDF</p>
+                <div className="space-y-3">
+                  {/* Botón de cámara (prominente, ideal en móvil) */}
+                  <button
+                    onClick={() => cameraInputRef.current?.click()}
+                    className="w-full border-2 border-dashed border-primary/40 bg-primary/5 rounded-lg p-6 text-center cursor-pointer hover:border-primary hover:bg-primary/10 transition-colors active:scale-[0.99]"
+                  >
+                    <Camera className="h-10 w-10 mx-auto text-primary mb-2" />
+                    <p className="text-sm font-semibold text-primary">Tomar foto de la factura</p>
+                    <p className="text-xs text-muted-foreground mt-1">
+                      {esMobil ? "Abre la cámara de tu celular" : "Usa la cámara del dispositivo"}
+                    </p>
+                  </button>
+
+                  {/* Separador */}
+                  <div className="flex items-center gap-2 text-xs text-muted-foreground">
+                    <div className="flex-1 h-px bg-foreground/10" />
+                    <span>o</span>
+                    <div className="flex-1 h-px bg-foreground/10" />
+                  </div>
+
+                  {/* Botón de subir archivo (galería / PDF) */}
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="w-full border border-foreground/20 rounded-lg p-4 text-center cursor-pointer hover:border-primary/50 hover:bg-muted/30 transition-colors active:scale-[0.99] flex items-center justify-center gap-2"
+                  >
+                    <ImageIcon className="h-5 w-5 text-muted-foreground" />
+                    <div className="text-left">
+                      <p className="text-sm font-medium">Subir desde galería o PDF</p>
+                      <p className="text-xs text-muted-foreground">JPG, PNG o PDF</p>
+                    </div>
+                  </button>
                 </div>
               )}
+              {/* Input de cámara: capture abre la cámara trasera directo en móvil */}
+              <input
+                ref={cameraInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={handleFileSelect}
+                className="hidden"
+              />
+              {/* Input de archivo: galería o PDF */}
               <input
                 ref={fileInputRef}
                 type="file"
@@ -565,7 +666,8 @@ export default function NuevaCompra() {
             </CardHeader>
             <CardContent>
               {items.length > 0 ? (
-                <div className="space-y-2">
+                <div className="space-y-2 overflow-x-auto -mx-2 px-2">
+                  <div className="min-w-[640px] space-y-2">
                   {/* Table Header */}
                   <div className={`grid gap-2 text-xs font-bold uppercase tracking-wider text-muted-foreground pb-2 border-b border-foreground/10 ${showExpiry ? "grid-cols-13" : "grid-cols-12"}`}>
                     <div className={showExpiry ? "col-span-4" : "col-span-5"}>Producto</div>
@@ -878,6 +980,7 @@ export default function NuevaCompra() {
                     )}
                     </div>
                   ))}
+                  </div>
                   {/* Total */}
                   <div className="border-t-2 border-foreground pt-3 mt-3">
                     <div className="flex justify-between items-center">
