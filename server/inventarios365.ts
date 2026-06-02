@@ -505,7 +505,7 @@ class Inventarios365Service {
       this.invalidateSession();
       await this.login();
 
-      const FormData = (await import("form-data")).default;
+      // FormData nativo de Node 20 (no requiere librería externa)
       const form = new FormData();
       form.append("nombre", params.nombre);
       form.append("descripcion", params.descripcion || "");
@@ -529,7 +529,7 @@ class Inventarios365Service {
       form.append("idgrupo", "null");
       form.append("idproveedor", String(params.idproveedor ?? 0));
       form.append("idmedida", "undefined");
-      form.append("fechaVencimientoSeleccion", "1");
+      form.append("fechaVencimientoSeleccion", "0");
       form.append("precio_costo_paqVacio", "false");
 
       const cookie = this.buildCookieHeader();
@@ -537,7 +537,6 @@ class Inventarios365Service {
 
       const resp = await this.client.post("/articulo/registrar", form, {
         headers: {
-          ...form.getHeaders(),
           Cookie: cookie,
           "X-XSRF-TOKEN": xsrfDecoded,
           "X-CSRF-TOKEN": this.csrfToken || "",
