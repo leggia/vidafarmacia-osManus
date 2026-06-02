@@ -1,0 +1,39 @@
+{
+  "name": "VidaFarma - Registro de Compras",
+  "short_name": "VidaFarma",
+  "description": "Registro automático de compras desde facturas para VidaFarma",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#ffffff",
+  "theme_color": "#15803d",
+  "lang": "es-BO",
+  "icons": [
+    {
+      "src": "/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/icon-maskable-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Nueva compra",
+      "short_name": "Comprar",
+      "description": "Registrar una nueva compra desde factura",
+      "url": "/compras/nueva"
+    }
+  ]
+}
