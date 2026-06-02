@@ -170,6 +170,10 @@ export default function NuevaCompra() {
   const [filaEmparejando, setFilaEmparejando] = useState<number | null>(null);
   const [filaCreando, setFilaCreando] = useState<number | null>(null);
   const [sinFiltroProveedor, setSinFiltroProveedor] = useState<Record<number, boolean>>({});
+  const [mostrarProveedores, setMostrarProveedores] = useState(false);
+  const [proveedoresEncontrados, setProveedoresEncontrados] = useState<any[]>([]);
+  const [buscandoProveedor, setBuscandoProveedor] = useState(false);
+  const [proveedorConfirmado, setProveedorConfirmado] = useState<{ id: number; nombre: string } | null>(null);
   const [nuevoProducto, setNuevoProducto] = useState<{ precioVenta: number; idcategoria: number | null; categoriaNombre: string }>({ precioVenta: 0, idcategoria: null, categoriaNombre: "" });
   const [creandoProducto, setCreandoProducto] = useState(false);
 
@@ -662,11 +666,100 @@ export default function NuevaCompra() {
               </div>
               <div className="space-y-2">
                 <Label className="text-xs font-bold uppercase tracking-wider">Proveedor</Label>
-                <Input
-                  value={supplier}
-                  onChange={(e) => setSupplier(e.target.value)}
-                  placeholder="Ej: Bago"
-                />
+                <div className="flex gap-2">
+                  <div className="relative flex-1">
+                    <Input
+                      value={supplier}
+                      onChange={(e) => setSupplier(e.target.value)}
+                      placeholder="Ej: Bago"
+                      className={proveedorConfirmado ? "border-green-500 bg-green-50 dark:bg-green-950 pr-7" : ""}
+                    />
+                    {proveedorConfirmado && (
+                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-green-500 text-sm font-bold">✓</span>
+                    )}
+                  </div>
+                  <Button
+                    variant="outline"
+                    size="icon"
+                    className="shrink-0 border-blue-300 text-blue-600 dark:border-blue-700"
+                    title="Buscar proveedor en el sistema"
+                    onClick={async () => {
+                      if (mostrarProveedores) { setMostrarProveedores(false); return; }
+                      setMostrarProveedores(true);
+                      setBuscandoProveedor(true);
+                      try {
+                        const provs = await utils.confirmaciones.listarProveedores.fetch({ filtro: supplier || "" });
+                        setProveedoresEncontrados(Array.isArray(provs) ? provs : []);
+                      } catch {
+                        setProveedoresEncontrados([]);
+                      }
+                      setBuscandoProveedor(false);
+                    }}
+                  >
+                    <Search className="h-4 w-4" />
+                  </Button>
+                </div>
+
+                {/* Panel de selección de proveedor */}
+                {mostrarProveedores && (
+                  <div className="bg-blue-50 dark:bg-blue-950/40 border border-blue-200 dark:border-blue-800 rounded-md p-2 space-y-2">
+                    <div className="flex items-center gap-2">
+                      <Input
+                        value={supplier}
+                        onChange={(e) => setSupplier(e.target.value)}
+                        onKeyDown={async (e) => {
+                          if (e.key === "Enter") {
+                            setBuscandoProveedor(true);
+                            try {
+                              const provs = await utils.confirmaciones.listarProveedores.fetch({ filtro: supplier || "" });
+                              setProveedoresEncontrados(Array.isArray(provs) ? provs : []);
+                            } catch { setProveedoresEncontrados([]); }
+                            setBuscandoProveedor(false);
+                          }
+                        }}
+                        placeholder="Buscar proveedor..."
+                        className="text-sm h-8 flex-1"
+                      />
+                      <Button
+                        size="sm"
+                        className="h-8 bg-blue-600 hover:bg-blue-700 text-white px-3"
+                        disabled={buscandoProveedor}
+                        onClick={async () => {
+                          setBuscandoProveedor(true);
+                          try {
+                            const provs = await utils.confirmaciones.listarProveedores.fetch({ filtro: supplier || "" });
+                            setProveedoresEncontrados(Array.isArray(provs) ? provs : []);
+                          } catch { setProveedoresEncontrados([]); }
+                          setBuscandoProveedor(false);
+                        }}
+                      >
+                        {buscandoProveedor ? <Loader2 className="h-3 w-3 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
+                      </Button>
+                    </div>
+                    <div className="max-h-40 overflow-y-auto space-y-1">
+                      {proveedoresEncontrados.length === 0 && !buscandoProveedor && (
+                        <p className="text-xs text-muted-foreground py-1">Sin resultados. Escribe y busca el proveedor.</p>
+                      )}
+                      {proveedoresEncontrados.map((prov: any) => (
+                        <div key={prov.id} className="flex items-center justify-between bg-white dark:bg-gray-900 rounded px-2 py-1.5 border border-gray-200 dark:border-gray-700">
+                          <p className="text-xs font-medium truncate flex-1">{prov.nombre}</p>
+                          <Button
+                            size="sm"
+                            className="h-7 text-xs bg-green-600 hover:bg-green-700 text-white ml-2"
+                            onClick={() => {
+                              setSupplier(prov.nombre);
+                              setProveedorConfirmado({ id: prov.id, nombre: prov.nombre });
+                              setMostrarProveedores(false);
+                              toast.success(`Proveedor: ${prov.nombre}`);
+                            }}
+                          >
+                            Usar
+                          </Button>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </div>
             </CardContent>
           </Card>
@@ -712,8 +805,8 @@ export default function NuevaCompra() {
                     <div className="col-span-2">Cantidad</div>
                     <div className="col-span-2">Costo Unit.</div>
                     {showExpiry && <div className="col-span-3">Vencimiento</div>}
-                    <div className="col-span-2 text-right">Subtotal</div>
-                    <div className="col-span-1" />
+                    <div className="col-span-1 text-right">Subtotal</div>
+                    <div className="col-span-2" />
                   </div>
                   </div>
                   {/* Items */}
@@ -766,14 +859,14 @@ export default function NuevaCompra() {
                           />
                         </div>
                       )}
-                      <div className="col-span-2 text-right text-sm font-semibold">
-                        {item.subtotal.toFixed(2)} BS
+                      <div className="col-span-1 text-right text-sm font-semibold whitespace-nowrap">
+                        {item.subtotal.toFixed(2)}
                       </div>
-                      <div className="col-span-1 flex justify-end gap-1">
+                      <div className="col-span-2 flex justify-end items-center gap-0.5">
                         <Button
                           variant="ghost"
                           size="icon"
-                          className={`h-8 w-8 ${filaEmparejando === idx ? "bg-blue-100 dark:bg-blue-900" : ""}`}
+                          className={`h-8 w-8 shrink-0 border ${filaEmparejando === idx ? "bg-blue-600 text-white border-blue-600" : "border-blue-300 text-blue-600 dark:border-blue-700"}`}
                           title="Emparejar con producto del sistema"
                           onClick={() => {
                             if (filaEmparejando === idx) {
@@ -786,15 +879,15 @@ export default function NuevaCompra() {
                             }
                           }}
                         >
-                          <Search className="h-3 w-3" />
+                          <Search className="h-4 w-4" />
                         </Button>
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-8 w-8"
+                          className="h-8 w-8 shrink-0 text-muted-foreground"
                           onClick={() => removeItem(idx)}
                         >
-                          <Trash2 className="h-3 w-3" />
+                          <Trash2 className="h-3.5 w-3.5" />
                         </Button>
                       </div>
                     </div>

@@ -625,6 +625,23 @@ class Inventarios365Service {
   }
 
   /**
+   * Listar proveedores que coinciden con un término (para selección manual).
+   * Devuelve varios resultados, no solo el primero.
+   */
+  async listarProveedores(filtro: string): Promise<ProveedorAPI[]> {
+    try {
+      if (!filtro || filtro.length < 2) return [];
+      const data = await this.get<{ proveedores: ProveedorAPI[] }>(
+        `/proveedor/selectProveedor?filtro=${encodeURIComponent(filtro)}`
+      );
+      return data?.proveedores || [];
+    } catch (error) {
+      console.error(`[Inventarios365] Error listando proveedores "${filtro}":`, error);
+      return [];
+    }
+  }
+
+  /**
    * Registrar una compra completa en inventarios365.com.
    * Busca automáticamente los IDs de artículos, proveedor y almacén.
    *

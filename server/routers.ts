@@ -714,6 +714,14 @@ const confirmacionesRouter = router({
     return inventarios365.listarCategorias();
   }),
 
+  // Buscar proveedores del sistema (para selección/emparejamiento manual)
+  listarProveedores: publicProcedure
+    .input(z.object({ filtro: z.string() }))
+    .query(async ({ input }) => {
+      const { inventarios365 } = await import("./inventarios365");
+      return inventarios365.listarProveedores(input.filtro);
+    }),
+
   // Sugerir categoría para un producto usando IA
   sugerirCategoria: publicProcedure
     .input(z.object({ nombreProducto: z.string() }))
