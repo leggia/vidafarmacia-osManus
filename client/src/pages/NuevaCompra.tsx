@@ -35,6 +35,7 @@ interface ExtractedItem {
   subtotal: number;
   expiryDate?: string | null;
   precioVentaSistema?: number | null; // precio_uno del sistema, para evaluar margen
+  nuevoPrecioVenta?: number | null; // precio de venta editable (si se quiere actualizar)
 }
 
 interface ProductoNoEncontrado {
@@ -270,6 +271,7 @@ export default function NuevaCompra() {
             unitCost: i.unitCost,
             subtotal: i.subtotal,
             expiryDate: i.expiryDate || null,
+            nuevoPrecioVenta: (i.nuevoPrecioVenta != null && i.nuevoPrecioVenta !== i.precioVentaSistema) ? i.nuevoPrecioVenta : null,
           })),
           imageUrl: uploadAndExtract.data?.imageUrl || null,
           imageKey: uploadAndExtract.data?.imageKey || null,
@@ -655,24 +657,50 @@ export default function NuevaCompra() {
                       </div>
                     </div>
 
-                    {/* Alerta de margen de venta */}
+                    {/* Margen de venta + precio editable */}
                     {item.precioVentaSistema != null && (() => {
-                      const margen = calcularMargen(item.unitCost, item.precioVentaSistema);
-                      if (margen === null) return null;
-                      const bajo = margen < MARGEN_MINIMO;
+                      const precioActual = item.nuevoPrecioVenta ?? item.precioVentaSistema ?? 0;
+                      const margen = calcularMargen(item.unitCost, precioActual);
                       const sugerido = precioParaMargen(item.unitCost, 0.23);
+                      const bajo = margen !== null && margen < MARGEN_MINIMO;
+                      const modificado = item.nuevoPrecioVenta != null && item.nuevoPrecioVenta !== item.precioVentaSistema;
                       return (
-                        <div className={`text-[11px] rounded px-2 py-1.5 mb-1 flex items-center justify-between gap-2 ${bajo ? "bg-red-50 dark:bg-red-950/40 border border-red-300 dark:border-red-800" : "bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800"}`}>
-                          <span className={bajo ? "text-red-700 dark:text-red-300" : "text-green-700 dark:text-green-400"}>
-                            {bajo ? "⚠️" : "✓"} Precio venta sistema: <strong>{item.precioVentaSistema.toFixed(2)} Bs</strong>
-                            {" · "}Margen: <strong>{margen.toFixed(1)}%</strong>
-                            {bajo && <span className="ml-1">(bajo el mínimo de {MARGEN_MINIMO}%)</span>}
-                          </span>
-                          {bajo && (
-                            <span className="text-red-700 dark:text-red-300 whitespace-nowrap">
-                              Sugerido: <strong>{sugerido.toFixed(2)} Bs</strong> (23%)
-                            </span>
-                          )}
+                        <div className={`text-[11px] rounded px-2 py-2 mb-1 mt-1 ${bajo ? "bg-red-50 dark:bg-red-950/40 border border-red-300 dark:border-red-800" : "bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-800"}`}>
+                          <div className="flex items-center justify-between gap-2 flex-wrap">
+                            <div className="flex items-center gap-2">
+                              <span className="text-muted-foreground">Precio venta:</span>
+                              <Input
+                                type="number"
+                                step="0.01"
+                                value={precioActual}
+                                onChange={(e) => {
+                                  const v = parseFloat(e.target.value) || 0;
+                                  setItems(prev => prev.map((it, i) => i === idx ? { ...it, nuevoPrecioVenta: v } : it));
+                                }}
+                                className={`h-7 w-24 text-xs ${bajo ? "border-red-400" : ""}`}
+                              />
+                              <span className="text-muted-foreground">Bs</span>
+                              {modificado && (
+                                <span className="text-[10px] text-amber-600 dark:text-amber-400">(se actualizará)</span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className={bajo ? "text-red-700 dark:text-red-300 font-medium" : "text-green-700 dark:text-green-400 font-medium"}>
+                                {bajo ? "⚠️" : "✓"} Margen: {margen !== null ? `${margen.toFixed(1)}%` : "—"}
+                              </span>
+                            </div>
+                          </div>
+                          <div className="flex items-center justify-between gap-2 mt-1.5 text-[10px] text-muted-foreground">
+                            <span>Costo factura: {item.unitCost.toFixed(2)} Bs · Sistema: {item.precioVentaSistema.toFixed(2)} Bs</span>
+                            <button
+                              type="button"
+                              className="text-blue-600 dark:text-blue-400 hover:underline"
+                              onClick={() => setItems(prev => prev.map((it, i) => i === idx ? { ...it, nuevoPrecioVenta: sugerido } : it))}
+                              title="Usar el precio sugerido como punto de partida (editable)"
+                            >
+                              💡 Sugerido 23%: {sugerido.toFixed(2)} Bs
+                            </button>
+                          </div>
                         </div>
                       );
                     })()}

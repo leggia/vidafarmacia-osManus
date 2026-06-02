@@ -267,6 +267,7 @@ INSTRUCCIONES GENERALES:
             unitCost: z.number(),
             subtotal: z.number(),
             expiryDate: z.string().nullable().optional(),
+            nuevoPrecioVenta: z.number().nullable().optional(),
           })
         ),
         imageUrl: z.string().nullable().optional(),
