@@ -63,7 +63,7 @@ function calcularMargen(costo: number, precioVenta: number | null | undefined): 
 }
 
 // Precio de venta sugerido para alcanzar un margen objetivo
-function precioParaMargen(costo: number, margenObjetivo = 0.23): number {
+function precioParaMargen(costo: number, margenObjetivo = 0.20): number {
   // precioVenta = costo / (1 - margen)
   return Math.round((costo / (1 - margenObjetivo)) * 100) / 100;
 }
@@ -800,7 +800,7 @@ export default function NuevaCompra() {
                     {item.precioVentaSistema != null && (() => {
                       const precioActual = item.nuevoPrecioVenta ?? item.precioVentaSistema ?? 0;
                       const margen = calcularMargen(item.unitCost, precioActual);
-                      const sugerido = precioParaMargen(item.unitCost, 0.23);
+                      const sugerido = precioParaMargen(item.unitCost, 0.20);
                       const bajo = margen !== null && margen < MARGEN_MINIMO;
                       const modificado = item.nuevoPrecioVenta != null && item.nuevoPrecioVenta !== item.precioVentaSistema;
                       return (
@@ -837,7 +837,7 @@ export default function NuevaCompra() {
                               onClick={() => setItems(prev => prev.map((it, i) => i === idx ? { ...it, nuevoPrecioVenta: sugerido } : it))}
                               title="Usar el precio sugerido como punto de partida (editable)"
                             >
-                              💡 Sugerido 23%: {sugerido.toFixed(2)} Bs
+                              💡 Sugerido 20%: {sugerido.toFixed(2)} Bs
                             </button>
                           </div>
                         </div>
@@ -925,7 +925,7 @@ export default function NuevaCompra() {
                             className="w-full mt-1 text-xs text-blue-600 dark:text-blue-400 hover:underline py-1.5 border-t border-blue-200 dark:border-blue-800"
                             onClick={async () => {
                               const costo = item.unitCost || 0;
-                              const precioSugerido = Math.round(costo * 1.23 * 100) / 100;
+                              const precioSugerido = precioParaMargen(costo, 0.20);
                               setNuevoProducto({ precioVenta: precioSugerido, idcategoria: null, categoriaNombre: "Sugiriendo..." });
                               setFilaCreando(idx);
                               // Pedir categoría sugerida por IA
@@ -948,7 +948,7 @@ export default function NuevaCompra() {
                                 <Input value={item.unitCost.toFixed(2)} disabled className="h-8 text-xs" />
                               </div>
                               <div>
-                                <label className="text-[11px] text-muted-foreground">Precio venta (costo +23%)</label>
+                                <label className="text-[11px] text-muted-foreground">Precio venta (margen 20%)</label>
                                 <Input
                                   type="number"
                                   value={nuevoProducto.precioVenta}
@@ -1053,6 +1053,7 @@ export default function NuevaCompra() {
                 onClick={() => handleSubmit(false)}
                 disabled={isSubmitting}
                 className="gap-2 uppercase tracking-wider text-xs font-semibold"
+                title="Guarda la compra como borrador. Los emparejamientos que ya hiciste quedan guardados."
               >
                 {isSubmitting ? (
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -1079,6 +1080,11 @@ export default function NuevaCompra() {
           {extracted && !todosEmparejados && (
             <p className="text-xs text-amber-600 dark:text-amber-400 text-right mt-2">
               ⚠️ Faltan {cantidadSinEmparejar} producto(s) por emparejar. Usa la lupa 🔍 en cada fila para emparejarlos con el sistema antes de registrar la compra completa.
+            </p>
+          )}
+          {extracted && items.length > 6 && (
+            <p className="text-xs text-muted-foreground text-right mt-1">
+              💡 Factura larga: cada emparejamiento que haces se guarda al instante. Si recargas o vuelves a subir esta factura, recordará lo ya emparejado.
             </p>
           )}
         </div>
