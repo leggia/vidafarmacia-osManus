@@ -714,6 +714,7 @@ class Inventarios365Service {
       const productosNoEncontrados: { nombre: string; nombreLimpio?: string; cantidad: number; precio?: number; sugerencia?: any }[] = [];
       const productosEmparejados: { nombreFactura: string; nombreSistema: string; id: number }[] = [];
       const preciosActualizar: { id: number; precio: number; nombre: string }[] = [];
+      const historialParaGuardar: Array<{ articuloId: number; articuloNombre: string; proveedor?: string; costoUnitario: number; precioVenta?: number; numComprobante?: string }> = [];
 
       for (const item of params.items) {
         // Buscar con filtro de proveedor si existe, sino buscar en todo el inventario
@@ -744,6 +745,15 @@ class Inventarios365Service {
           });
           console.log(`[Inventarios365] ✓ "${item.nombre}" → "${articulo.nombre}" (ID:${articulo.id}, score:${score.toFixed(2)})`);
           productosEmparejados.push({ nombreFactura: item.nombre, nombreSistema: articulo.nombre, id: articulo.id });
+          // Recolectar para historial de precios
+          historialParaGuardar.push({
+            articuloId: articulo.id,
+            articuloNombre: articulo.nombre,
+            proveedor: params.proveedor,
+            costoUnitario: precioCosto,
+            precioVenta: item.nuevoPrecioVenta ?? (parseFloat(String(articulo.precio_uno || 0)) || undefined),
+            numComprobante: params.numComprobante,
+          });
           // Si el usuario definió un nuevo precio de venta distinto, marcarlo para actualizar
           if (item.nuevoPrecioVenta != null && item.nuevoPrecioVenta > 0) {
             preciosActualizar.push({ id: articulo.id, precio: item.nuevoPrecioVenta, nombre: articulo.nombre });
@@ -849,6 +859,18 @@ class Inventarios365Service {
           } catch (e: any) {
             console.warn(`[Inventarios365] No se pudo actualizar precio de "${p.nombre}":`, e?.message);
           }
+        }
+      }
+
+      // Paso 4: Guardar historial de precios de compra (para alertas y consultas futuras)
+      if (historialParaGuardar.length > 0) {
+        try {
+          const { historialPreciosService } = await import("./historial-precios");
+          for (const h of historialParaGuardar) {
+            await historialPreciosService.registrar(h);
+          }
+        } catch (e: any) {
+          console.warn(`[Inventarios365] No se pudo guardar historial de precios:`, e?.message);
         }
       }
 

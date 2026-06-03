@@ -722,6 +722,22 @@ const confirmacionesRouter = router({
       return inventarios365.listarProveedores(input.filtro);
     }),
 
+  // Analizar el costo de un producto vs su historial de compras
+  analizarPrecio: publicProcedure
+    .input(z.object({ articuloId: z.number(), costoActual: z.number() }))
+    .query(async ({ input }) => {
+      const { historialPreciosService } = await import("./historial-precios");
+      return historialPreciosService.analizar(input.articuloId, input.costoActual);
+    }),
+
+  // Historial completo de precios de un producto (consultas)
+  historialPrecios: publicProcedure
+    .input(z.object({ articuloId: z.number() }))
+    .query(async ({ input }) => {
+      const { historialPreciosService } = await import("./historial-precios");
+      return historialPreciosService.historialDe(input.articuloId);
+    }),
+
   // Sugerir categoría para un producto usando IA
   sugerirCategoria: publicProcedure
     .input(z.object({ nombreProducto: z.string() }))

@@ -39,6 +39,15 @@ interface ExtractedItem {
   expiryDate?: string | null;
   precioVentaSistema?: number | null; // precio_uno del sistema, para evaluar margen
   nuevoPrecioVenta?: number | null; // precio de venta editable (si se quiere actualizar)
+  articuloId?: number | null; // id del producto del sistema (para historial)
+  analisisCosto?: {
+    esNuevo: boolean;
+    costoAnterior: number | null;
+    costoMinimo: number | null;
+    subioRespectoAnterior: boolean;
+    porcentajeSubida: number | null;
+    vecesComprado: number;
+  } | null;
 }
 
 interface ProductoNoEncontrado {
@@ -302,8 +311,29 @@ export default function NuevaCompra() {
                     const exacto = Array.isArray(arts) ? arts.find((a: any) => a.id === conf.id) || arts[0] : null;
                     if (exacto) pv = parseFloat(String(exacto.precio_uno ?? 0)) || null;
                   } catch {}
+                  // Analizar el costo vs historial de compras
+                  let analisis: any = null;
+                  try {
+                    analisis = await utils.confirmaciones.analizarPrecio.fetch({
+                      articuloId: conf.id,
+                      costoActual: result.items[i].unitCost || 0,
+                    });
+                  } catch {}
                   setItems(prev => prev.map((item, idx) =>
-                    idx === i ? { ...item, productName: conf.nombreSistema, precioVentaSistema: pv } : item
+                    idx === i ? {
+                      ...item,
+                      productName: conf.nombreSistema,
+                      precioVentaSistema: pv,
+                      articuloId: conf.id,
+                      analisisCosto: analisis && !analisis.esNuevo ? {
+                        esNuevo: false,
+                        costoAnterior: analisis.costoAnterior,
+                        costoMinimo: analisis.costoMinimo,
+                        subioRespectoAnterior: analisis.subioRespectoAnterior,
+                        porcentajeSubida: analisis.porcentajeSubida,
+                        vecesComprado: analisis.vecesComprado,
+                      } : null,
+                    } : item
                   ));
                 }
               } catch {}
@@ -893,6 +923,21 @@ export default function NuevaCompra() {
                     </div>
                     </div>
 
+                    {/* Alerta de costo elevado vs historial */}
+                    {item.analisisCosto && !item.analisisCosto.esNuevo && (() => {
+                      const a = item.analisisCosto!;
+                      const subio = a.subioRespectoAnterior && (a.porcentajeSubida ?? 0) >= 5;
+                      return (
+                        <div className={`text-[11px] rounded px-2 py-1.5 mb-1 mt-1 ${subio ? "bg-orange-50 dark:bg-orange-950/40 border border-orange-300 dark:border-orange-800 text-orange-800 dark:text-orange-300" : "bg-muted/40 border border-foreground/10 text-muted-foreground"}`}>
+                          {subio ? (
+                            <span>📈 <strong>El costo subió {a.porcentajeSubida}%</strong> vs la compra anterior ({a.costoAnterior?.toFixed(2)} → {item.unitCost.toFixed(2)} Bs). Considera revisar el precio de venta.</span>
+                          ) : (
+                            <span>📊 Comprado {a.vecesComprado} {a.vecesComprado === 1 ? "vez" : "veces"} · Mínimo histórico: <strong>{a.costoMinimo?.toFixed(2)} Bs</strong> · Anterior: {a.costoAnterior?.toFixed(2)} Bs</span>
+                          )}
+                        </div>
+                      );
+                    })()}
+
                     {/* Margen de venta + precio editable */}
                     {item.precioVentaSistema != null && (() => {
                       const precioActual = item.nuevoPrecioVenta ?? item.precioVentaSistema ?? 0;
@@ -1025,7 +1070,27 @@ export default function NuevaCompra() {
                                   updateItem(idx, "productName", art.nombre);
                                   // Guardar el precio de venta del sistema para evaluar margen
                                   const pv = parseFloat(String(art.precio_uno ?? 0)) || null;
-                                  setItems(prev => prev.map((it, i) => i === idx ? { ...it, precioVentaSistema: pv } : it));
+                                  // Analizar costo vs historial
+                                  let analisis: any = null;
+                                  try {
+                                    analisis = await utils.confirmaciones.analizarPrecio.fetch({
+                                      articuloId: art.id,
+                                      costoActual: item.unitCost || 0,
+                                    });
+                                  } catch {}
+                                  setItems(prev => prev.map((it, i) => i === idx ? {
+                                    ...it,
+                                    precioVentaSistema: pv,
+                                    articuloId: art.id,
+                                    analisisCosto: analisis && !analisis.esNuevo ? {
+                                      esNuevo: false,
+                                      costoAnterior: analisis.costoAnterior,
+                                      costoMinimo: analisis.costoMinimo,
+                                      subioRespectoAnterior: analisis.subioRespectoAnterior,
+                                      porcentajeSubida: analisis.porcentajeSubida,
+                                      vecesComprado: analisis.vecesComprado,
+                                    } : null,
+                                  } : it));
                                   toast.success(`✅ Emparejado con "${art.nombre}". Se recordará siempre.`, { duration: 5000 });
                                   setFilaEmparejando(null);
                                   setResultadosBusqueda(prev => { const n = { ...prev }; delete n[idx]; return n; });

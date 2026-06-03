@@ -172,6 +172,22 @@ export const confirmaciones = mysqlTable("confirmaciones", {
 export type Confirmacion = typeof confirmaciones.$inferSelect;
 export type InsertConfirmacion = typeof confirmaciones.$inferInsert;
 
+// ─── Historial de Precios de Compra ──────────────────────────────────────────
+// Registra el costo de cada producto en cada compra, para alertas y consultas
+export const historialPrecios = mysqlTable("historial_precios", {
+  id: int("id").autoincrement().primaryKey(),
+  articuloId: int("articuloId").notNull(),
+  articuloNombre: varchar("articuloNombre", { length: 500 }).notNull(),
+  proveedor: varchar("proveedor", { length: 255 }),
+  costoUnitario: decimal("costoUnitario", { precision: 12, scale: 4 }).notNull(),
+  precioVenta: decimal("precioVenta", { precision: 12, scale: 4 }),
+  numComprobante: varchar("numComprobante", { length: 100 }),
+  registradoEn: timestamp("registradoEn").defaultNow().notNull(),
+});
+
+export type HistorialPrecio = typeof historialPrecios.$inferSelect;
+export type InsertHistorialPrecio = typeof historialPrecios.$inferInsert;
+
 // ─── Productos Cache (Cache de artículos de inventarios365) ──────────────────
 export const productosCache = mysqlTable("productos_cache", {
   id: int("id").autoincrement().primaryKey(),
