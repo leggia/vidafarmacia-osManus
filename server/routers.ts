@@ -829,6 +829,66 @@ const cacheRouter = router({
   }),
 });
 
+// ─── Inventario Router ───────────────────────────────────────────────────────
+const inventarioRouter = router({
+  // Listar productos para conteo, por proveedor (vacío = todos)
+  // Calcula clasificación ABC por valor de stock (Pareto 80/20)
+  listar: publicProcedure
+    .input(z.object({ idProveedor: z.string().optional() }))
+    .query(async ({ input }) => {
+      const { inventarios365 } = await import("./inventarios365");
+      const productos = await inventarios365.listarParaInventario(input.idProveedor || "");
+
+      // Clasificación ABC: ordenar por valor de stock descendente
+      const ordenados = [...productos].sort((a, b) => b.valorStock - a.valorStock);
+      const valorTotal = ordenados.reduce((acc, p) => acc + p.valorStock, 0);
+      let acumulado = 0;
+      const conClase = ordenados.map((p) => {
+        acumulado += p.valorStock;
+        const pctAcumulado = valorTotal > 0 ? (acumulado / valorTotal) * 100 : 0;
+        // A: hasta 80% del valor, B: 80-95%, C: resto
+        const clase = pctAcumulado <= 80 ? "A" : pctAcumulado <= 95 ? "B" : "C";
+        return { ...p, clase };
+      });
+
+      return {
+        productos: conClase,
+        resumen: {
+          total: conClase.length,
+          valorTotal: Math.round(valorTotal * 100) / 100,
+          claseA: conClase.filter((p) => p.clase === "A").length,
+          claseB: conClase.filter((p) => p.clase === "B").length,
+          claseC: conClase.filter((p) => p.clase === "C").length,
+        },
+      };
+    }),
+
+  // Guardar una sesión de conteo (las variaciones encontradas)
+  guardarConteo: publicProcedure
+    .input(z.object({
+      tipo: z.enum(["anual", "ciclico_abc"]),
+      proveedor: z.string().optional(),
+      conteos: z.array(z.object({
+        articuloId: z.number(),
+        nombre: z.string(),
+        stockSistema: z.number(),
+        stockFisico: z.number(),
+        diferencia: z.number(),
+      })),
+    }))
+    .mutation(async ({ input }) => {
+      // Por ahora registra en log; el ajuste al sistema se conecta con el endpoint real
+      const conDiferencia = input.conteos.filter((c) => c.diferencia !== 0);
+      console.log(`[Inventario] Conteo ${input.tipo} (${input.proveedor || "todos"}): ${input.conteos.length} productos, ${conDiferencia.length} con diferencia`);
+      return {
+        success: true,
+        totalContados: input.conteos.length,
+        conDiferencia: conDiferencia.length,
+        diferencias: conDiferencia,
+      };
+    }),
+});
+
 // ─── App Router ──────────────────────────────────────────────────────────────
 export const appRouter = router({
   system: systemRouter,
@@ -849,6 +909,7 @@ export const appRouter = router({
   cache: cacheRouter,
   confirmaciones: confirmacionesRouter,
   inventarios365: inventarios365Router,
+  inventario: inventarioRouter,
 });
 
 export type AppRouter = typeof appRouter;

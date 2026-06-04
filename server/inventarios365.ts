@@ -62,6 +62,8 @@ export interface ArticuloAPI {
   precio_costo_paq: string | number;
   precio_uno: string | number;
   unidad_envase: number;
+  stock?: string | number;
+  vencimiento?: string | null;
   nombre_categoria?: string;
   nombre_proveedor?: string;
 }
@@ -622,6 +624,28 @@ class Inventarios365Service {
       console.error(`[Inventarios365] Error buscando proveedor "${nombre}":`, error);
       return null;
     }
+  }
+
+  /**
+   * Listar productos para inventario (por proveedor o todos), con stock y valor.
+   */
+  async listarParaInventario(idProveedor = ""): Promise<Array<{
+    id: number; nombre: string; codigo: string; stock: number;
+    costoUnit: number; precioVenta: number; valorStock: number;
+    categoria?: string; proveedor?: string; vencimiento?: string | null;
+  }>> {
+    const articulos = await this.listarArticulos("", idProveedor);
+    return articulos.map(a => {
+      const stock = parseFloat(String(a.stock ?? 0)) || 0;
+      const costoUnit = parseFloat(String(a.precio_costo_unid ?? 0)) || 0;
+      const precioVenta = parseFloat(String(a.precio_uno ?? 0)) || 0;
+      return {
+        id: a.id, nombre: a.nombre, codigo: a.codigo, stock, costoUnit, precioVenta,
+        valorStock: Math.round(stock * costoUnit * 100) / 100,
+        categoria: a.nombre_categoria, proveedor: a.nombre_proveedor,
+        vencimiento: a.vencimiento ?? null,
+      };
+    });
   }
 
   /**

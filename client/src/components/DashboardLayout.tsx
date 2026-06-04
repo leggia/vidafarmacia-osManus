@@ -29,6 +29,7 @@ import {
   ArrowLeftRight,
   ListTodo,
   History,
+  ClipboardCheck,
   Plus,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
@@ -40,6 +41,7 @@ const menuItems = [
   { icon: LayoutDashboard, label: "Panel de Control", path: "/" },
   { icon: ShoppingCart, label: "Compras", path: "/compras" },
   { icon: ArrowLeftRight, label: "Transferencias", path: "/transferencias" },
+  { icon: ClipboardCheck, label: "Inventario", path: "/inventario" },
   { icon: ListTodo, label: "Tareas Pendientes", path: "/tareas" },
   { icon: History, label: "Historial", path: "/historial" },
 ];
