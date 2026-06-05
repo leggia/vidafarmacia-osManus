@@ -837,11 +837,14 @@ const inventarioRouter = router({
     .query(async ({ input }) => {
       const { inventarios365 } = await import("./inventarios365");
       const productos = await inventarios365.listarParaInventario(input.idAlmacen, input.idProveedor || "");
-      const ordenados = [...productos].sort((a, b) => b.valorStock - a.valorStock);
-      const valorTotal = ordenados.reduce((acc, p) => acc + p.valorStock, 0);
+      // Criterio ABC: usar valor de stock (stock×costo) si hay costo; si no, usar cantidad de stock
+      const hayCosto = productos.some((p) => p.costoUnit > 0);
+      const criterio = (p: any) => hayCosto ? p.valorStock : p.stock;
+      const ordenados = [...productos].sort((a, b) => criterio(b) - criterio(a));
+      const valorTotal = ordenados.reduce((acc, p) => acc + criterio(p), 0);
       let acumulado = 0;
       const conClase = ordenados.map((p) => {
-        acumulado += p.valorStock;
+        acumulado += criterio(p);
         const pctAcumulado = valorTotal > 0 ? (acumulado / valorTotal) * 100 : 0;
         const clase = pctAcumulado <= 80 ? "A" : pctAcumulado <= 95 ? "B" : "C";
         return { ...p, clase };
@@ -850,10 +853,11 @@ const inventarioRouter = router({
         productos: conClase,
         resumen: {
           total: conClase.length,
-          valorTotal: Math.round(valorTotal * 100) / 100,
+          valorTotal: Math.round(productos.reduce((acc, p) => acc + p.valorStock, 0) * 100) / 100,
           claseA: conClase.filter((p) => p.clase === "A").length,
           claseB: conClase.filter((p) => p.clase === "B").length,
           claseC: conClase.filter((p) => p.clase === "C").length,
+          criterioABC: hayCosto ? "valor" : "cantidad",
         },
       };
     }),

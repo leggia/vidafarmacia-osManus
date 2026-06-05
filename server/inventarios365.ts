@@ -742,22 +742,29 @@ class Inventarios365Service {
   }>> {
     const articulos = await this.articuloAjusteInven(idAlmacen, idProveedor);
     return articulos.map((a: any) => {
-      // Nombres de campo robustos (el endpoint de ajuste puede nombrarlos distinto)
-      const id = a.id ?? a.producto_id ?? a.idarticulo ?? a.articulo_id;
-      const nombre = a.nombre ?? a.articulo ?? a.producto ?? a.descripcion ?? "";
-      const codigo = a.codigo ?? a.codigo_alfanumerico ?? "";
-      // El stock del almacén: stock_actual, stock, cantidad, existencia
-      const stock = parseFloat(String(a.stock_actual ?? a.stock ?? a.cantidad ?? a.existencia ?? 0)) || 0;
-      const costoUnit = parseFloat(String(a.precio_costo_unid ?? a.precio_costo ?? a.costo ?? 0)) || 0;
+      const id = a.id;
+      const nombre = a.nombre ?? "";
+      const codigo = a.codigo ?? "";
+      // El stock real del almacén viene en stock_total
+      const stock = parseFloat(String(a.stock_total ?? 0)) || 0;
+      const costoUnit = parseFloat(String(a.precio_costo_unid ?? a.precio_costo ?? 0)) || 0;
       const precioVenta = parseFloat(String(a.precio_uno ?? a.precio_venta ?? 0)) || 0;
-      const vencimiento = a.fecha_vencimiento ?? a.vencimiento ?? null;
-      const inventarioId = a.inventario_id ?? a.inventarioId ?? null;
+      // Las fechas de vencimiento vienen en un array (lotes). Tomamos la primera/más próxima.
+      let vencimiento: string | null = null;
+      let inventarioId: number | null = null;
+      if (Array.isArray(a.fechas_vencimiento) && a.fechas_vencimiento.length > 0) {
+        // Ordenar por fecha más próxima (FEFO) y tomar la primera
+        const lotes = [...a.fechas_vencimiento].sort((x, y) =>
+          String(x.fecha_vencimiento || "").localeCompare(String(y.fecha_vencimiento || "")));
+        vencimiento = lotes[0].fecha_vencimiento ?? null;
+        inventarioId = lotes[0].id ?? null;
+      }
       return {
         id, nombre, codigo, stock, costoUnit, precioVenta,
         valorStock: Math.round(stock * costoUnit * 100) / 100,
         inventarioId,
-        categoria: a.nombre_categoria ?? a.categoria,
-        proveedor: a.nombre_proveedor ?? a.proveedor,
+        categoria: a.nombre_categoria,
+        proveedor: a.nombre_proveedor,
         vencimiento,
       };
     });

@@ -471,7 +471,7 @@ export default function Inventario() {
                   <span className={`text-[10px] font-black w-5 h-5 rounded flex items-center justify-center shrink-0 ${claseColor(item.clase)}`}>{item.clase}</span>
                   <div className="flex-1 min-w-0">
                     <p className="text-sm font-medium truncate">{item.nombre}</p>
-                    <p className="text-[11px] text-muted-foreground">Cód: {item.codigo} · Costo {item.costoUnit.toFixed(2)} Bs</p>
+                    <p className="text-[11px] text-muted-foreground">Cód: {item.codigo}{item.costoUnit > 0 ? ` · Costo ${item.costoUnit.toFixed(2)} Bs` : ""}{item.vencimiento ? ` · Vto: ${item.vencimiento}` : ""}</p>
                   </div>
                   <div className="text-center shrink-0 w-14">
                     <p className="text-sm font-bold">{item.stock}</p>
