@@ -833,10 +833,10 @@ const cacheRouter = router({
 const inventarioRouter = router({
   // Listar productos para conteo, por proveedor (vacío = todos)
   listar: publicProcedure
-    .input(z.object({ idProveedor: z.string().optional() }))
+    .input(z.object({ idAlmacen: z.number(), idProveedor: z.string().optional() }))
     .query(async ({ input }) => {
       const { inventarios365 } = await import("./inventarios365");
-      const productos = await inventarios365.listarParaInventario(input.idProveedor || "");
+      const productos = await inventarios365.listarParaInventario(input.idAlmacen, input.idProveedor || "");
       const ordenados = [...productos].sort((a, b) => b.valorStock - a.valorStock);
       const valorTotal = ordenados.reduce((acc, p) => acc + p.valorStock, 0);
       let acumulado = 0;
@@ -948,6 +948,7 @@ const inventarioRouter = router({
         stockFisico: z.number(),
         diferencia: z.number(),
         fechaVencimiento: z.string().nullable().optional(),
+        inventarioId: z.number().nullable().optional(),
       })),
     }))
     .mutation(async ({ input }) => {
@@ -1003,6 +1004,7 @@ const inventarioRouter = router({
               .filter(c => c.diferencia !== 0)
               .map(c => ({
                 productoId: c.articuloId,
+                inventarioId: c.inventarioId ?? null,
                 stockAnterior: c.stockSistema,
                 stockReal: c.stockFisico,
                 fechaVencimiento: c.fechaVencimiento || null,

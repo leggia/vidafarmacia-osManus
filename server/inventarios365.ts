@@ -636,6 +636,7 @@ class Inventarios365Service {
     motivoId: number; // 2 = "Ajuste periodico"
     ajustes: Array<{
       productoId: number;
+      inventarioId?: number | null;
       stockAnterior: number;   // stock del sistema
       stockReal: number;       // físico contado
       fechaVencimiento?: string | null;
@@ -655,7 +656,7 @@ class Inventarios365Service {
         const fv = a.fechaVencimiento ? this.convertirFecha(a.fechaVencimiento) : null;
         return {
           producto_id: a.productoId,
-          inventario_id: null,
+          inventario_id: a.inventarioId ?? null,
           cantidad: diferencia,
           tipo_movimiento: tipoMovimiento,
           stock_anterior: a.stockAnterior,
@@ -684,23 +685,77 @@ class Inventarios365Service {
   }
 
   /**
+   * Listar productos para AJUSTE de inventario, filtrados por almacén y proveedor.
+   * Endpoint REAL del módulo de ajuste: GET /articuloAjusteInven
+   * Este sí trae el stock correcto del almacén específico.
+   * Maneja paginación (trae todas las páginas).
+   */
+  async articuloAjusteInven(idAlmacen: number, idProveedor: string): Promise<any[]> {
+    const todos: any[] = [];
+    let page = 1;
+    const maxPages = 50; // tope de seguridad
+    try {
+      while (page <= maxPages) {
+        const url = `/articuloAjusteInven?page=${page}&buscar=&criterio=nombre&idAlmacen=${idAlmacen}&idProveedor=${idProveedor}`;
+        const data = await this.get<any>(url);
+        // Log de diagnóstico de la primera página para ver la estructura
+        if (page === 1) {
+          console.log(`[Inventarios365] articuloAjusteInven estructura:`, JSON.stringify(data).substring(0, 400));
+        }
+        // La respuesta puede venir en distintas formas: {data:[...]}, {articulos:{data:[...]}}, [...]
+        let lista: any[] = [];
+        let lastPage = 1;
+        if (Array.isArray(data)) {
+          lista = data;
+        } else if (data?.data && Array.isArray(data.data)) {
+          lista = data.data;
+          lastPage = data.last_page ?? data.lastPage ?? 1;
+        } else if (data?.articulos) {
+          const art = data.articulos;
+          if (Array.isArray(art)) { lista = art; }
+          else if (art?.data && Array.isArray(art.data)) {
+            lista = art.data;
+            lastPage = art.last_page ?? art.lastPage ?? 1;
+          }
+        }
+        todos.push(...lista);
+        if (page >= lastPage || lista.length === 0) break;
+        page++;
+      }
+    } catch (error) {
+      console.error("[Inventarios365] Error en articuloAjusteInven:", error);
+    }
+    return todos;
+  }
+
+  /**
    * Listar productos para inventario (por proveedor o todos), con stock y valor.
    */
-  async listarParaInventario(idProveedor = ""): Promise<Array<{
+  async listarParaInventario(idAlmacen: number, idProveedor = ""): Promise<Array<{
     id: number; nombre: string; codigo: string; stock: number;
     costoUnit: number; precioVenta: number; valorStock: number;
+    inventarioId: number | null;
     categoria?: string; proveedor?: string; vencimiento?: string | null;
   }>> {
-    const articulos = await this.listarArticulos("", idProveedor);
-    return articulos.map(a => {
-      const stock = parseFloat(String(a.stock ?? 0)) || 0;
-      const costoUnit = parseFloat(String(a.precio_costo_unid ?? 0)) || 0;
-      const precioVenta = parseFloat(String(a.precio_uno ?? 0)) || 0;
+    const articulos = await this.articuloAjusteInven(idAlmacen, idProveedor);
+    return articulos.map((a: any) => {
+      // Nombres de campo robustos (el endpoint de ajuste puede nombrarlos distinto)
+      const id = a.id ?? a.producto_id ?? a.idarticulo ?? a.articulo_id;
+      const nombre = a.nombre ?? a.articulo ?? a.producto ?? a.descripcion ?? "";
+      const codigo = a.codigo ?? a.codigo_alfanumerico ?? "";
+      // El stock del almacén: stock_actual, stock, cantidad, existencia
+      const stock = parseFloat(String(a.stock_actual ?? a.stock ?? a.cantidad ?? a.existencia ?? 0)) || 0;
+      const costoUnit = parseFloat(String(a.precio_costo_unid ?? a.precio_costo ?? a.costo ?? 0)) || 0;
+      const precioVenta = parseFloat(String(a.precio_uno ?? a.precio_venta ?? 0)) || 0;
+      const vencimiento = a.fecha_vencimiento ?? a.vencimiento ?? null;
+      const inventarioId = a.inventario_id ?? a.inventarioId ?? null;
       return {
-        id: a.id, nombre: a.nombre, codigo: a.codigo, stock, costoUnit, precioVenta,
+        id, nombre, codigo, stock, costoUnit, precioVenta,
         valorStock: Math.round(stock * costoUnit * 100) / 100,
-        categoria: a.nombre_categoria, proveedor: a.nombre_proveedor,
-        vencimiento: a.vencimiento ?? null,
+        inventarioId,
+        categoria: a.nombre_categoria ?? a.categoria,
+        proveedor: a.nombre_proveedor ?? a.proveedor,
+        vencimiento,
       };
     });
   }

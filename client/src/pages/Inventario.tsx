@@ -21,6 +21,7 @@ interface ConteoItem {
   clase: string;
   categoria?: string;
   vencimiento?: string | null;
+  inventarioId?: number | null;
   fisico: number | null;
 }
 
@@ -70,7 +71,7 @@ export default function Inventario() {
         nombre: nuevoNombre.trim(), tipo: nuevoTipo,
         almacenId: nuevoAlmacen.id, almacenNombre: nuevoAlmacen.nombre,
       });
-      setSesionActiva({ id: res.id, nombre: nuevoNombre.trim(), tipo: nuevoTipo, almacenNombre: nuevoAlmacen.nombre, estado: "en_progreso", proveedores: [] });
+      setSesionActiva({ id: res.id, nombre: nuevoNombre.trim(), tipo: nuevoTipo, almacenId: nuevoAlmacen.id, almacenNombre: nuevoAlmacen.nombre, estado: "en_progreso", proveedores: [] });
       toast.success("Inventario creado");
       setVista("proveedores");
       setNuevoNombre(""); setNuevoAlmacen(null);
@@ -95,7 +96,10 @@ export default function Inventario() {
     setProveedoresLista([]);
     setVista("conteo");
     try {
-      const res = await utils.inventario.listar.fetch({ idProveedor });
+      const res = await utils.inventario.listar.fetch({
+        idAlmacen: sesionActiva?.almacenId ?? 1,
+        idProveedor,
+      });
       let productos = res.productos.map((p: any) => ({ ...p, fisico: null }));
       const provGuardado = sesionActiva?.proveedores?.find((p: any) => p.proveedorNombre === nombreProv);
       if (provGuardado) {
@@ -152,6 +156,7 @@ export default function Inventario() {
       articuloId: i.id, nombre: i.nombre, stockSistema: i.stock,
       stockFisico: i.fisico!, diferencia: i.fisico! - i.stock,
       fechaVencimiento: i.vencimiento || null,
+      inventarioId: i.inventarioId ?? null,
     }));
     if (conteos.length === 0) { toast.error("No has contado ningún producto"); return; }
 
