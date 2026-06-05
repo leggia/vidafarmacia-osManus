@@ -223,6 +223,21 @@ export const inventarioProveedores = mysqlTable("inventario_proveedores", {
 export type InventarioProveedor = typeof inventarioProveedores.$inferSelect;
 export type InsertInventarioProveedor = typeof inventarioProveedores.$inferInsert;
 
+// ─── Confirmaciones de Proveedores ───────────────────────────────────────────
+// Aprende: nombre de proveedor en factura → proveedor del sistema (como productos)
+export const confirmacionesProveedores = mysqlTable("confirmaciones_proveedores", {
+  id: int("id").autoincrement().primaryKey(),
+  nombreFactura: varchar("nombreFactura", { length: 500 }).notNull(),
+  proveedorId: varchar("proveedorId", { length: 50 }).notNull(),
+  proveedorNombre: varchar("proveedorNombre", { length: 255 }).notNull(),
+  valido: int("valido").default(1).notNull(),
+  confirmadoEn: timestamp("confirmadoEn").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type ConfirmacionProveedor = typeof confirmacionesProveedores.$inferSelect;
+export type InsertConfirmacionProveedor = typeof confirmacionesProveedores.$inferInsert;
+
 // ─── Productos Cache (Cache de artículos de inventarios365) ──────────────────
 export const productosCache = mysqlTable("productos_cache", {
   id: int("id").autoincrement().primaryKey(),

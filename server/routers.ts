@@ -722,6 +722,23 @@ const confirmacionesRouter = router({
       return inventarios365.listarProveedores(input.filtro);
     }),
 
+  // Buscar el proveedor del sistema aprendido para un nombre de factura
+  buscarProveedorConfirmado: publicProcedure
+    .input(z.object({ nombreFactura: z.string() }))
+    .query(async ({ input }) => {
+      const { confirmacionesProveedoresService } = await import("./confirmaciones-proveedores");
+      return confirmacionesProveedoresService.buscar(input.nombreFactura);
+    }),
+
+  // Confirmar (aprender) el emparejamiento de un proveedor
+  confirmarProveedor: publicProcedure
+    .input(z.object({ nombreFactura: z.string(), proveedorId: z.string(), proveedorNombre: z.string() }))
+    .mutation(async ({ input }) => {
+      const { confirmacionesProveedoresService } = await import("./confirmaciones-proveedores");
+      await confirmacionesProveedoresService.confirmar(input.nombreFactura, input.proveedorId, input.proveedorNombre);
+      return { success: true };
+    }),
+
   // Analizar el costo de un producto vs su historial de compras
   analizarPrecio: publicProcedure
     .input(z.object({ articuloId: z.number(), costoActual: z.number() }))

@@ -688,34 +688,35 @@ class Inventarios365Service {
    * Contar el total de proveedores del sistema (para el progreso global del inventario).
    * Intenta el endpoint paginado de proveedores (similar a categorianewview).
    */
-  async contarProveedores(): Promise<{ total: number; endpoint: string }> {
-    // Probar endpoints candidatos en orden
+  async contarProveedores(): Promise<{ total: number; endpoint: string; intentos?: any[] }> {
     const candidatos = [
       "/proveedornewview?page=1&buscar=&criterio=nombre",
       "/proveedor/listarProveedor?page=1&buscar=&criterio=nombre",
       "/proveedorview?page=1&buscar=&criterio=nombre",
+      "/proveedor?page=1&buscar=&criterio=nombre",
+      "/proveedores?page=1&buscar=&criterio=nombre",
+      "/proveedor/listar?page=1&buscar=&criterio=nombre",
+      "/listarProveedor?page=1&buscar=&criterio=nombre",
     ];
+    const intentos: any[] = [];
     for (const url of candidatos) {
       try {
         const data = await this.get<any>(url);
-        // Buscar el total en formatos comunes de paginación de Laravel
+        const keys = data && typeof data === "object" ? Object.keys(data) : [];
         const total = data?.total ?? data?.proveedores?.total ?? data?.data?.total ?? null;
-        if (total != null && Number(total) > 0) {
-          console.log(`[Inventarios365] Total proveedores: ${total} (via ${url})`);
-          return { total: Number(total), endpoint: url };
-        }
-        // Si no hay 'total' pero hay un array, contar sus elementos (al menos la página)
         const arr = data?.proveedores?.data ?? data?.data ?? data?.proveedores ?? (Array.isArray(data) ? data : null);
-        if (Array.isArray(arr) && arr.length > 0) {
-          console.log(`[Inventarios365] Proveedores (sin total, página): ${arr.length} (via ${url})`);
-          return { total: arr.length, endpoint: url };
+        intentos.push({ url, keys, total, arrLen: Array.isArray(arr) ? arr.length : null });
+        if (total != null && Number(total) > 0) {
+          return { total: Number(total), endpoint: url, intentos };
         }
-      } catch (e) {
-        // probar siguiente candidato
+        if (Array.isArray(arr) && arr.length > 0) {
+          return { total: arr.length, endpoint: url + " (conteo de página)", intentos };
+        }
+      } catch (e: any) {
+        intentos.push({ url, error: e?.response?.status || e?.message });
       }
     }
-    console.warn("[Inventarios365] No se pudo contar proveedores");
-    return { total: 0, endpoint: "ninguno" };
+    return { total: 0, endpoint: "ninguno", intentos };
   }
 
   /**

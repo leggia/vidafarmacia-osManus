@@ -164,6 +164,7 @@ export default function NuevaCompra() {
   const [branchId, setBranchId] = useState<string>("");
   const [receiptNumber, setReceiptNumber] = useState("");
   const [supplier, setSupplier] = useState("");
+  const [supplierOriginal, setSupplierOriginal] = useState(""); // nombre extraído por el LLM (clave de aprendizaje)
   const [items, setItems] = useState<ExtractedItem[]>([]);
   const [isExtracting, setIsExtracting] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -189,13 +190,14 @@ export default function NuevaCompra() {
   const utils = trpc.useUtils();
 
   // Auto-buscar cuando aparecen productos no encontrados
-  const buscarProducto = async (idx: number, term: string, proveedorNombre: string) => {
+  const buscarProducto = async (idx: number, term: string, proveedorNombre: string, idProveedor?: number) => {
     if (!term || term.length < 3) return;
     setBuscando(prev => ({ ...prev, [idx]: true }));
     try {
       const resultados = await utils.confirmaciones.buscarArticulo.fetch({
         termino: term,
         nombreProveedor: proveedorNombre,
+        idProveedor: idProveedor && idProveedor > 0 ? idProveedor : undefined,
       });
       setResultadosBusqueda(prev => ({ ...prev, [idx]: Array.isArray(resultados) ? resultados : [] }));
     } catch (e) {
@@ -286,7 +288,18 @@ export default function NuevaCompra() {
         if (mappedItems.some((i: any) => i.expiryDate)) {
           setShowExpiry(true);
         }
-            if (result.supplier) setSupplier(result.supplier);
+            if (result.supplier) {
+              setSupplier(result.supplier);
+              setSupplierOriginal(result.supplier);
+              // Buscar si ya aprendimos este proveedor antes
+              try {
+                const provConf = await utils.confirmaciones.buscarProveedorConfirmado.fetch({ nombreFactura: result.supplier });
+                if (provConf) {
+                  setSupplier(provConf.nombre);
+                  setProveedorConfirmado({ id: parseInt(provConf.id) || 0, nombre: provConf.nombre });
+                }
+              } catch {}
+            }
             if (result.receiptNumber) setReceiptNumber(result.receiptNumber);
             setExtracted(true);
             toast.success(`Se extrajeron ${result.items.length} productos de la imagen`);
@@ -776,11 +789,20 @@ export default function NuevaCompra() {
                           <Button
                             size="sm"
                             className="h-7 text-xs bg-green-600 hover:bg-green-700 text-white ml-2"
-                            onClick={() => {
+                            onClick={async () => {
+                              const nombreOrig = supplierOriginal || supplier;
                               setSupplier(prov.nombre);
                               setProveedorConfirmado({ id: prov.id, nombre: prov.nombre });
                               setMostrarProveedores(false);
-                              toast.success(`Proveedor: ${prov.nombre}`);
+                              toast.success(`Proveedor: ${prov.nombre}. Se recordará.`);
+                              // Aprender el emparejamiento para futuras facturas
+                              try {
+                                await utils.client.confirmaciones.confirmarProveedor.mutate({
+                                  nombreFactura: nombreOrig,
+                                  proveedorId: String(prov.id),
+                                  proveedorNombre: prov.nombre,
+                                });
+                              } catch {}
                             }}
                           >
                             Usar
@@ -994,7 +1016,7 @@ export default function NuevaCompra() {
                             value={busquedaProducto[idx] ?? ""}
                             onChange={(e) => setBusquedaProducto(prev => ({ ...prev, [idx]: e.target.value }))}
                             onKeyDown={(e) => {
-                              if (e.key === "Enter") buscarProducto(idx, busquedaProducto[idx] || "", sinFiltroProveedor[idx] ? "" : (supplier || ""));
+                              if (e.key === "Enter") buscarProducto(idx, busquedaProducto[idx] || "", sinFiltroProveedor[idx] ? "" : (supplier || ""), sinFiltroProveedor[idx] ? undefined : (proveedorConfirmado?.id));
                             }}
                             placeholder="Buscar producto (ej: fluconazol)..."
                             className="text-sm h-9 flex-1"
@@ -1004,7 +1026,7 @@ export default function NuevaCompra() {
                             size="sm"
                             className="h-9 text-xs whitespace-nowrap bg-blue-600 hover:bg-blue-700 text-white px-3"
                             disabled={buscando[idx]}
-                            onClick={() => buscarProducto(idx, busquedaProducto[idx] || "", sinFiltroProveedor[idx] ? "" : (supplier || ""))}
+                            onClick={() => buscarProducto(idx, busquedaProducto[idx] || "", sinFiltroProveedor[idx] ? "" : (supplier || ""), sinFiltroProveedor[idx] ? undefined : (proveedorConfirmado?.id))}
                           >
                             {buscando[idx] ? <Loader2 className="h-3 w-3 animate-spin" /> : <Search className="h-3.5 w-3.5" />}
                           </Button>
@@ -1025,7 +1047,7 @@ export default function NuevaCompra() {
                                 const nuevo = !sinFiltroProveedor[idx];
                                 setSinFiltroProveedor(prev => ({ ...prev, [idx]: nuevo }));
                                 // Re-buscar con el nuevo filtro
-                                buscarProducto(idx, busquedaProducto[idx] || "", nuevo ? "" : (supplier || ""));
+                                buscarProducto(idx, busquedaProducto[idx] || "", nuevo ? "" : (supplier || ""), nuevo ? undefined : (proveedorConfirmado?.id));
                               }}
                             >
                               {sinFiltroProveedor[idx] ? "Filtrar por proveedor" : "Quitar filtro"}
