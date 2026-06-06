@@ -129,7 +129,17 @@ async function startServer() {
     try {
       const result = await inventarios365.contarProveedores();
       const todos = await inventarios365.listarTodosProveedores();
-      res.json({ ...result, totalListado: todos.length, primeros3: todos.slice(0, 3) });
+      let muestra: any = null;
+      try {
+        const raw = await inventarios365.diagRaw("/proveedor?page=1&buscar=&criterio=todos");
+        const personas = raw?.personas;
+        muestra = {
+          personasEsArray: Array.isArray(personas),
+          personasTieneData: !!personas?.data,
+          ejemplo: Array.isArray(personas) ? personas[0] : (personas?.data?.[0] ?? personas),
+        };
+      } catch {}
+      res.json({ ...result, totalListado: todos.length, primeros3: todos.slice(0, 3), muestra });
     } catch (e: any) {
       res.status(500).json({ error: e.message });
     }

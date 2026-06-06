@@ -193,10 +193,10 @@ export default function Inventario() {
     } catch (e: any) { toast.error("Error: " + (e.message || "")); }
   };
 
-  // Generar hoja de conteo imprimible (PDF vía navegador)
+  // Generar hoja de conteo imprimible (PDF vía navegador) — optimizada para tinta y papel
   const imprimirHojaConteo = () => {
     if (items.length === 0) { toast.error("No hay productos para imprimir"); return; }
-    const fecha = new Date().toLocaleDateString("es-BO", { day: "2-digit", month: "long", year: "numeric" });
+    const fecha = new Date().toLocaleDateString("es-BO", { day: "2-digit", month: "short", year: "numeric" });
     const proveedor = proveedorActivo?.nombre || "Todos";
     const sucursal = sesionActiva?.almacenNombre || "";
     const nombreSesion = sesionActiva?.nombre || "Inventario";
@@ -206,69 +206,66 @@ export default function Inventario() {
     const ordenados = [...items].sort((a, b) =>
       (ordenABC[a.clase] - ordenABC[b.clase]) || a.nombre.localeCompare(b.nombre));
 
-    const filas = ordenados.map((it, i) => `
+    // Filas: solo ABC, Producto, Sistema, Físico (en blanco)
+    const filas = ordenados.map((it) => `
       <tr>
-        <td class="num">${i + 1}</td>
-        <td class="cls cls-${it.clase}">${it.clase}</td>
-        <td class="nom">${it.nombre}</td>
-        <td class="cod">${it.codigo || ""}</td>
-        <td class="venc">${it.vencimiento || ""}</td>
-        <td class="sis">${it.stock}</td>
-        <td class="fis"></td>
+        <td class="c">${it.clase}</td>
+        <td class="n">${it.nombre}</td>
+        <td class="s">${it.stock}</td>
+        <td class="f"></td>
       </tr>`).join("");
 
     const html = `<!DOCTYPE html><html><head><meta charset="utf-8"><title>Conteo ${proveedor}</title>
     <style>
       * { box-sizing: border-box; }
-      body { font-family: Arial, sans-serif; margin: 18px; color: #111; }
-      .head { display: flex; justify-content: space-between; align-items: flex-start; border-bottom: 2px solid #15803d; padding-bottom: 8px; margin-bottom: 4px; }
-      .head h1 { font-size: 18px; margin: 0; color: #15803d; }
-      .head .sub { font-size: 11px; color: #444; margin-top: 3px; line-height: 1.5; }
-      .meta { text-align: right; font-size: 11px; color: #444; }
-      .meta .firma { margin-top: 28px; border-top: 1px solid #999; padding-top: 3px; width: 160px; display: inline-block; text-align: center; }
-      table { width: 100%; border-collapse: collapse; margin-top: 8px; }
-      th { background: #15803d; color: #fff; font-size: 10px; text-transform: uppercase; padding: 5px 4px; text-align: left; }
-      td { border-bottom: 1px solid #ddd; padding: 4px; font-size: 11px; }
-      tr:nth-child(even) td { background: #f6f6f6; }
-      .num { width: 28px; text-align: center; color: #888; }
-      .cls { width: 22px; text-align: center; font-weight: bold; }
-      .cls-A { color: #b91c1c; } .cls-B { color: #b45309; } .cls-C { color: #666; }
-      .cod { width: 70px; color: #666; font-size: 10px; }
-      .venc { width: 75px; color: #666; font-size: 10px; }
-      .sis { width: 55px; text-align: center; font-weight: bold; }
-      .fis { width: 70px; border: 1.5px solid #15803d; background: #fff; }
-      .leyenda { font-size: 9px; color: #888; margin-top: 10px; }
-      @media print { body { margin: 10px; } .noprint { display: none; } th { -webkit-print-color-adjust: exact; print-color-adjust: exact; } }
-      .btn { background: #15803d; color: #fff; border: none; padding: 10px 18px; border-radius: 6px; font-size: 14px; cursor: pointer; margin: 10px 4px; }
+      body { font-family: 'Helvetica Neue', Arial, sans-serif; margin: 12mm 10mm; color: #000; font-size: 9.5px; }
+      /* Encabezado en una sola fila para ahorrar espacio */
+      .head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 14px;
+        border-bottom: 1.5px solid #000; padding-bottom: 5px; margin-bottom: 8px; }
+      .head .t { font-size: 13px; font-weight: 800; letter-spacing: -0.2px; }
+      .head .it { font-size: 9.5px; } .head .it b { font-weight: 700; }
+      .head .resp { margin-left: auto; font-size: 9px; }
+      .head .resp u { text-decoration: none; border-bottom: 1px solid #000; padding: 0 26px; }
+      /* Lista en 2 columnas por página para ahorrar hojas */
+      .cols { column-count: 2; column-gap: 8mm; }
+      table { width: 100%; border-collapse: collapse; }
+      thead { display: table-header-group; }
+      th { font-size: 8px; text-transform: uppercase; letter-spacing: 0.3px; text-align: left;
+        padding: 2px 3px; border-bottom: 1.2px solid #000; font-weight: 700; }
+      td { padding: 2.5px 3px; border-bottom: 0.4px solid #bbb; font-size: 9.5px; vertical-align: middle; }
+      tr { break-inside: avoid; }
+      .c { width: 16px; text-align: center; font-weight: 700; color: #000; }
+      .n { line-height: 1.15; }
+      .s { width: 34px; text-align: center; font-weight: 700; }
+      .f { width: 42px; border: 0.8px solid #000; }
+      th.thc { text-align: center; }
+      .leyenda { font-size: 7.5px; color: #555; margin-top: 8px; column-span: all; }
+      @media print {
+        body { margin: 10mm 8mm; }
+        .noprint { display: none; }
+      }
+      .btn { background: #15803d; color: #fff; border: none; padding: 10px 18px; border-radius: 6px; font-size: 14px; cursor: pointer; margin: 8px 4px; }
     </style></head><body>
-      <div class="noprint" style="text-align:center; margin-bottom:12px;">
+      <div class="noprint" style="text-align:center; margin-bottom:10px;">
         <button class="btn" onclick="window.print()">🖨️ Imprimir / Guardar PDF</button>
         <button class="btn" style="background:#666" onclick="window.close()">Cerrar</button>
       </div>
       <div class="head">
-        <div>
-          <h1>Hoja de Conteo de Inventario</h1>
-          <div class="sub">
-            <strong>${nombreSesion}</strong><br>
-            Proveedor: <strong>${proveedor}</strong> &nbsp;·&nbsp; Sucursal: ${sucursal}<br>
-            ${ordenados.length} productos · Fecha: ${fecha}
-          </div>
-        </div>
-        <div class="meta">
-          Contado por:<br><span class="firma">Firma</span><br><br>
-          Revisado por:<br><span class="firma">Firma</span>
-        </div>
+        <span class="t">${nombreSesion}</span>
+        <span class="it"><b>Prov:</b> ${proveedor}</span>
+        <span class="it"><b>Suc:</b> ${sucursal}</span>
+        <span class="it"><b>Fecha:</b> ${fecha}</span>
+        <span class="it"><b>Items:</b> ${ordenados.length}</span>
+        <span class="resp">Responsable: <u></u></span>
       </div>
-      <table>
-        <thead><tr>
-          <th class="num">#</th><th>ABC</th><th>Producto</th><th>Código</th>
-          <th>Vence</th><th style="text-align:center">Sistema</th><th>Físico</th>
-        </tr></thead>
-        <tbody>${filas}</tbody>
-      </table>
-      <div class="leyenda">
-        ABC: A = alto valor/rotación · B = medio · C = bajo. Anote en "Físico" la cantidad real contada.
-        Deje en blanco los que coincidan con el sistema. Luego ingrese solo las diferencias en la app.
+      <div class="cols">
+        <table>
+          <thead><tr>
+            <th>A</th><th>Producto</th><th class="thc">Sis</th><th class="thc">Físico</th>
+          </tr></thead>
+          <tbody>${filas}</tbody>
+        </table>
+        <div class="leyenda">A/B/C = prioridad por valor. Anote en "Físico" solo lo que difiera del sistema; deje en blanco lo que coincida. Luego ingrese las diferencias en la app.</div>
       </div>
     </body></html>`;
 

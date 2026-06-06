@@ -752,6 +752,13 @@ class Inventarios365Service {
   }
 
   /**
+   * Método público SOLO para diagnóstico: obtiene la respuesta cruda de un path.
+   */
+  async diagRaw(path: string): Promise<any> {
+    return this.get<any>(path);
+  }
+
+  /**
    * Listar productos para AJUSTE de inventario, filtrados por almacén y proveedor.
    * Endpoint REAL del módulo de ajuste: GET /articuloAjusteInven
    * Este sí trae el stock correcto del almacén específico.
