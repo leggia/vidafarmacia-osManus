@@ -193,7 +193,8 @@ export default function Inventario() {
     }
     if (filtroClase) r = r.filter(i => i.clase === filtroClase);
     if (soloDiferencias) r = r.filter(i => i.fisico !== null && i.fisico !== i.stock);
-    return r;
+    // Ordenar alfabéticamente A-Z por nombre (igual que el PDF)
+    return [...r].sort((a, b) => a.nombre.localeCompare(b.nombre));
   }, [items, busqueda, filtroClase, soloDiferencias]);
 
   const guardarProveedor = async (completar: boolean) => {

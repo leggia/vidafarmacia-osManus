@@ -166,6 +166,7 @@ export default function NuevaCompra() {
   const [supplier, setSupplier] = useState("");
   const [supplierOriginal, setSupplierOriginal] = useState(""); // nombre extraído por el LLM (clave de aprendizaje)
   const [descuentoGlobal, setDescuentoGlobal] = useState(0);
+  const [descuentoGlobalPct, setDescuentoGlobalPct] = useState(0);
   const [totalFacturaReal, setTotalFacturaReal] = useState(0);
   const [items, setItems] = useState<ExtractedItem[]>([]);
   const [isExtracting, setIsExtracting] = useState(false);
@@ -188,7 +189,7 @@ export default function NuevaCompra() {
   const [proveedoresEncontrados, setProveedoresEncontrados] = useState<any[]>([]);
   const [buscandoProveedor, setBuscandoProveedor] = useState(false);
   const [proveedorConfirmado, setProveedorConfirmado] = useState<{ id: number; nombre: string } | null>(null);
-  const [nuevoProducto, setNuevoProducto] = useState<{ precioVenta: number; idcategoria: number | null; categoriaNombre: string }>({ precioVenta: 0, idcategoria: null, categoriaNombre: "" });
+  const [nuevoProducto, setNuevoProducto] = useState<{ nombre: string; precioVenta: number; idcategoria: number | null; categoriaNombre: string }>({ nombre: "", precioVenta: 0, idcategoria: null, categoriaNombre: "" });
   const [creandoProducto, setCreandoProducto] = useState(false);
 
   const utils = trpc.useUtils();
@@ -334,11 +335,24 @@ export default function NuevaCompra() {
             mimeType: file.type,
           });
           if (result.items && result.items.length > 0) {
-            const mappedItems = result.items.map((i: any) => ({
-              ...i,
-              nombreFacturaOriginal: i.productName,
-              expiryDate: convertExpiryDate(i.expiryDate) || null,
-            }));
+            const descGlobal = result.descuentoGlobal || 0;
+            const sumaSubtotales = result.items.reduce((s: number, i: any) => s + (i.subtotal || 0), 0);
+            // Factor de descuento global (ej: 0.05 = 5%). Se aplica a cada costo unitario.
+            const factorDesc = (descGlobal > 0 && sumaSubtotales > 0) ? (descGlobal / sumaSubtotales) : 0;
+            const mappedItems = result.items.map((i: any) => {
+              const costoBase = i.unitCost || 0;
+              // Distribuir el descuento global: bajar el costo unitario proporcionalmente
+              const costoConDesc = factorDesc > 0 ? Math.round(costoBase * (1 - factorDesc) * 10000) / 10000 : costoBase;
+              const subtotalConDesc = factorDesc > 0 ? Math.round((i.subtotal || 0) * (1 - factorDesc) * 100) / 100 : (i.subtotal || 0);
+              return {
+                ...i,
+                unitCost: costoConDesc,
+                costoSinDescuento: costoBase, // referencia
+                subtotal: subtotalConDesc,
+                nombreFacturaOriginal: i.productName,
+                expiryDate: convertExpiryDate(i.expiryDate) || null,
+              };
+            });
         setItems(mappedItems);
         if (mappedItems.some((i: any) => i.expiryDate)) {
           setShowExpiry(true);
@@ -356,7 +370,8 @@ export default function NuevaCompra() {
               } catch {}
             }
             if (result.receiptNumber) setReceiptNumber(result.receiptNumber);
-            setDescuentoGlobal(result.descuentoGlobal || 0);
+            setDescuentoGlobal(descGlobal);
+            setDescuentoGlobalPct(factorDesc > 0 ? Math.round(factorDesc * 1000) / 10 : 0);
             setTotalFacturaReal(result.totalFactura || 0);
             setExtracted(true);
             toast.success(`Se extrajeron ${result.items.length} productos de la imagen`);
@@ -428,7 +443,7 @@ export default function NuevaCompra() {
   const autoguardarBorrador = useCallback(async () => {
     if (!branchId || items.length === 0) return;
     try {
-      const totalAmount = items.reduce((sum, i) => sum + i.subtotal, 0) - descuentoGlobal;
+      const totalAmount = items.reduce((sum, i) => sum + i.subtotal, 0);
       const result: any = await createPurchase.mutateAsync({
         branchId: parseInt(branchId),
         receiptNumber, receiptType, supplier, almacenNombre, totalAmount,
@@ -485,7 +500,7 @@ export default function NuevaCompra() {
       }
       setIsSubmitting(true);
       try {
-        const totalAmount = items.reduce((sum, i) => sum + i.subtotal, 0) - descuentoGlobal;
+        const totalAmount = items.reduce((sum, i) => sum + i.subtotal, 0);
         const result = await createPurchase.mutateAsync({
           branchId: parseInt(branchId),
           receiptNumber,
@@ -1234,7 +1249,7 @@ export default function NuevaCompra() {
                             onClick={async () => {
                               const costo = item.unitCost || 0;
                               const precioSugerido = precioParaMargen(costo, 0.20);
-                              setNuevoProducto({ precioVenta: precioSugerido, idcategoria: null, categoriaNombre: "Sugiriendo..." });
+                              setNuevoProducto({ nombre: item.productName, precioVenta: precioSugerido, idcategoria: null, categoriaNombre: "Sugiriendo..." });
                               setFilaCreando(idx);
                               // Pedir categoría sugerida por IA
                               try {
@@ -1249,7 +1264,15 @@ export default function NuevaCompra() {
                           </button>
                         ) : (
                           <div className="mt-2 pt-2 border-t border-blue-200 dark:border-blue-800 space-y-2">
-                            <p className="text-xs font-semibold text-blue-700 dark:text-blue-300">Crear: {item.productName}</p>
+                            <div>
+                              <label className="text-[11px] text-muted-foreground">Nombre del producto (editable)</label>
+                              <Input
+                                value={nuevoProducto.nombre}
+                                onChange={(e) => setNuevoProducto(prev => ({ ...prev, nombre: e.target.value }))}
+                                className="h-8 text-xs font-medium"
+                                placeholder="Nombre del producto"
+                              />
+                            </div>
                             <div className="grid grid-cols-2 gap-2">
                               <div>
                                 <label className="text-[11px] text-muted-foreground">Costo unitario</label>
@@ -1280,10 +1303,12 @@ export default function NuevaCompra() {
                                 disabled={creandoProducto || !nuevoProducto.idcategoria}
                                 onClick={async () => {
                                   if (!nuevoProducto.idcategoria) { toast.error("Esperando categoría sugerida..."); return; }
+                                  if (!nuevoProducto.nombre.trim()) { toast.error("El nombre no puede estar vacío"); return; }
                                   setCreandoProducto(true);
                                   try {
+                                    const nombreFinal = nuevoProducto.nombre.trim();
                                     const res = await crearProductoMut.mutateAsync({
-                                      nombre: item.productName,
+                                      nombre: nombreFinal,
                                       costoUnitario: item.unitCost,
                                       precioVenta: nuevoProducto.precioVenta,
                                       idcategoria: nuevoProducto.idcategoria,
@@ -1297,11 +1322,13 @@ export default function NuevaCompra() {
                                         proveedor: supplier || "Desconocido",
                                         nombreFactura,
                                         articuloId: res.id || 0,
-                                        articuloNombre: item.productName,
+                                        articuloNombre: nombreFinal,
                                         articuloCodigo: "",
                                       });
-                                      setProductosEmparejados(prev => ({ ...prev, [item.productName]: nombreFactura }));
-                                      toast.success(`✅ Producto "${item.productName}" creado y emparejado.`, { duration: 5000 });
+                                      // Actualizar el nombre del item al nombre final del producto
+                                      updateItem(idx, "productName", nombreFinal);
+                                      setProductosEmparejados(prev => ({ ...prev, [nombreFinal]: nombreFactura }));
+                                      toast.success(`✅ Producto "${nombreFinal}" creado y emparejado.`, { duration: 5000 });
                                       setFilaCreando(null);
                                       setFilaEmparejando(null);
                                     } else {
@@ -1328,22 +1355,16 @@ export default function NuevaCompra() {
                   {/* Total */}
                   <div className="border-t-2 border-foreground pt-3 mt-3 space-y-1">
                     {descuentoGlobal > 0 && (
-                      <>
-                        <div className="flex justify-between items-center text-sm text-muted-foreground">
-                          <span>Subtotal productos</span>
-                          <span>{totalAmount.toFixed(2)} BS</span>
-                        </div>
-                        <div className="flex justify-between items-center text-sm text-orange-600">
-                          <span>Descuento factura</span>
-                          <span>− {descuentoGlobal.toFixed(2)} BS</span>
-                        </div>
-                      </>
+                      <div className="flex justify-between items-center text-xs text-orange-600">
+                        <span>Descuento global aplicado ({descuentoGlobalPct}%)</span>
+                        <span>− {descuentoGlobal.toFixed(2)} BS distribuido en productos</span>
+                      </div>
                     )}
                     <div className="flex justify-between items-center">
                       <span className="text-sm font-bold uppercase tracking-wider">Total {descuentoGlobal > 0 ? "a pagar" : ""}</span>
-                      <span className="text-2xl font-black">{(totalAmount - descuentoGlobal).toFixed(2)} BS</span>
+                      <span className="text-2xl font-black">{totalAmount.toFixed(2)} BS</span>
                     </div>
-                    {totalFacturaReal > 0 && Math.abs((totalAmount - descuentoGlobal) - totalFacturaReal) > 1 && (
+                    {totalFacturaReal > 0 && Math.abs(totalAmount - totalFacturaReal) > 1 && (
                       <p className="text-xs text-red-600 text-right">
                         ⚠️ No cuadra con el total de la factura ({totalFacturaReal.toFixed(2)} BS). Revisa precios o descuentos.
                       </p>

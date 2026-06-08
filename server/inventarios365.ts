@@ -87,6 +87,8 @@ class Inventarios365Service {
   // Cookies de sesión almacenadas como string "key=value; key2=value2"
   private xsrfToken: string | null = null;
   private csrfToken: string | null = null; // Token CSRF del formulario (para header X-CSRF-TOKEN)
+  // Caché en memoria de listados de inventario por almacén+proveedor (TTL 5 min)
+  private cacheInventario: Map<string, { data: any[]; expira: number }> = new Map();
   private laravelSession: string | null = null;
   private lastLogin: number = 0;
   private SESSION_TTL = 90 * 60 * 1000; // 90 minutos (las cookies duran 2h)
@@ -677,6 +679,7 @@ class Inventarios365Service {
       console.log(`[Inventarios365] Ajuste de inventario: ${productos.length} productos con diferencia`);
       const resp = await this.post<any>("/ajuste/registrar-multiple", payload);
       console.log(`[Inventarios365] Ajuste response:`, JSON.stringify(resp).substring(0, 200));
+      this.invalidarCacheInventario(params.almacenId); // el stock cambió, refrescar caché
       return { ok: true, ajustados: productos.length, mensaje: `${productos.length} productos ajustados` };
     } catch (error: any) {
       console.error(`[Inventarios365] Error ajustando inventario:`, error?.message);
@@ -814,8 +817,14 @@ class Inventarios365Service {
     inventarioId: number | null;
     categoria?: string; proveedor?: string; vencimiento?: string | null;
   }>> {
+    // Caché: clave por almacén+proveedor, TTL 5 minutos
+    const claveCache = `${idAlmacen}:${idProveedor}`;
+    const cached = this.cacheInventario.get(claveCache);
+    if (cached && cached.expira > Date.now()) {
+      return cached.data;
+    }
     const articulos = await this.articuloAjusteInven(idAlmacen, idProveedor);
-    return articulos.map((a: any) => {
+    const resultado = articulos.map((a: any) => {
       const id = a.id;
       const nombre = a.nombre ?? "";
       const codigo = a.codigo ?? "";
@@ -842,6 +851,17 @@ class Inventarios365Service {
         vencimiento,
       };
     });
+    // Guardar en caché por 5 minutos
+    this.cacheInventario.set(claveCache, { data: resultado, expira: Date.now() + 5 * 60 * 1000 });
+    return resultado;
+  }
+
+  /** Invalidar el caché de inventario (tras un ajuste de stock). */
+  invalidarCacheInventario(idAlmacen?: number): void {
+    if (idAlmacen == null) { this.cacheInventario.clear(); return; }
+    for (const k of this.cacheInventario.keys()) {
+      if (k.startsWith(`${idAlmacen}:`)) this.cacheInventario.delete(k);
+    }
   }
 
   /**
