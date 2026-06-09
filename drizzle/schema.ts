@@ -272,3 +272,42 @@ export const inventarios365Products = mysqlTable("inventarios365_products", {
 
 export type Inventarios365Product = typeof inventarios365Products.$inferSelect;
 export type InsertInventarios365Product = typeof inventarios365Products.$inferInsert;
+
+// ─── Asistencia del Personal ──────────────────────────────────────────────────
+// Trabajadores: vinculados a su usuario de inventarios365 (la apertura de caja = entrada)
+export const trabajadores = mysqlTable("trabajadores", {
+  id: int("id").autoincrement().primaryKey(),
+  nombre: varchar("nombre", { length: 255 }).notNull(),
+  // Usuario de inventarios365 con el que abre caja (para cruzar las aperturas)
+  usuarioSistemaId: varchar("usuarioSistemaId", { length: 50 }), // id del usuario en inventarios365
+  usuarioSistemaNombre: varchar("usuarioSistemaNombre", { length: 255 }), // nombre/login en el sistema
+  horaIngreso: varchar("horaIngreso", { length: 5 }).notNull().default("08:00"), // HH:MM esperada
+  horasDia: decimal("horasDia", { precision: 4, scale: 2 }).notNull().default("8"), // horas diarias
+  diasMes: int("diasMes").notNull().default(26), // días laborales al mes (para valor hora)
+  sueldoMensual: decimal("sueldoMensual", { precision: 12, scale: 2 }).notNull().default("0"),
+  // Regla de descuento por retraso: "proporcional" (valor hora × tiempo) o "fijo" (monto por retraso)
+  tipoDescuento: varchar("tipoDescuento", { length: 20 }).notNull().default("proporcional"),
+  montoDescuentoFijo: decimal("montoDescuentoFijo", { precision: 10, scale: 2 }).notNull().default("0"),
+  toleranciaMin: int("toleranciaMin").notNull().default(5), // minutos de tolerancia antes de contar retraso
+  activo: int("activo").notNull().default(1),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+});
+
+export type Trabajador = typeof trabajadores.$inferSelect;
+export type InsertTrabajador = typeof trabajadores.$inferInsert;
+
+// Aperturas de caja leídas de inventarios365 (caché para el resumen mensual)
+export const marcaciones = mysqlTable("marcaciones", {
+  id: int("id").autoincrement().primaryKey(),
+  trabajadorId: int("trabajadorId").notNull(),
+  fecha: varchar("fecha", { length: 10 }).notNull(), // YYYY-MM-DD
+  horaEntrada: varchar("horaEntrada", { length: 8 }), // HH:MM:SS de apertura de caja
+  horaSalida: varchar("horaSalida", { length: 8 }), // HH:MM:SS de cierre de caja (si existe)
+  minutosRetraso: int("minutosRetraso").notNull().default(0),
+  horasTrabajadas: decimal("horasTrabajadas", { precision: 5, scale: 2 }).default("0"),
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type Marcacion = typeof marcaciones.$inferSelect;
+export type InsertMarcacion = typeof marcaciones.$inferInsert;

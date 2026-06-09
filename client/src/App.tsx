@@ -13,6 +13,7 @@ import NuevaTransferencia from "./pages/NuevaTransferencia";
 import Tareas from "./pages/Tareas";
 import Historial from "./pages/Historial";
 import Inventario from "./pages/Inventario";
+import Asistencia from "./pages/Asistencia";
 
 function Router() {
   return (
@@ -26,6 +27,7 @@ function Router() {
         <Route path="/tareas" component={Tareas} />
         <Route path="/historial" component={Historial} />
         <Route path="/inventario" component={Inventario} />
+        <Route path="/asistencia" component={Asistencia} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />
       </Switch>

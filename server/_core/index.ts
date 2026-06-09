@@ -124,6 +124,22 @@ async function startServer() {
     }
   });
 
+  // Diagnóstico: usuarios del sistema y aperturas de caja
+  app.get("/api/admin/test-usuarios", async (_req, res) => {
+    try {
+      const usuarios = await inventarios365.listarUsuarios();
+      res.json({ total: usuarios.length, usuarios: usuarios.slice(0, 10) });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+  app.get("/api/admin/test-caja", async (req, res) => {
+    try {
+      const usuario = String(req.query.usuario || "");
+      const mes = String(req.query.mes || new Date().toISOString().slice(0, 7));
+      const aperturas = await inventarios365.aperturasCajaDelMes(usuario, mes);
+      res.json({ total: aperturas.length, aperturas: aperturas.slice(0, 10) });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
   // Diagnóstico: total de proveedores del sistema
   app.get("/api/admin/test-proveedores", async (_req, res) => {
     try {

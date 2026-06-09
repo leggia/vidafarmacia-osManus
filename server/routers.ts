@@ -1083,6 +1083,149 @@ const inventarioRouter = router({
 });
 
 // ─── App Router ──────────────────────────────────────────────────────────────
+// ─── Asistencia del Personal ──────────────────────────────────────────────────
+const asistenciaRouter = router({
+  // Listar todos los trabajadores
+  listarTrabajadores: publicProcedure.query(async () => {
+    const { getDb } = await import("./db");
+    const { trabajadores } = await import("../drizzle/schema");
+    const db = await getDb();
+    if (!db) return [];
+    return db.select().from(trabajadores).orderBy(trabajadores.nombre);
+  }),
+
+  // Crear o actualizar un trabajador
+  guardarTrabajador: publicProcedure
+    .input(z.object({
+      id: z.number().optional(),
+      nombre: z.string().min(1),
+      usuarioSistemaId: z.string().nullable().optional(),
+      usuarioSistemaNombre: z.string().nullable().optional(),
+      horaIngreso: z.string(),
+      horasDia: z.number(),
+      diasMes: z.number(),
+      sueldoMensual: z.number(),
+      tipoDescuento: z.enum(["proporcional", "fijo"]),
+      montoDescuentoFijo: z.number(),
+      toleranciaMin: z.number(),
+    }))
+    .mutation(async ({ input }) => {
+      const { getDb } = await import("./db");
+      const { trabajadores } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const db = await getDb();
+      if (!db) throw new Error("Sin base de datos");
+      const valores = {
+        nombre: input.nombre,
+        usuarioSistemaId: input.usuarioSistemaId || null,
+        usuarioSistemaNombre: input.usuarioSistemaNombre || null,
+        horaIngreso: input.horaIngreso,
+        horasDia: String(input.horasDia),
+        diasMes: input.diasMes,
+        sueldoMensual: String(input.sueldoMensual),
+        tipoDescuento: input.tipoDescuento,
+        montoDescuentoFijo: String(input.montoDescuentoFijo),
+        toleranciaMin: input.toleranciaMin,
+      };
+      if (input.id) {
+        await db.update(trabajadores).set(valores).where(eq(trabajadores.id, input.id));
+        return { success: true, id: input.id };
+      }
+      const [res] = await db.insert(trabajadores).values(valores);
+      return { success: true, id: res.insertId };
+    }),
+
+  // Desactivar (no borrar, para conservar historial)
+  desactivarTrabajador: publicProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const { getDb } = await import("./db");
+      const { trabajadores } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const db = await getDb();
+      if (!db) throw new Error("Sin base de datos");
+      await db.update(trabajadores).set({ activo: 0 }).where(eq(trabajadores.id, input.id));
+      return { success: true };
+    }),
+
+  // Listar usuarios de inventarios365 (para vincular trabajador ↔ usuario del sistema)
+  listarUsuariosSistema: publicProcedure.query(async () => {
+    const { inventarios365 } = await import("./inventarios365");
+    return inventarios365.listarUsuarios();
+  }),
+
+  // Agregar campo usuario al guardar trabajador (ya manejado por guardarTrabajador abajo)
+
+  // Resumen mensual de un trabajador: lee las aperturas de caja de inventarios365
+  resumenMensual: publicProcedure
+    .input(z.object({ trabajadorId: z.number(), anioMes: z.string() })) // anioMes = "2026-06"
+    .query(async ({ input }) => {
+      const { getDb } = await import("./db");
+      const { trabajadores } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const { inventarios365 } = await import("./inventarios365");
+      const db = await getDb();
+      if (!db) return null;
+      const [trab] = await db.select().from(trabajadores).where(eq(trabajadores.id, input.trabajadorId));
+      if (!trab) return null;
+
+      // Leer aperturas de caja del usuario en el mes desde inventarios365
+      const aperturas = await inventarios365.aperturasCajaDelMes(
+        trab.usuarioSistemaId || "", input.anioMes
+      );
+
+      // Calcular retraso por día según la hora esperada del trabajador
+      const [hEsp, mEsp] = trab.horaIngreso.split(":").map(Number);
+      const minutosEsperados = hEsp * 60 + mEsp;
+      const tolerancia = trab.toleranciaMin ?? 5;
+
+      const dias = aperturas.map((a: any) => {
+        // a.horaApertura = "HH:MM:SS", a.horaCierre opcional
+        const [eh, em] = (a.horaApertura || "00:00").split(":").map(Number);
+        const minReales = eh * 60 + em;
+        const retraso = Math.max(0, minReales - minutosEsperados - tolerancia);
+        let horas = 0;
+        if (a.horaCierre) {
+          const [ch, cm] = a.horaCierre.split(":").map(Number);
+          horas = Math.max(0, Math.round(((ch * 60 + cm) - (eh * 60 + em)) / 60 * 100) / 100);
+        }
+        return { fecha: a.fecha, horaEntrada: a.horaApertura, horaSalida: a.horaCierre || null, minutosRetraso: retraso, horasTrabajadas: horas };
+      });
+
+      const diasTrabajados = dias.length;
+      const horasTotales = dias.reduce((s, d) => s + d.horasTrabajadas, 0);
+      const retrasos = dias.filter(d => d.minutosRetraso > 0);
+      const minutosRetrasoTotal = dias.reduce((s, d) => s + d.minutosRetraso, 0);
+
+      const sueldo = parseFloat(String(trab.sueldoMensual)) || 0;
+      const horasDia = parseFloat(String(trab.horasDia)) || 8;
+      const diasMes = trab.diasMes || 26;
+      const horasMes = horasDia * diasMes;
+      const valorHora = horasMes > 0 ? sueldo / horasMes : 0;
+
+      let descuento = 0;
+      if (trab.tipoDescuento === "fijo") {
+        descuento = retrasos.length * (parseFloat(String(trab.montoDescuentoFijo)) || 0);
+      } else {
+        descuento = valorHora * (minutosRetrasoTotal / 60);
+      }
+      descuento = Math.round(descuento * 100) / 100;
+      const sueldoFinal = Math.round((sueldo - descuento) * 100) / 100;
+
+      return {
+        trabajador: { id: trab.id, nombre: trab.nombre, horaIngreso: trab.horaIngreso, sueldoMensual: sueldo, tipoDescuento: trab.tipoDescuento, usuarioSistemaNombre: trab.usuarioSistemaNombre },
+        diasTrabajados,
+        horasTotales: Math.round(horasTotales * 100) / 100,
+        cantidadRetrasos: retrasos.length,
+        minutosRetrasoTotal,
+        valorHora: Math.round(valorHora * 100) / 100,
+        descuento,
+        sueldoFinal,
+        detalle: dias,
+      };
+    }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -1103,6 +1246,7 @@ export const appRouter = router({
   confirmaciones: confirmacionesRouter,
   inventarios365: inventarios365Router,
   inventario: inventarioRouter,
+  asistencia: asistenciaRouter,
 });
 
 export type AppRouter = typeof appRouter;

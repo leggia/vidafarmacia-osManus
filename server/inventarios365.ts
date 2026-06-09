@@ -719,6 +719,70 @@ class Inventarios365Service {
   }
 
   /**
+   * Listar usuarios del sistema inventarios365 (para vincular con trabajadores).
+   * Endpoint pendiente de confirmar por captura de red.
+   */
+  async listarUsuarios(): Promise<Array<{ id: string; nombre: string }>> {
+    const candidatos = [
+      "/usuario?page=1&buscar=&criterio=todos",
+      "/usuarios?page=1&buscar=&criterio=todos",
+      "/user?page=1&buscar=&criterio=todos",
+    ];
+    for (const url of candidatos) {
+      try {
+        const data = await this.get<any>(url);
+        const arr = data?.usuarios ?? data?.personas ?? data?.data ?? (Array.isArray(data) ? data : null);
+        if (Array.isArray(arr) && arr.length > 0) {
+          console.log(`[Inventarios365] Usuarios via ${url}: ${arr.length}`);
+          return arr.map((u: any) => ({
+            id: String(u.id ?? u.idusuario ?? u.user_id ?? ""),
+            nombre: u.nombre ?? u.name ?? u.usuario ?? u.username ?? u.login ?? "",
+          })).filter((u: any) => u.id);
+        }
+      } catch (e) { /* siguiente */ }
+    }
+    return [];
+  }
+
+  /**
+   * Leer las aperturas de caja de un usuario en un mes (YYYY-MM).
+   * Endpoint pendiente de confirmar por captura de red.
+   * Devuelve [{fecha:"YYYY-MM-DD", horaApertura:"HH:MM:SS", horaCierre?:"HH:MM:SS"}]
+   */
+  async aperturasCajaDelMes(usuarioId: string, anioMes: string): Promise<Array<{ fecha: string; horaApertura: string; horaCierre?: string }>> {
+    if (!usuarioId) return [];
+    // Rango del mes
+    const [anio, mes] = anioMes.split("-").map(Number);
+    const desde = `${anioMes}-01`;
+    const ultimoDia = new Date(anio, mes, 0).getDate();
+    const hasta = `${anioMes}-${String(ultimoDia).padStart(2, "0")}`;
+    const candidatos = [
+      `/caja?page=1&desde=${desde}&hasta=${hasta}&idusuario=${usuarioId}`,
+      `/caja/listar?desde=${desde}&hasta=${hasta}&idusuario=${usuarioId}`,
+      `/aperturacaja?desde=${desde}&hasta=${hasta}&idusuario=${usuarioId}`,
+      `/movimientocaja?desde=${desde}&hasta=${hasta}&idusuario=${usuarioId}`,
+    ];
+    for (const url of candidatos) {
+      try {
+        const data = await this.get<any>(url);
+        const arr = data?.cajas ?? data?.aperturas ?? data?.data ?? data?.movimientos ?? (Array.isArray(data) ? data : null);
+        if (Array.isArray(arr)) {
+          console.log(`[Inventarios365] Aperturas caja via ${url}: ${arr.length}`);
+          return arr.map((c: any) => {
+            const fhApertura = c.fecha_apertura ?? c.fechaApertura ?? c.created_at ?? c.fecha ?? "";
+            const fhCierre = c.fecha_cierre ?? c.fechaCierre ?? c.closed_at ?? "";
+            // Separar fecha y hora (formato "YYYY-MM-DD HH:MM:SS")
+            const [fecha, horaA] = String(fhApertura).split(/[ T]/);
+            const horaC = fhCierre ? String(fhCierre).split(/[ T]/)[1] : undefined;
+            return { fecha, horaApertura: horaA || "00:00:00", horaCierre: horaC };
+          }).filter((c: any) => c.fecha);
+        }
+      } catch (e) { /* siguiente */ }
+    }
+    return [];
+  }
+
+  /**
    * Listar TODOS los proveedores del sistema (paginando).
    * Estructura: { pagination, personas:[...], idrol }
    */
