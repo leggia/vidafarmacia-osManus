@@ -773,16 +773,16 @@ class Inventarios365Service {
         else if (Array.isArray(data)) arr = data;
 
         for (const c of arr) {
-          // Filtrar por usuario
-          const uid = String(c.idusuario ?? c.usuario_id ?? c.iduser ?? c.user_id ?? c.idUsuario ?? "");
+          // Filtrar por usuario (campo real: idusuario)
+          const uid = String(c.idusuario ?? "");
           if (uid !== String(usuarioId)) continue;
-          // Fecha/hora de apertura
-          const fhApertura = c.fecha_apertura ?? c.fechaApertura ?? c.apertura ?? c.created_at ?? c.fecha ?? "";
-          const fhCierre = c.fecha_cierre ?? c.fechaCierre ?? c.cierre ?? c.closed_at ?? "";
+          // Fecha/hora de apertura (campo real: fechaApertura "YYYY-MM-DD HH:MM:SS")
+          const fhApertura = c.fechaApertura ?? "";
+          const fhCierre = c.fechaCierre ?? "";
           const [fecha, horaA] = String(fhApertura).split(/[ T]/);
           if (!fecha || !fecha.startsWith(anioMes)) continue; // solo el mes pedido
-          const horaC = fhCierre ? String(fhCierre).split(/[ T]/)[1] : undefined;
-          resultado.push({ fecha, horaApertura: horaA || "00:00:00", horaCierre: horaC });
+          const [fechaC, horaC] = fhCierre ? String(fhCierre).split(/[ T]/) : [null, undefined];
+          resultado.push({ fecha, horaApertura: horaA || "00:00:00", horaCierre: horaC, fechaCierre: fechaC || undefined } as any);
         }
 
         const lastPage = pag.last_page ?? pag.lastPage ?? 1;

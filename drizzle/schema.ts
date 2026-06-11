@@ -311,3 +311,17 @@ export const marcaciones = mysqlTable("marcaciones", {
 
 export type Marcacion = typeof marcaciones.$inferSelect;
 export type InsertMarcacion = typeof marcaciones.$inferInsert;
+
+// ─── Descuentos por Proveedor (aprendizaje) ───────────────────────────────────
+// Recuerda los porcentajes típicos de descuento de cada laboratorio
+export const descuentosProveedor = mysqlTable("descuentos_proveedor", {
+  id: int("id").autoincrement().primaryKey(),
+  proveedorNombre: varchar("proveedorNombre", { length: 255 }).notNull(),
+  pctVolumen: decimal("pctVolumen", { precision: 5, scale: 2 }).default("0"),
+  pctEfectivo: decimal("pctEfectivo", { precision: 5, scale: 2 }).default("0"),
+  notas: varchar("notas", { length: 500 }),
+  updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
+});
+
+export type DescuentoProveedor = typeof descuentosProveedor.$inferSelect;
+export type InsertDescuentoProveedor = typeof descuentosProveedor.$inferInsert;

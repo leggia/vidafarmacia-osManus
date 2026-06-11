@@ -70,6 +70,7 @@ Extrae la siguiente información en formato JSON:
   "receiptNumber": "número de comprobante/factura si es visible",
   "totalFactura": total_general_de_la_factura_decimal,
   "descuentoGlobal": descuento_total_de_la_factura_si_existe_sino_0,
+  "descuentoGlobalPct": porcentaje_descuento_global_total_sino_0,
   "items": [
     {
       "productName": "nombre comercial del medicamento SIN códigos numéricos del proveedor",
@@ -88,20 +89,41 @@ INSTRUCCIONES CRÍTICAS PARA PRECIOS (MUY IMPORTANTE):
 - El "unitCost" SIEMPRE debe ser: subtotal_de_la_linea ÷ quantity
 - NUNCA pongas el subtotal/importe como unitCost. Si una línea dice cantidad 20 e importe 400, entonces unitCost = 400/20 = 20
 
-DESCUENTOS (LEER CON MUCHA ATENCIÓN — pueden existir DOS tipos A LA VEZ):
-- DESCUENTO POR LÍNEA: columna "DESCUENTO", "Dscto", "Desc.", "Dto" en cada fila. Captúralo en el campo "descuento" de cada item. El subtotal de esa línea debe ser DESPUÉS de restar ese descuento.
-- DESCUENTO GLOBAL: SIEMPRE revisa la PARTE INFERIOR de la factura (cerca de SUBTOTAL / TOTAL / TOTAL A PAGAR). Muchas facturas suman todos los productos y LUEGO aplican un descuento adicional sobre ese total. Ese descuento va en "descuentoGlobal".
-- IMPORTANTE: una factura puede tener AMBOS descuentos al mismo tiempo (descuento por fila Y un descuento extra al pie). Captura los dos por separado.
-- El descuento global puede aparecer como monto (ej "DESCUENTO Bs 150.00") o como porcentaje (ej "Desc. 5%"). Si es porcentaje, calcula el monto: descuentoGlobal = subtotal_general × (porcentaje/100).
-- PROCEDIMIENTO OBLIGATORIO para cuadrar con el total pagado:
-  1. Calcula el subtotal de cada línea (con su descuento de línea si lo tiene).
-  2. Suma todos los subtotales de línea = SUBTOTAL GENERAL.
-  3. Identifica el descuento global del pie (monto o %). Conviértelo a monto.
-  4. Verifica: SUBTOTAL GENERAL − descuentoGlobal debe ser ≈ TOTAL PAGADO de la factura.
-  5. Si NO cuadra, REVISA: puede que falte capturar un descuento, o que el descuento sea por línea en vez de global. Ajusta hasta que cuadre con el total pagado real.
-- Ejemplo descuento por línea: precio lista 31, cantidad 6, descuento 36 → subtotal = 186−36 = 150 → unitCost = 150/6 = 25
-- Ejemplo descuento global: 10 productos suman 2000, al pie dice "DESCUENTO 100" y "TOTAL 1900" → descuentoGlobal = 100, cada subtotal queda sin tocar.
-- El "totalFactura" SIEMPRE debe ser el TOTAL FINAL PAGADO (después de todos los descuentos), tal como aparece en la factura.
+DESCUENTOS (LEER CON MUCHÍSIMA ATENCIÓN — los laboratorios aplican VARIOS descuentos en cascada):
+Los laboratorios farmacéuticos bolivianos (Bagó, Inti, etc.) suelen aplicar HASTA TRES niveles de descuento:
+
+  NIVEL 1 — DESCUENTO COMERCIAL POR PRODUCTO (por línea):
+  - Columna "DESCUENTO", "Dscto", "Desc.", "%Dto" en cada fila. Es específico de cada producto.
+  - A veces es ALTO en algunos productos (ej. 20%, 30%) y bajo o cero en otros.
+  - Va en el campo "descuento" de cada item (el subtotal de la línea ya debe reflejarlo).
+
+  NIVEL 2 — DESCUENTO POR VOLUMEN (global, ~2%):
+  - Se aplica al SUBTOTAL después de los descuentos por línea. Suele rondar el 2%.
+  - Búscalo al pie de la factura (ej. "Desc. volumen 2%", "Dcto adicional").
+
+  NIVEL 3 — DESCUENTO POR PAGO EFECTIVO/CONTADO (global, ~3%):
+  - Se aplica si el pago es al contado. Suele rondar el 3%.
+  - Búscalo al pie (ej. "Desc. contado 3%", "Pago efectivo").
+
+CÓMO REPORTARLO:
+- "descuento" por línea: el descuento comercial de cada producto (NIVEL 1).
+- "descuentoGlobal": la SUMA en Bs de los descuentos globales (NIVEL 2 + NIVEL 3) sobre el subtotal.
+- "descuentoGlobalPct": el porcentaje total global aplicado (ej. si hay 2% volumen + 3% efectivo ≈ 5%).
+
+PROCEDIMIENTO OBLIGATORIO PARA QUE TODO CUADRE CON EL TOTAL PAGADO:
+  1. Para cada producto: subtotal_linea = (precio_lista × cantidad) − descuento_comercial_linea.
+  2. SUBTOTAL = suma de todos los subtotales de línea.
+  3. Aplica descuentos globales en cascada sobre el SUBTOTAL: primero volumen, luego efectivo.
+     - subtotal_tras_volumen = SUBTOTAL × (1 − %volumen)
+     - total_final = subtotal_tras_volumen × (1 − %efectivo)
+     - descuentoGlobal (Bs) = SUBTOTAL − total_final
+  4. VERIFICA: total_final debe ser ≈ TOTAL PAGADO impreso en la factura. Si NO cuadra:
+     - Revisa si algún descuento es monto fijo en vez de porcentaje.
+     - Revisa si el volumen/efectivo se aplican sobre subtotal o sobre otra base.
+     - Ajusta hasta que cuadre EXACTAMENTE con el total pagado.
+- "totalFactura" = el TOTAL FINAL PAGADO impreso (después de TODOS los descuentos).
+- Si la factura no tiene descuentos globales, descuentoGlobal = 0 y descuentoGlobalPct = 0.
+- Ejemplo Bagó: 10 productos suman 2000 (ya con desc. comercial), volumen 2% → 1960, efectivo 3% → 1901.20. descuentoGlobal=98.80, descuentoGlobalPct≈4.94, totalFactura=1901.20.
 
 INSTRUCCIONES PARA NOMBRE DEL PRODUCTO:
 - Extrae SOLO el nombre comercial. Si la fila tiene un código numérico al inicio (ej: "400180 QUETOROL 20 TAB"), extrae SOLO "QUETOROL 20 TAB" sin el código.
@@ -1187,7 +1209,10 @@ const asistenciaRouter = router({
         let horas = 0;
         if (a.horaCierre) {
           const [ch, cm] = a.horaCierre.split(":").map(Number);
-          horas = Math.max(0, Math.round(((ch * 60 + cm) - (eh * 60 + em)) / 60 * 100) / 100);
+          let diff = (ch * 60 + cm) - (eh * 60 + em);
+          if (diff < 0) diff += 24 * 60; // cerró pasada la medianoche
+          if (diff > 16 * 60) diff = 0;  // dato inconsistente, ignorar
+          horas = Math.round((diff / 60) * 100) / 100;
         }
         return { fecha: a.fecha, horaEntrada: a.horaApertura, horaSalida: a.horaCierre || null, minutosRetraso: retraso, horasTrabajadas: horas };
       });

@@ -371,7 +371,8 @@ export default function NuevaCompra() {
             }
             if (result.receiptNumber) setReceiptNumber(result.receiptNumber);
             setDescuentoGlobal(descGlobal);
-            setDescuentoGlobalPct(factorDesc > 0 ? Math.round(factorDesc * 1000) / 10 : 0);
+            // Usar el % que da el LLM si viene; si no, calcularlo del factor
+            setDescuentoGlobalPct(result.descuentoGlobalPct || (factorDesc > 0 ? Math.round(factorDesc * 1000) / 10 : 0));
             setTotalFacturaReal(result.totalFactura || 0);
             setExtracted(true);
             toast.success(`Se extrajeron ${result.items.length} productos de la imagen`);
@@ -1175,7 +1176,7 @@ export default function NuevaCompra() {
                               className="flex items-center justify-between bg-white dark:bg-gray-900 rounded px-2 py-1.5 border border-gray-200 dark:border-gray-700"
                             >
                               <div className="min-w-0 flex-1">
-                                <p className="text-xs font-medium truncate">{art.nombre}</p>
+                                <p className="text-xs font-medium break-words leading-snug">{art.nombre}</p>
                                 <p className="text-[11px] text-muted-foreground">Código: {art.codigo}</p>
                               </div>
                               <Button
@@ -1545,9 +1546,9 @@ export default function NuevaCompra() {
                   <div className="space-y-1">
                     <p className="text-xs text-muted-foreground font-medium">Selecciona el producto correcto:</p>
                     {resultadosBusqueda[idx].map((art: any) => (
-                      <div key={art.id} className="flex items-center justify-between bg-green-50 dark:bg-green-950 border border-green-200 rounded px-3 py-2">
-                        <div>
-                          <p className="text-xs font-medium">{art.nombre}</p>
+                      <div key={art.id} className="flex items-center justify-between gap-2 bg-green-50 dark:bg-green-950 border border-green-200 rounded px-3 py-2">
+                        <div className="min-w-0 flex-1">
+                          <p className="text-xs font-medium break-words leading-snug">{art.nombre}</p>
                           <p className="text-xs text-muted-foreground">Código: {art.codigo} | ID: {art.id}</p>
                         </div>
                         <Button
