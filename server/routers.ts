@@ -1317,6 +1317,17 @@ const asistenciaRouter = router({
     }),
 });
 
+// ─── Consulta (solo lectura: precio + stock, para contingencias) ──────────────
+const consultaRouter = router({
+  buscarProductos: publicProcedure
+    .input(z.object({ buscar: z.string() }))
+    .query(async ({ input }) => {
+      if (!input.buscar || input.buscar.trim().length < 2) return [];
+      const { inventarios365 } = await import("./inventarios365");
+      return inventarios365.consultarProductos(input.buscar.trim());
+    }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -1338,6 +1349,7 @@ export const appRouter = router({
   inventarios365: inventarios365Router,
   inventario: inventarioRouter,
   asistencia: asistenciaRouter,
+  consulta: consultaRouter,
 });
 
 export type AppRouter = typeof appRouter;

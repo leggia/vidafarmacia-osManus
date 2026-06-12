@@ -461,6 +461,23 @@ class Inventarios365Service {
    * Listar artículos con búsqueda opcional.
    * Endpoint: GET /articulo/listarArticulo?buscar=&criterio=todos&idProveedor=
    */
+  /**
+   * Consulta de productos para SOLO LECTURA (contingencias): precio de venta + stock.
+   * Devuelve lo mínimo necesario para atender ventas durante un apagón.
+   */
+  async consultarProductos(buscar: string): Promise<Array<{
+    id: number; nombre: string; codigo: string; precioVenta: number; stock: number;
+  }>> {
+    const articulos = await this.listarArticulos(buscar, "");
+    return articulos.map((a) => ({
+      id: a.id,
+      nombre: a.nombre,
+      codigo: a.codigo,
+      precioVenta: parseFloat(String(a.precio_uno ?? 0)) || 0,
+      stock: parseFloat(String(a.stock ?? 0)) || 0,
+    }));
+  }
+
   async listarArticulos(buscar = "", idProveedor = ""): Promise<ArticuloAPI[]> {
     try {
       const data = await this.get<{ articulos: ArticuloAPI[] | { data: ArticuloAPI[] } }>(

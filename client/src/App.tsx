@@ -14,8 +14,22 @@ import Tareas from "./pages/Tareas";
 import Historial from "./pages/Historial";
 import Inventario from "./pages/Inventario";
 import Asistencia from "./pages/Asistencia";
+import Consulta from "./pages/Consulta";
+import { useAuth } from "./_core/hooks/useAuth";
 
 function Router() {
+  const { user } = useAuth();
+
+  // Rol "viewer" (consulta): solo ve la página de consulta de precios/stock.
+  if (user?.role === "viewer") {
+    return (
+      <Switch>
+        <Route path="/" component={Consulta} />
+        <Route component={Consulta} />
+      </Switch>
+    );
+  }
+
   return (
     <DashboardLayout>
       <Switch>
@@ -28,6 +42,7 @@ function Router() {
         <Route path="/historial" component={Historial} />
         <Route path="/inventario" component={Inventario} />
         <Route path="/asistencia" component={Asistencia} />
+        <Route path="/consulta" component={Consulta} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />
       </Switch>

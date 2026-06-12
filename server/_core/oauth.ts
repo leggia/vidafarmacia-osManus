@@ -13,6 +13,9 @@ import crypto from "crypto";
 const ADMIN_USER = process.env.ADMIN_USER || "admin";
 const ADMIN_PASS = process.env.ADMIN_PASS || "vidafarma2026";
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "admin@vidafarma.com";
+// Usuario de SOLO CONSULTA (ver precios y stock) — para contingencias (apagones, etc.)
+const VIEWER_USER = process.env.VIEWER_USER || "consulta";
+const VIEWER_PASS = process.env.VIEWER_PASS || "consulta2026";
 
 export function registerOAuthRoutes(app: Express) {
   // ─── Página de login simple ───────────────────────────────────────────────
@@ -139,32 +142,42 @@ export function registerOAuthRoutes(app: Express) {
   app.post("/api/auth/login", async (req: Request, res: Response) => {
     const { usuario, password } = req.body;
 
-    if (usuario !== ADMIN_USER || password !== ADMIN_PASS) {
+    // Determinar qué usuario es y su rol
+    let rol: "admin" | "viewer" | null = null;
+    let nombre = "";
+    let email = ADMIN_EMAIL;
+    if (usuario === ADMIN_USER && password === ADMIN_PASS) {
+      rol = "admin"; nombre = "Administrador"; email = ADMIN_EMAIL;
+    } else if (usuario === VIEWER_USER && password === VIEWER_PASS) {
+      rol = "viewer"; nombre = "Consulta"; email = "consulta@vidafarma.com";
+    }
+
+    if (!rol) {
       res.status(401).json({ success: false, error: "Usuario o contraseña incorrectos" });
       return;
     }
 
     try {
-      console.log("[Auth] Login attempt for:", usuario);
-      console.log("[Auth] JWT_SECRET configured:", !!process.env.JWT_SECRET);
+      console.log("[Auth] Login attempt for:", usuario, "rol:", rol);
       const openId = `local-${crypto.createHash("md5").update(usuario).digest("hex")}`;
 
       await db.upsertUser({
         openId,
-        name: "Administrador",
-        email: ADMIN_EMAIL,
+        name: nombre,
+        email,
         loginMethod: "local",
+        role: rol,
         lastSignedIn: new Date(),
       });
 
       const sessionToken = await sdk.createSessionToken(openId, {
-        name: "Administrador",
+        name: nombre,
         expiresInMs: ONE_YEAR_MS,
       });
 
       const cookieOptions = getSessionCookieOptions(req);
       res.cookie(COOKIE_NAME, sessionToken, { ...cookieOptions, maxAge: ONE_YEAR_MS });
-      res.json({ success: true });
+      res.json({ success: true, rol });
     } catch (error) {
       console.error("[Auth] Login failed", error);
       res.status(500).json({ success: false, error: "Error interno del servidor" });
