@@ -149,15 +149,19 @@ export function calcularResumenMensual(
     const justificado = aj?.justificado ?? false;
     const esTurnoExtra = aj?.esTurnoExtra ?? false;
 
-    const minutosRetraso = justificado ? 0 : calcularRetraso(horaEntrada, cfg);
-    const minutosCierreTemprano = justificado ? 0 : calcularCierreTemprano(a.horaCierre, cfg.horaSalida, cfg.toleranciaSalidaMin);
+    // Los días de turno extra y los justificados no penalizan el sueldo fijo
+    const sinPenalizar = justificado || esTurnoExtra;
+    const minutosRetraso = sinPenalizar ? 0 : calcularRetraso(horaEntrada, cfg);
+    const minutosCierreTemprano = sinPenalizar ? 0 : calcularCierreTemprano(a.horaCierre, cfg.horaSalida, cfg.toleranciaSalidaMin);
     const horasTrabajadas = calcularHoras(horaEntrada, a.horaCierre, esTurno24);
 
     return { fecha: a.fecha, horaEntrada, horaSalida: a.horaCierre || null,
       minutosRetraso, minutosCierreTemprano, horasTrabajadas, justificado, esTurnoExtra };
   });
 
-  const diasTrabajados = detalle.length;
+  // Días normales (no extra): cuentan para el sueldo del mes
+  const diasNormales = detalle.filter((d) => !d.esTurnoExtra);
+  const diasTrabajados = diasNormales.length;
   const horasTotales = redondear(detalle.reduce((s, d) => s + d.horasTrabajadas, 0));
   const retrasos = detalle.filter((d) => d.minutosRetraso > 0);
   const minutosRetrasoTotal = detalle.reduce((s, d) => s + d.minutosRetraso, 0);
@@ -170,10 +174,9 @@ export function calcularResumenMensual(
     diasLaborables = contarDiasDelMes(anioMes, cfg.diasSemana);
   }
 
-  // ── Sueldo base según el tipo ──
+  // ── Sueldo base según el tipo (sin contar días extra) ──
   let sueldoBase = 0, valorHora = 0, horasBase = 0;
   if (cfg.tipoTrabajador === "por_dia") {
-    // pago por día: solo días NO marcados como turno extra cuentan al monto/día normal
     sueldoBase = diasTrabajados * cfg.montoPorDia;
     valorHora = cfg.horasDia > 0 ? cfg.montoPorDia / cfg.horasDia : 0;
     horasBase = diasTrabajados * cfg.horasDia;
@@ -183,14 +186,13 @@ export function calcularResumenMensual(
     valorHora = horasBase > 0 ? cfg.sueldoMensual / horasBase : 0;
   }
 
-  // ── Pago extra por turnos cubiertos (domingos/feriados) ──
+  // ── Pago por turnos extra: se paga APARTE (cada día), NO se suma al sueldo del mes ──
   const pagoTurnosExtra = redondear(turnosExtra * cfg.montoTurnoExtra);
 
-  // ── Descuento: retraso de entrada + cierre temprano (ambos en minutos) ──
+  // ── Descuento del sueldo fijo: retraso + cierre temprano (solo días normales) ──
   const minutosPenalizables = minutosRetrasoTotal + minutosCierreTempranoTotal;
   let descuento = 0;
   if (cfg.tipoDescuento === "fijo") {
-    // monto fijo por cada evento (retraso o cierre temprano)
     const eventos = retrasos.length + detalle.filter((d) => d.minutosCierreTemprano > 0).length;
     descuento = eventos * cfg.montoDescuentoFijo;
   } else {
@@ -198,7 +200,8 @@ export function calcularResumenMensual(
   }
   descuento = redondear(descuento);
 
-  const sueldoFinal = redondear(sueldoBase + pagoTurnosExtra - descuento);
+  // El sueldo final del MES NO incluye los turnos extra (esos ya se pagaron aparte)
+  const sueldoFinal = redondear(sueldoBase - descuento);
 
   return {
     diasTrabajados,

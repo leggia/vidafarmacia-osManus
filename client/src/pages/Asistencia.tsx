@@ -34,11 +34,11 @@ export default function Asistencia() {
     { enabled: !!trabajadorSel }
   );
   const marcarPagadoMut = trpc.asistencia.marcarPagado.useMutation({
-    onSuccess: () => { resumen.refetch(); toast.success("Estado de pago actualizado"); },
+    onSuccess: () => { utils.asistencia.resumenMensual.invalidate(); toast.success("Estado de pago actualizado"); },
     onError: (e) => toast.error(e.message),
   });
   const guardarAjusteMut = trpc.asistencia.guardarAjusteDia.useMutation({
-    onSuccess: () => { resumen.refetch(); toast.success("Día actualizado"); },
+    onSuccess: () => { utils.asistencia.resumenMensual.invalidate(); },
     onError: (e) => toast.error(e.message),
   });
 
@@ -122,15 +122,22 @@ export default function Asistencia() {
               <CardContent className="p-4 space-y-3">
                 <div className="flex items-center justify-between">
                   <div>
-                    <div className="flex items-center gap-2 text-muted-foreground text-xs"><DollarSign className="h-4 w-4" /> Sueldo a pagar</div>
+                    <div className="flex items-center gap-2 text-muted-foreground text-xs"><DollarSign className="h-4 w-4" /> Sueldo del mes</div>
                     <p className="text-[11px] text-muted-foreground mt-1">
-                      {resumen.data.sueldoBase.toFixed(2)} base
-                      {resumen.data.pagoTurnosExtra > 0 ? ` + ${resumen.data.pagoTurnosExtra.toFixed(2)} turnos extra` : ""}
-                      {" "}− {resumen.data.descuento.toFixed(2)} descuento
+                      {resumen.data.sueldoBase.toFixed(2)} base − {resumen.data.descuento.toFixed(2)} descuento
                     </p>
                   </div>
                   <p className="text-3xl font-black text-primary">{resumen.data.sueldoFinal.toFixed(2)} <span className="text-base">Bs</span></p>
                 </div>
+                {/* Turnos extra: se pagan aparte (cada día) */}
+                {resumen.data.turnosExtra > 0 && (
+                  <div className="flex items-center justify-between bg-amber-50 dark:bg-amber-950/30 rounded px-3 py-2">
+                    <span className="text-xs text-amber-700 dark:text-amber-300 flex items-center gap-1">
+                      <Star className="h-3.5 w-3.5" /> {resumen.data.turnosExtra} turno(s) extra (se pagan aparte)
+                    </span>
+                    <span className="text-sm font-bold text-amber-700 dark:text-amber-300">{resumen.data.pagoTurnosExtra.toFixed(2)} Bs</span>
+                  </div>
+                )}
                 {/* Marcar pagado */}
                 {resumen.data.pagado ? (
                   <div className="flex items-center justify-between bg-green-50 dark:bg-green-950/40 rounded px-3 py-2">
