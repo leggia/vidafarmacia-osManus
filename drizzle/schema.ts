@@ -286,6 +286,10 @@ export const trabajadores = mysqlTable("trabajadores", {
   diasMes: int("diasMes").notNull().default(26), // días laborales al mes (respaldo si no hay diasSemana)
   // Días de la semana que trabaja: CSV de 0-6 (0=domingo, 1=lunes... 6=sábado). Ej: "1,2,3,4,5,6" = lun-sáb
   diasSemana: varchar("diasSemana", { length: 20 }).notNull().default("1,2,3,4,5,6"),
+  // Tipo de cálculo: fijo_mensual, por_dia, fijo_horas, fijo_turnos
+  tipoTrabajador: varchar("tipoTrabajador", { length: 20 }).notNull().default("fijo_mensual"),
+  horasMesFijas: int("horasMesFijas").notNull().default(192), // horas base del mes (para valor hora)
+  montoPorDia: decimal("montoPorDia", { precision: 10, scale: 2 }).notNull().default("0"), // pago por día (tipo por_dia)
   sueldoMensual: decimal("sueldoMensual", { precision: 12, scale: 2 }).notNull().default("0"),
   // Regla de descuento por retraso: "proporcional" (valor hora × tiempo) o "fijo" (monto por retraso)
   tipoDescuento: varchar("tipoDescuento", { length: 20 }).notNull().default("proporcional"),

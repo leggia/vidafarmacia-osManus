@@ -1127,6 +1127,9 @@ const asistenciaRouter = router({
       horasDia: z.number(),
       diasMes: z.number(),
       diasSemana: z.string().optional(),
+      tipoTrabajador: z.enum(["fijo_mensual", "por_dia", "fijo_horas", "fijo_turnos"]).optional(),
+      horasMesFijas: z.number().optional(),
+      montoPorDia: z.number().optional(),
       sueldoMensual: z.number(),
       tipoDescuento: z.enum(["proporcional", "fijo"]),
       montoDescuentoFijo: z.number(),
@@ -1146,6 +1149,9 @@ const asistenciaRouter = router({
         horasDia: String(input.horasDia),
         diasMes: input.diasMes,
         diasSemana: input.diasSemana || "1,2,3,4,5,6",
+        tipoTrabajador: input.tipoTrabajador || "fijo_mensual",
+        horasMesFijas: input.horasMesFijas ?? 192,
+        montoPorDia: String(input.montoPorDia ?? 0),
         sueldoMensual: String(input.sueldoMensual),
         tipoDescuento: input.tipoDescuento,
         montoDescuentoFijo: String(input.montoDescuentoFijo),
@@ -1201,10 +1207,13 @@ const asistenciaRouter = router({
 
       // Cálculo con lógica de dominio pura (testeable, sin IO)
       const resumen = calcularResumenMensual(aperturas, {
+        tipoTrabajador: (trab.tipoTrabajador || "fijo_mensual") as any,
         horaIngreso: trab.horaIngreso,
         horasDia: parseFloat(String(trab.horasDia)) || 8,
         diasMes: trab.diasMes || 26,
         diasSemana: (trab.diasSemana || "").split(",").map(Number).filter((n: number) => !isNaN(n)),
+        horasMesFijas: trab.horasMesFijas ?? 192,
+        montoPorDia: parseFloat(String(trab.montoPorDia)) || 0,
         sueldoMensual: parseFloat(String(trab.sueldoMensual)) || 0,
         tipoDescuento: trab.tipoDescuento as "proporcional" | "fijo",
         montoDescuentoFijo: parseFloat(String(trab.montoDescuentoFijo)) || 0,

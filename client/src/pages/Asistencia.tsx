@@ -115,7 +115,7 @@ export default function Asistencia() {
                   <div>
                     <div className="flex items-center gap-2 text-muted-foreground text-xs"><DollarSign className="h-4 w-4" /> Sueldo a pagar</div>
                     <p className="text-[11px] text-muted-foreground mt-1">
-                      {resumen.data.trabajador.sueldoMensual.toFixed(2)} − {resumen.data.descuento.toFixed(2)} descuento
+                      {resumen.data.sueldoBase.toFixed(2)} − {resumen.data.descuento.toFixed(2)} descuento
                     </p>
                   </div>
                   <p className="text-3xl font-black text-primary">{resumen.data.sueldoFinal.toFixed(2)} <span className="text-base">Bs</span></p>
@@ -293,6 +293,9 @@ export default function Asistencia() {
 function FormTrabajador({ editando, usuariosSistema, onCancel, onSave, guardando }: any) {
   const [nombre, setNombre] = useState(editando?.nombre || "");
   const [usuarioId, setUsuarioId] = useState(editando?.usuarioSistemaId || "");
+  const [tipoTrabajador, setTipoTrabajador] = useState(editando?.tipoTrabajador || "fijo_mensual");
+  const [horasMesFijas, setHorasMesFijas] = useState(editando?.horasMesFijas ?? 192);
+  const [montoPorDia, setMontoPorDia] = useState(editando?.montoPorDia ? parseFloat(editando.montoPorDia) : 0);
   const [horaIngreso, setHoraIngreso] = useState(editando?.horaIngreso || "08:00");
   const [horasDia, setHorasDia] = useState(editando?.horasDia ? parseFloat(editando.horasDia) : 8);
   const [diasMes, setDiasMes] = useState(editando?.diasMes || 26);
@@ -320,6 +323,9 @@ function FormTrabajador({ editando, usuariosSistema, onCancel, onSave, guardando
       horasDia: Number(horasDia),
       diasMes: diasSemana.size > 0 ? diasSemana.size * 4 : Number(diasMes), // aproximado de respaldo
       diasSemana: Array.from(diasSemana).sort().join(","),
+      tipoTrabajador,
+      horasMesFijas: Number(horasMesFijas),
+      montoPorDia: Number(montoPorDia),
       sueldoMensual: Number(sueldo),
       tipoDescuento,
       montoDescuentoFijo: Number(montoFijo),
@@ -348,6 +354,25 @@ function FormTrabajador({ editando, usuariosSistema, onCancel, onSave, guardando
             {usuariosSistema.map((u: any) => <option key={u.id} value={u.id}>{u.nombre}</option>)}
           </select>
           {usuariosSistema.length === 0 && <p className="text-[11px] text-orange-600 mt-1">No se pudieron cargar los usuarios del sistema.</p>}
+        </div>
+
+        {/* Tipo de trabajador */}
+        <div className="border border-foreground/10 rounded-lg p-3 space-y-2">
+          <Label className="text-xs font-bold">Tipo de pago</Label>
+          <div className="grid grid-cols-1 gap-1.5">
+            {[
+              { v: "fijo_mensual", t: "Sueldo fijo mensual", d: "Lun-Sáb, 192h. Pago igual cada mes." },
+              { v: "fijo_horas", t: "Fijo con horas personalizadas", d: "Sueldo fijo, pero defines las horas/mes." },
+              { v: "por_dia", t: "Pago por día trabajado", d: "Domingos/feriados. Monto por cada día." },
+              { v: "fijo_turnos", t: "Fijo por turnos", d: "Turnos de 24h. Pago fijo mensual." },
+            ].map((opt) => (
+              <button key={opt.v} type="button" onClick={() => setTipoTrabajador(opt.v)}
+                className={`text-left p-2 rounded border text-xs ${tipoTrabajador === opt.v ? "border-primary bg-primary/10" : "border-foreground/15"}`}>
+                <span className="font-medium">{opt.t}</span>
+                <br /><span className="text-[10px] text-muted-foreground">{opt.d}</span>
+              </button>
+            ))}
+          </div>
         </div>
 
         <div className="grid grid-cols-2 gap-3">
@@ -397,10 +422,28 @@ function FormTrabajador({ editando, usuariosSistema, onCancel, onSave, guardando
           </p>
         </div>
 
-        <div>
-          <Label className="text-xs">Sueldo mensual (Bs)</Label>
-          <Input type="number" value={sueldo} onChange={(e) => setSueldo(parseFloat(e.target.value) || 0)} step="0.01" />
-        </div>
+        {/* Campos según el tipo de pago */}
+        {tipoTrabajador === "por_dia" ? (
+          <div>
+            <Label className="text-xs">Monto por día trabajado (Bs)</Label>
+            <Input type="number" value={montoPorDia} onChange={(e) => setMontoPorDia(parseFloat(e.target.value) || 0)} step="0.01" />
+            <p className="text-[11px] text-muted-foreground mt-0.5">Se paga este monto por cada día con caja abierta.</p>
+          </div>
+        ) : (
+          <>
+            <div>
+              <Label className="text-xs">Sueldo mensual fijo (Bs)</Label>
+              <Input type="number" value={sueldo} onChange={(e) => setSueldo(parseFloat(e.target.value) || 0)} step="0.01" />
+            </div>
+            <div>
+              <Label className="text-xs">Horas base del mes</Label>
+              <Input type="number" value={horasMesFijas} onChange={(e) => setHorasMesFijas(parseInt(e.target.value) || 0)} />
+              <p className="text-[11px] text-muted-foreground mt-0.5">
+                Base para el valor hora y el descuento por retraso. Ej: 192 (Lun-Sáb), o las que definas.
+              </p>
+            </div>
+          </>
+        )}
 
         <div className="border border-foreground/10 rounded-lg p-3 space-y-3">
           <Label className="text-xs font-bold">Descuento por retraso</Label>

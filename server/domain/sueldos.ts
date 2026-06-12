@@ -7,12 +7,25 @@
  * Descuento: proporcional (valor hora × tiempo) o monto fijo por retraso.
  */
 
+/**
+ * Tipos de trabajador (modo de cálculo del sueldo):
+ *  - fijo_mensual:    sueldo fijo, valor hora = sueldo / horasMesFijas (192 por defecto)
+ *  - por_dia:         sueldo = días trabajados × montoPorDia (domingos/feriados)
+ *  - fijo_horas:      sueldo fijo, pero las horas/mes las define el usuario (ej. 120h)
+ *  - fijo_turnos:     sueldo fijo por turnos largos (ej. 24h cada 3 días), valor hora = sueldo / horasMesFijas
+ * Todos aplican descuento por retraso (apertura tardía).
+ */
+export type TipoTrabajador = "fijo_mensual" | "por_dia" | "fijo_horas" | "fijo_turnos";
+
 export interface ConfigTrabajador {
-  horaIngreso: string;       // "HH:MM"
+  tipoTrabajador: TipoTrabajador;
+  horaIngreso: string;       // "HH:MM" — hora esperada de apertura (o inicio de turno)
   horasDia: number;
   diasMes: number;
-  diasSemana?: number[];     // [0..6], 0=domingo. Si está presente, se usa para contar días del mes
-  sueldoMensual: number;
+  diasSemana?: number[];     // [0..6], 0=domingo. Para contar días del mes
+  horasMesFijas: number;     // horas base del mes para el valor hora (ej. 192)
+  montoPorDia: number;       // para tipo por_dia: lo que se paga por día trabajado
+  sueldoMensual: number;     // para tipos fijos
   tipoDescuento: "proporcional" | "fijo";
   montoDescuentoFijo: number;
   toleranciaMin: number;
@@ -57,6 +70,7 @@ export interface ResumenSueldo {
   minutosRetrasoTotal: number;
   valorHora: number;
   descuento: number;
+  sueldoBase: number;           // sueldo antes de descuentos (según el tipo)
   sueldoFinal: number;
   detalle: DiaCalculado[];
   diasLaborablesMes?: number;   // días que debía trabajar en el mes (según días de semana)
@@ -100,15 +114,32 @@ export function calcularResumenMensual(aperturas: Apertura[], cfg: ConfigTrabaja
   const retrasos = detalle.filter((d) => d.minutosRetraso > 0);
   const minutosRetrasoTotal = detalle.reduce((s, d) => s + d.minutosRetraso, 0);
 
-  // Días laborables del mes: si hay días de la semana configurados y el mes, contarlos;
-  // si no, usar diasMes fijo como respaldo.
+  // Días laborables esperados del mes (según días de la semana configurados)
   let diasLaborables = cfg.diasMes;
   if (cfg.diasSemana && cfg.diasSemana.length > 0 && anioMes) {
     diasLaborables = contarDiasDelMes(anioMes, cfg.diasSemana);
   }
-  const horasMes = cfg.horasDia * diasLaborables;
-  const valorHora = horasMes > 0 ? cfg.sueldoMensual / horasMes : 0;
 
+  // ── Cálculo del sueldo base según el TIPO de trabajador ──
+  let sueldoBase = 0;       // lo que ganaría sin descuentos
+  let valorHora = 0;        // para el descuento por retraso
+  let horasBase = 0;        // horas del mes usadas para el valor hora
+
+  if (cfg.tipoTrabajador === "por_dia") {
+    // Pago por día trabajado (domingos/feriados): días con caja × monto por día
+    sueldoBase = diasTrabajados * cfg.montoPorDia;
+    // valor hora para descuento: monto por día / horas por día
+    valorHora = cfg.horasDia > 0 ? cfg.montoPorDia / cfg.horasDia : 0;
+    horasBase = diasTrabajados * cfg.horasDia;
+  } else {
+    // Tipos fijos: sueldo mensual fijo
+    sueldoBase = cfg.sueldoMensual;
+    // horas base: las fijas configuradas (192, 120, etc.); si no, días esperados × horas/día
+    horasBase = cfg.horasMesFijas > 0 ? cfg.horasMesFijas : diasLaborables * cfg.horasDia;
+    valorHora = horasBase > 0 ? cfg.sueldoMensual / horasBase : 0;
+  }
+
+  // ── Descuento por retraso (aplica a TODOS los tipos) ──
   let descuento = 0;
   if (cfg.tipoDescuento === "fijo") {
     descuento = retrasos.length * cfg.montoDescuentoFijo;
@@ -124,9 +155,10 @@ export function calcularResumenMensual(aperturas: Apertura[], cfg: ConfigTrabaja
     minutosRetrasoTotal,
     valorHora: redondear(valorHora),
     descuento,
-    sueldoFinal: redondear(cfg.sueldoMensual - descuento),
+    sueldoBase: redondear(sueldoBase),
+    sueldoFinal: redondear(sueldoBase - descuento),
     detalle,
     diasLaborablesMes: diasLaborables,
-    horasLaborablesMes: redondear(horasMes),
+    horasLaborablesMes: redondear(horasBase),
   };
 }
