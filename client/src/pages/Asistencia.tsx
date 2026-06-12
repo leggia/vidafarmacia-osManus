@@ -89,7 +89,8 @@ export default function Asistencia() {
             <div className="grid grid-cols-2 gap-3">
               <Card><CardContent className="p-4">
                 <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1"><Calendar className="h-3.5 w-3.5" /> Días trabajados</div>
-                <p className="text-2xl font-black">{resumen.data.diasTrabajados}</p>
+                <p className="text-2xl font-black">{resumen.data.diasTrabajados}{resumen.data.diasLaborablesMes ? <span className="text-base text-muted-foreground"> / {resumen.data.diasLaborablesMes}</span> : null}</p>
+                {resumen.data.diasLaborablesMes ? <p className="text-[11px] text-muted-foreground">de {resumen.data.diasLaborablesMes} esperados este mes</p> : null}
               </CardContent></Card>
               <Card><CardContent className="p-4">
                 <div className="flex items-center gap-2 text-muted-foreground text-xs mb-1"><Clock className="h-3.5 w-3.5" /> Horas totales</div>
@@ -295,6 +296,11 @@ function FormTrabajador({ editando, usuariosSistema, onCancel, onSave, guardando
   const [horaIngreso, setHoraIngreso] = useState(editando?.horaIngreso || "08:00");
   const [horasDia, setHorasDia] = useState(editando?.horasDia ? parseFloat(editando.horasDia) : 8);
   const [diasMes, setDiasMes] = useState(editando?.diasMes || 26);
+  // Días de la semana que trabaja (0=domingo..6=sábado), como Set
+  const [diasSemana, setDiasSemana] = useState<Set<number>>(() => {
+    const csv = editando?.diasSemana || "1,2,3,4,5,6";
+    return new Set(csv.split(",").map(Number).filter((n: number) => !isNaN(n)));
+  });
   const [sueldo, setSueldo] = useState(editando?.sueldoMensual ? parseFloat(editando.sueldoMensual) : 0);
   const [tipoDescuento, setTipoDescuento] = useState(editando?.tipoDescuento || "proporcional");
   const [montoFijo, setMontoFijo] = useState(editando?.montoDescuentoFijo ? parseFloat(editando.montoDescuentoFijo) : 10);
@@ -312,7 +318,8 @@ function FormTrabajador({ editando, usuariosSistema, onCancel, onSave, guardando
       usuarioSistemaNombre: usel?.nombre || null,
       horaIngreso,
       horasDia: Number(horasDia),
-      diasMes: Number(diasMes),
+      diasMes: diasSemana.size > 0 ? diasSemana.size * 4 : Number(diasMes), // aproximado de respaldo
+      diasSemana: Array.from(diasSemana).sort().join(","),
       sueldoMensual: Number(sueldo),
       tipoDescuento,
       montoDescuentoFijo: Number(montoFijo),
@@ -343,7 +350,7 @@ function FormTrabajador({ editando, usuariosSistema, onCancel, onSave, guardando
           {usuariosSistema.length === 0 && <p className="text-[11px] text-orange-600 mt-1">No se pudieron cargar los usuarios del sistema.</p>}
         </div>
 
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 gap-3">
           <div>
             <Label className="text-xs">Hora ingreso</Label>
             <Input type="time" value={horaIngreso} onChange={(e) => setHoraIngreso(e.target.value)} />
@@ -352,10 +359,42 @@ function FormTrabajador({ editando, usuariosSistema, onCancel, onSave, guardando
             <Label className="text-xs">Horas/día</Label>
             <Input type="number" value={horasDia} onChange={(e) => setHorasDia(parseFloat(e.target.value) || 0)} step="0.5" />
           </div>
-          <div>
-            <Label className="text-xs">Días/mes</Label>
-            <Input type="number" value={diasMes} onChange={(e) => setDiasMes(parseInt(e.target.value) || 0)} />
+        </div>
+
+        {/* Días de la semana que trabaja */}
+        <div className="border border-foreground/10 rounded-lg p-3 space-y-2">
+          <Label className="text-xs font-bold">Días que trabaja</Label>
+          <div className="flex gap-1 flex-wrap">
+            {[
+              { n: 1, l: "L" }, { n: 2, l: "M" }, { n: 3, l: "Mi" }, { n: 4, l: "J" },
+              { n: 5, l: "V" }, { n: 6, l: "S" }, { n: 0, l: "D" },
+            ].map((d) => (
+              <button key={d.n} type="button"
+                onClick={() => setDiasSemana(prev => {
+                  const s = new Set(prev);
+                  if (s.has(d.n)) s.delete(d.n); else s.add(d.n);
+                  return s;
+                })}
+                className={`w-9 h-9 rounded-full text-xs font-bold transition-colors ${diasSemana.has(d.n) ? "bg-primary text-white" : "bg-muted text-muted-foreground"}`}>
+                {d.l}
+              </button>
+            ))}
           </div>
+          {/* Presets rápidos */}
+          <div className="flex gap-2 flex-wrap pt-1">
+            <button type="button" onClick={() => setDiasSemana(new Set([1, 2, 3, 4, 5, 6]))}
+              className="text-[11px] px-2 py-1 rounded bg-muted hover:bg-muted/70">Lun a Sáb</button>
+            <button type="button" onClick={() => setDiasSemana(new Set([1, 2, 3, 4, 5]))}
+              className="text-[11px] px-2 py-1 rounded bg-muted hover:bg-muted/70">Lun a Vie</button>
+            <button type="button" onClick={() => setDiasSemana(new Set([0]))}
+              className="text-[11px] px-2 py-1 rounded bg-muted hover:bg-muted/70">Solo domingos</button>
+            <button type="button" onClick={() => setDiasSemana(new Set([0, 1, 2, 3, 4, 5, 6]))}
+              className="text-[11px] px-2 py-1 rounded bg-muted hover:bg-muted/70">Todos</button>
+          </div>
+          <p className="text-[11px] text-muted-foreground">
+            {diasSemana.size} día(s)/semana · ~{(diasSemana.size * Number(horasDia) * 4.33).toFixed(0)}h/mes aprox.
+            El sistema cuenta los días reales de cada mes.
+          </p>
         </div>
 
         <div>

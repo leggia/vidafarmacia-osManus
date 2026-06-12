@@ -1126,6 +1126,7 @@ const asistenciaRouter = router({
       horaIngreso: z.string(),
       horasDia: z.number(),
       diasMes: z.number(),
+      diasSemana: z.string().optional(),
       sueldoMensual: z.number(),
       tipoDescuento: z.enum(["proporcional", "fijo"]),
       montoDescuentoFijo: z.number(),
@@ -1144,6 +1145,7 @@ const asistenciaRouter = router({
         horaIngreso: input.horaIngreso,
         horasDia: String(input.horasDia),
         diasMes: input.diasMes,
+        diasSemana: input.diasSemana || "1,2,3,4,5,6",
         sueldoMensual: String(input.sueldoMensual),
         tipoDescuento: input.tipoDescuento,
         montoDescuentoFijo: String(input.montoDescuentoFijo),
@@ -1202,11 +1204,12 @@ const asistenciaRouter = router({
         horaIngreso: trab.horaIngreso,
         horasDia: parseFloat(String(trab.horasDia)) || 8,
         diasMes: trab.diasMes || 26,
+        diasSemana: (trab.diasSemana || "").split(",").map(Number).filter((n: number) => !isNaN(n)),
         sueldoMensual: parseFloat(String(trab.sueldoMensual)) || 0,
         tipoDescuento: trab.tipoDescuento as "proporcional" | "fijo",
         montoDescuentoFijo: parseFloat(String(trab.montoDescuentoFijo)) || 0,
         toleranciaMin: trab.toleranciaMin ?? 5,
-      });
+      }, input.anioMes);
 
       return {
         trabajador: {
