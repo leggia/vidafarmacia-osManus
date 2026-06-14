@@ -1453,6 +1453,76 @@ const ventasRouter = router({
       return { error: err.message, totalVentas: 0, totalClientes: 0, ultimoId: 0, ultimaSync: null };
     }
   }),
+
+  // ── REPORTES (SQL directo, agrupado; índices ya creados en las tablas) ──
+  reportes: publicProcedure
+    .input(z.object({ desde: z.string(), hasta: z.string(), sucursal: z.string().optional() }))
+    .query(async ({ input }) => {
+      const { getDb } = await import("./db");
+      const { sql } = await import("drizzle-orm");
+      const db = await getDb();
+      if (!db) return null;
+      const rows = (r: any) => { const x = Array.isArray(r) ? r[0] : r?.rows ?? r; return Array.isArray(x) ? x : []; };
+      const esc = (v: string) => `'${String(v).replace(/'/g, "''")}'`;
+      const rango = `fecha >= ${esc(input.desde)} AND fecha <= ${esc(input.hasta)}`;
+      const filtroSuc = input.sucursal ? ` AND nombreSucursal = ${esc(input.sucursal)}` : "";
+
+      try {
+        const [masVendidos, vendedores, sucursales, diasSemana, totales] = await Promise.all([
+          // Productos más vendidos
+          db.execute(sql.raw(
+            `SELECT articuloNombre, SUM(cantidad) as unidades, SUM(subtotal) as monto, COUNT(*) as veces
+             FROM ventas_detalle WHERE ${rango}${filtroSuc}
+             GROUP BY articuloNombre ORDER BY unidades DESC LIMIT 15`
+          )),
+          // Mejores vendedores
+          db.execute(sql.raw(
+            `SELECT vendedor, SUM(total) as monto, COUNT(*) as ventas
+             FROM ventas WHERE ${rango}${filtroSuc}
+             GROUP BY vendedor ORDER BY monto DESC LIMIT 10`
+          )),
+          // Ventas por sucursal
+          db.execute(sql.raw(
+            `SELECT nombreSucursal, SUM(total) as monto, COUNT(*) as ventas
+             FROM ventas WHERE ${rango}
+             GROUP BY nombreSucursal ORDER BY monto DESC`
+          )),
+          // Mejores días de la semana
+          db.execute(sql.raw(
+            `SELECT diaSemana, SUM(total) as monto, COUNT(*) as ventas
+             FROM ventas WHERE ${rango}${filtroSuc}
+             GROUP BY diaSemana ORDER BY diaSemana`
+          )),
+          // Totales del periodo
+          db.execute(sql.raw(
+            `SELECT COUNT(*) as ventas, SUM(total) as monto, AVG(total) as promedio
+             FROM ventas WHERE ${rango}${filtroSuc}`
+          )),
+        ]);
+        return {
+          masVendidos: rows(masVendidos),
+          vendedores: rows(vendedores),
+          sucursales: rows(sucursales),
+          diasSemana: rows(diasSemana),
+          totales: rows(totales)[0] || { ventas: 0, monto: 0, promedio: 0 },
+        };
+      } catch (err: any) {
+        return { error: err.message, masVendidos: [], vendedores: [], sucursales: [], diasSemana: [], totales: null };
+      }
+    }),
+
+  // Lista de sucursales disponibles (para el filtro)
+  sucursalesDisponibles: publicProcedure.query(async () => {
+    const { getDb } = await import("./db");
+    const { sql } = await import("drizzle-orm");
+    const db = await getDb();
+    if (!db) return [];
+    try {
+      const r: any = await db.execute(sql.raw("SELECT DISTINCT nombreSucursal FROM ventas WHERE nombreSucursal IS NOT NULL"));
+      const rows = Array.isArray(r) ? r[0] : r?.rows ?? r;
+      return (Array.isArray(rows) ? rows : []).map((x: any) => x.nombreSucursal).filter(Boolean);
+    } catch { return []; }
+  }),
 });
 
 export const appRouter = router({
