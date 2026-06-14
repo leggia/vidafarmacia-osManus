@@ -320,6 +320,18 @@ async function startServer() {
   server.headersTimeout = 125000;
   server.listen(port, () => {
     console.log(`Server running on http://localhost:${port}/`);
+    // Crear tablas de ventas en background, DESPUÉS de que el server ya escucha.
+    // No bloquea el arranque (a diferencia del drizzle-kit push que colgó el sistema).
+    if (process.env.NODE_ENV === "production") {
+      setTimeout(async () => {
+        try {
+          const { crearTablasVentas } = await import("../tablas-ventas");
+          await crearTablasVentas();
+        } catch (e) {
+          console.warn("[Startup] Error creando tablas de ventas:", e);
+        }
+      }, 10000); // 10s después de arrancar, sin prisa
+    }
   });
 }
 
