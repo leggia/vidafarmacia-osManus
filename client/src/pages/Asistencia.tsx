@@ -38,8 +38,30 @@ export default function Asistencia() {
     onError: (e) => toast.error(e.message),
   });
   const guardarAjusteMut = trpc.asistencia.guardarAjusteDia.useMutation({
-    onSuccess: () => { utils.asistencia.resumenMensual.invalidate(); },
-    onError: (e) => toast.error(e.message),
+    // Actualización optimista: refleja el cambio al instante en pantalla,
+    // sin esperar al servidor. Si falla, se revierte.
+    onMutate: async (nuevo) => {
+      await utils.asistencia.resumenMensual.cancel();
+      const previo = utils.asistencia.resumenMensual.getData({ trabajadorId: trabajadorSel || 0, anioMes });
+      if (previo?.detalle) {
+        const detalleActualizado = previo.detalle.map((d: any) =>
+          d.fecha === nuevo.fecha
+            ? { ...d, justificado: nuevo.justificado ?? d.justificado, esTurnoExtra: nuevo.esTurnoExtra ?? d.esTurnoExtra }
+            : d
+        );
+        utils.asistencia.resumenMensual.setData(
+          { trabajadorId: trabajadorSel || 0, anioMes },
+          { ...previo, detalle: detalleActualizado }
+        );
+      }
+      return { previo };
+    },
+    onError: (e, _nuevo, ctx) => {
+      // Revertir si falló
+      if (ctx?.previo) utils.asistencia.resumenMensual.setData({ trabajadorId: trabajadorSel || 0, anioMes }, ctx.previo);
+      toast.error(e.message);
+    },
+    onSettled: () => { utils.asistencia.resumenMensual.invalidate(); },
   });
   const dashboardPagos = trpc.asistencia.dashboardPagos.useQuery(
     { anioMes },

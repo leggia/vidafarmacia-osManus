@@ -786,6 +786,12 @@ class Inventarios365Service {
    */
   async aperturasCajaDelMes(usuarioId: string, anioMes: string): Promise<Array<{ fecha: string; horaApertura: string; horaCierre?: string }>> {
     if (!usuarioId) return [];
+    // Caché por usuario+mes (TTL 3 min): las aperturas no cambian al marcar ajustes
+    // locales, así el resumen se recalcula al instante sin re-paginar inventarios365.
+    const cacheKey = `aperturas-${usuarioId}-${anioMes}`;
+    const cached = this.cacheInventario.get(cacheKey);
+    if (cached && cached.expira > Date.now()) return cached.data as any;
+
     const resultado: Array<{ fecha: string; horaApertura: string; horaCierre?: string }> = [];
     let page = 1;
     const maxPages = 60;
@@ -827,6 +833,8 @@ class Inventarios365Service {
     } catch (e) {
       console.error("[Inventarios365] Error leyendo cajas:", e);
     }
+    // Guardar en caché (TTL 3 min) para acelerar recálculos del resumen
+    this.cacheInventario.set(cacheKey, { data: resultado as any, expira: Date.now() + 3 * 60 * 1000 });
     return resultado;
   }
 
