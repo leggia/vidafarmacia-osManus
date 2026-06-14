@@ -154,14 +154,25 @@ async function startServer() {
   // Diagnóstico: estructura de clientes
   app.get("/api/admin/test-clientes", async (_req, res) => {
     try {
-      const { clientes, pagination, raw } = await inventarios365.listarClientesPagina(1);
-      const ejemplo = clientes[0] || null;
+      const raw = await inventarios365.diagRaw("/cliente?page=1&buscar=&criterio=global&usuarioid=1");
+      // La clave real parece ser "usuarios" — inspeccionar su forma
+      const usuarios = raw?.usuarios;
+      let arr: any[] = [];
+      let formaUsuarios = "desconocida";
+      if (Array.isArray(usuarios)) { arr = usuarios; formaUsuarios = "array directo"; }
+      else if (Array.isArray(usuarios?.data)) { arr = usuarios.data; formaUsuarios = "paginado .data"; }
+      else if (usuarios && typeof usuarios === "object") { formaUsuarios = `objeto con keys: ${Object.keys(usuarios).join(",")}`; }
+      const ejemplo = arr[0] || null;
       res.json({
         rawKeys: raw && typeof raw === "object" ? Object.keys(raw) : typeof raw,
-        total: pagination?.total ?? "?",
+        total: raw?.total ?? "?",
+        formaUsuarios,
+        cantidad: arr.length,
         camposCliente: ejemplo ? Object.keys(ejemplo) : [],
         ejemploCliente: ejemplo,
-        primeros3: clientes.slice(0, 3),
+        primeros3: arr.slice(0, 3),
+        // Si usuarios es objeto raro, mostrar un pedazo crudo para ver su forma
+        usuariosCrudo: Array.isArray(usuarios) ? `array[${usuarios.length}]` : JSON.stringify(usuarios).substring(0, 500),
       });
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
