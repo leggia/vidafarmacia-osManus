@@ -817,6 +817,14 @@ class Inventarios365Service {
     }
   }
 
+  /** Lee clientes de inventarios365 (paginado). */
+  async listarClientesPagina(page: number): Promise<{ clientes: any[]; pagination: any; raw?: any }> {
+    const data = await this.get<any>(`/cliente?page=${page}&buscar=&criterio=global&usuarioid=1`);
+    const clientes = data?.clientes?.data ?? data?.clientes ?? data?.data ?? data?.personas?.data ?? data?.personas ?? (Array.isArray(data) ? data : []);
+    const pagination = data?.clientes ?? data?.pagination ?? {};
+    return { clientes: Array.isArray(clientes) ? clientes : [], pagination, raw: data };
+  }
+
   async aperturasCajaDelMes(usuarioId: string, anioMes: string): Promise<Array<{ fecha: string; horaApertura: string; horaCierre?: string }>> {
     if (!usuarioId) return [];
     const resultado: Array<{ fecha: string; horaApertura: string; horaCierre?: string }> = [];

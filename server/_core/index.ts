@@ -151,6 +151,21 @@ async function startServer() {
     } catch (e: any) { res.status(500).json({ error: e.message }); }
   });
 
+  // Diagnóstico: estructura de clientes
+  app.get("/api/admin/test-clientes", async (_req, res) => {
+    try {
+      const { clientes, pagination, raw } = await inventarios365.listarClientesPagina(1);
+      const ejemplo = clientes[0] || null;
+      res.json({
+        rawKeys: raw && typeof raw === "object" ? Object.keys(raw) : typeof raw,
+        total: pagination?.total ?? "?",
+        camposCliente: ejemplo ? Object.keys(ejemplo) : [],
+        ejemploCliente: ejemplo,
+        primeros3: clientes.slice(0, 3),
+      });
+    } catch (e: any) { res.status(500).json({ error: e.message }); }
+  });
+
   // Diagnóstico: estructura de ventas y detalle de productos vendidos
   app.get("/api/admin/test-ventas", async (req, res) => {
     try {
@@ -245,7 +260,53 @@ async function startServer() {
       } catch (e) {
         console.warn("[DB] Error en migraciones:", e);
       }
+
+      // ── Ventas: carga histórica del mes anterior (solo la primera vez) ──
+      try {
+        const { getDb } = await import("../db");
+        const { ventas } = await import("../../drizzle/schema");
+        const { sql } = await import("drizzle-orm");
+        const db = await getDb();
+        if (db) {
+          const [c] = await db.select({ n: sql<number>`count(*)` }).from(ventas);
+          if (Number(c?.n ?? 0) === 0) {
+            // Rango del mes anterior
+            const hoy = new Date();
+            const inicioMesAnterior = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
+            const finMesAnterior = new Date(hoy.getFullYear(), hoy.getMonth(), 0);
+            const fmt = (d: Date) => d.toISOString().slice(0, 10);
+            console.log(`[SyncVentas] Carga histórica inicial: ${fmt(inicioMesAnterior)}..${fmt(finMesAnterior)}`);
+            const { cargarVentasHistorico } = await import("../sync-ventas");
+            const r = await cargarVentasHistorico(fmt(inicioMesAnterior), fmt(finMesAnterior));
+            console.log(`[SyncVentas] Histórico cargado: ${r.guardadas} ventas`);
+          }
+        }
+      } catch (e) {
+        console.warn("[SyncVentas] Error en carga histórica:", e);
+      }
     }, 3000);
+
+    // ── Cron diario: sincronización incremental de ventas a las 8:00 AM ──
+    // Chequea cada 5 min si es la hora; sincroniza una vez al día.
+    let ultimoDiaSync = "";
+    setInterval(async () => {
+      try {
+        const ahora = new Date();
+        const hora = ahora.getHours();
+        const min = ahora.getMinutes();
+        const hoy = ahora.toISOString().slice(0, 10);
+        // Entre 8:00 y 8:05, y no sincronizado hoy aún
+        if (hora === 8 && min < 5 && ultimoDiaSync !== hoy) {
+          ultimoDiaSync = hoy;
+          console.log("[SyncVentas] Sincronización diaria 8 AM iniciada");
+          const { sincronizarVentasIncremental } = await import("../sync-ventas");
+          const r = await sincronizarVentasIncremental();
+          console.log(`[SyncVentas] Diaria completada: +${r.nuevas} ventas nuevas`);
+        }
+      } catch (e) {
+        console.warn("[SyncVentas] Error en cron diario:", e);
+      }
+    }, 5 * 60 * 1000); // cada 5 minutos
   }
 
   // Servir archivos subidos localmente

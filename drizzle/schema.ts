@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, decimal, json } from "drizzle-orm/mysql-core";
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, decimal, json, index } from "drizzle-orm/mysql-core";
 
 // ─── Users ───────────────────────────────────────────────────────────────────
 export const users = mysqlTable("users", {
@@ -402,3 +402,82 @@ export const sugerenciasSistema = mysqlTable("sugerencias_sistema", {
 
 export type SugerenciaSistema = typeof sugerenciasSistema.$inferSelect;
 export type InsertSugerenciaSistema = typeof sugerenciasSistema.$inferInsert;
+
+// ─── VENTAS (cabecera) — capturadas de inventarios365 ─────────────────────────
+// Una fila por venta. Fuente de los reportes: por vendedor, sucursal, día, cliente.
+// Índices en las columnas que se agrupan/filtran para que los reportes sean rápidos.
+export const ventas = mysqlTable("ventas", {
+  id: int("id").primaryKey(), // mismo id de inventarios365 (evita duplicados al sincronizar)
+  numComprobante: varchar("numComprobante", { length: 50 }),
+  tipoComprobante: varchar("tipoComprobante", { length: 30 }),
+  fechaHora: timestamp("fechaHora").notNull(),
+  fecha: varchar("fecha", { length: 10 }).notNull(),      // "YYYY-MM-DD" (para agrupar por día)
+  diaSemana: int("diaSemana").notNull(),                   // 0=domingo..6=sábado (mejores días)
+  total: decimal("total", { precision: 14, scale: 2 }).notNull().default("0"),
+  descuentoTotal: decimal("descuentoTotal", { precision: 14, scale: 2 }).notNull().default("0"),
+  vendedor: varchar("vendedor", { length: 100 }),          // usuario que vendió
+  nombreSucursal: varchar("nombreSucursal", { length: 150 }),
+  idCliente: int("idCliente"),
+  razonSocialCliente: varchar("razonSocialCliente", { length: 255 }),
+  estado: varchar("estado", { length: 20 }),
+  capturadoEn: timestamp("capturadoEn").defaultNow().notNull(),
+}, (t) => ({
+  idxFecha: index("idx_ventas_fecha").on(t.fecha),
+  idxVendedor: index("idx_ventas_vendedor").on(t.vendedor),
+  idxSucursal: index("idx_ventas_sucursal").on(t.nombreSucursal),
+  idxDiaSemana: index("idx_ventas_diasemana").on(t.diaSemana),
+}));
+
+export type Venta = typeof ventas.$inferSelect;
+export type InsertVenta = typeof ventas.$inferInsert;
+
+// ─── VENTAS DETALLE — productos vendidos en cada venta ────────────────────────
+// Varias filas por venta. Fuente de "producto más vendido".
+export const ventasDetalle = mysqlTable("ventas_detalle", {
+  id: int("id").autoincrement().primaryKey(),
+  ventaId: int("ventaId").notNull(),                       // FK lógica a ventas.id
+  articuloNombre: varchar("articuloNombre", { length: 500 }).notNull(),
+  cantidad: decimal("cantidad", { precision: 14, scale: 2 }).notNull().default("0"),
+  precio: decimal("precio", { precision: 14, scale: 4 }).notNull().default("0"),
+  descuento: decimal("descuento", { precision: 14, scale: 2 }).notNull().default("0"),
+  subtotal: decimal("subtotal", { precision: 14, scale: 2 }).notNull().default("0"),
+  fecha: varchar("fecha", { length: 10 }).notNull(),       // copia de la venta (para reportes directos)
+  nombreSucursal: varchar("nombreSucursal", { length: 150 }), // copia (producto más vendido por sucursal)
+}, (t) => ({
+  idxVenta: index("idx_detalle_venta").on(t.ventaId),
+  idxArticulo: index("idx_detalle_articulo").on(t.articuloNombre),
+  idxFecha: index("idx_detalle_fecha").on(t.fecha),
+}));
+
+export type VentaDetalle = typeof ventasDetalle.$inferSelect;
+export type InsertVentaDetalle = typeof ventasDetalle.$inferInsert;
+
+// ─── CLIENTES — capturados de inventarios365 ──────────────────────────────────
+// Estructura provisional; se ajusta tras ver el JSON real del endpoint de clientes.
+export const clientes = mysqlTable("clientes", {
+  id: int("id").primaryKey(), // id de inventarios365
+  nombre: varchar("nombre", { length: 255 }),
+  documento: varchar("documento", { length: 50 }),         // NIT/CI
+  telefono: varchar("telefono", { length: 50 }),
+  correo: varchar("correo", { length: 150 }),
+  direccion: varchar("direccion", { length: 500 }),
+  datosExtra: json("datosExtra"),                          // resto de campos por si acaso
+  capturadoEn: timestamp("capturadoEn").defaultNow().notNull(),
+}, (t) => ({
+  idxNombre: index("idx_clientes_nombre").on(t.nombre),
+}));
+
+export type Cliente = typeof clientes.$inferSelect;
+export type InsertCliente = typeof clientes.$inferInsert;
+
+// ─── Estado de sincronización (hasta qué venta llegamos) ──────────────────────
+// Una sola fila que recuerda el último id de venta capturado (captura incremental).
+export const syncEstado = mysqlTable("sync_estado", {
+  clave: varchar("clave", { length: 50 }).primaryKey(),    // ej. "ventas"
+  ultimoId: int("ultimoId").notNull().default(0),          // último id de venta procesado
+  ultimaSync: timestamp("ultimaSync").defaultNow().onUpdateNow().notNull(),
+  notas: varchar("notas", { length: 255 }),
+});
+
+export type SyncEstado = typeof syncEstado.$inferSelect;
+export type InsertSyncEstado = typeof syncEstado.$inferInsert;

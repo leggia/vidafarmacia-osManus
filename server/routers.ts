@@ -1500,6 +1500,103 @@ const inteligenciaRouter = router({
       await db.update(sugerenciasSistema).set({ estado: input.estado }).where(eq(sugerenciasSistema.id, input.id));
       return { success: true };
     }),
+
+  // Sincronizar ventas ahora (botón manual) — incremental
+  sincronizarVentas: publicProcedure.mutation(async () => {
+    const { sincronizarVentasIncremental } = await import("./sync-ventas");
+    return sincronizarVentasIncremental();
+  }),
+
+  // Estado de la última sincronización
+  estadoSync: publicProcedure.query(async () => {
+    const { getDb } = await import("./db");
+    const { syncEstado, ventas } = await import("../drizzle/schema");
+    const { eq, sql } = await import("drizzle-orm");
+    const db = await getDb();
+    if (!db) return null;
+    const [estado] = await db.select().from(syncEstado).where(eq(syncEstado.clave, "ventas"));
+    const [conteo] = await db.select({ n: sql<number>`count(*)` }).from(ventas);
+    return { ultimoId: estado?.ultimoId ?? 0, ultimaSync: estado?.ultimaSync ?? null, totalVentasGuardadas: Number(conteo?.n ?? 0) };
+  }),
+
+  // ── REPORTES (consultas SQL agrupadas, con índices para velocidad) ──
+
+  // Producto más vendido (global o por sucursal) en un rango de fechas
+  productosMasVendidos: publicProcedure
+    .input(z.object({ desde: z.string(), hasta: z.string(), sucursal: z.string().optional(), limite: z.number().default(15) }))
+    .query(async ({ input }) => {
+      const { getDb } = await import("./db");
+      const { ventasDetalle } = await import("../drizzle/schema");
+      const { and, gte, lte, eq, sql, desc } = await import("drizzle-orm");
+      const db = await getDb();
+      if (!db) return [];
+      const filtros = [gte(ventasDetalle.fecha, input.desde), lte(ventasDetalle.fecha, input.hasta)];
+      if (input.sucursal) filtros.push(eq(ventasDetalle.nombreSucursal, input.sucursal));
+      return db.select({
+        articulo: ventasDetalle.articuloNombre,
+        unidades: sql<number>`sum(${ventasDetalle.cantidad})`,
+        monto: sql<number>`sum(${ventasDetalle.subtotal})`,
+        veces: sql<number>`count(*)`,
+      }).from(ventasDetalle).where(and(...filtros))
+        .groupBy(ventasDetalle.articuloNombre)
+        .orderBy(desc(sql`sum(${ventasDetalle.cantidad})`))
+        .limit(input.limite);
+    }),
+
+  // Mejor vendedor (por monto total) en un rango
+  mejoresVendedores: publicProcedure
+    .input(z.object({ desde: z.string(), hasta: z.string(), limite: z.number().default(10) }))
+    .query(async ({ input }) => {
+      const { getDb } = await import("./db");
+      const { ventas } = await import("../drizzle/schema");
+      const { and, gte, lte, sql, desc } = await import("drizzle-orm");
+      const db = await getDb();
+      if (!db) return [];
+      return db.select({
+        vendedor: ventas.vendedor,
+        monto: sql<number>`sum(${ventas.total})`,
+        ventas: sql<number>`count(*)`,
+      }).from(ventas).where(and(gte(ventas.fecha, input.desde), lte(ventas.fecha, input.hasta)))
+        .groupBy(ventas.vendedor)
+        .orderBy(desc(sql`sum(${ventas.total})`))
+        .limit(input.limite);
+    }),
+
+  // Ventas por sucursal en un rango
+  ventasPorSucursal: publicProcedure
+    .input(z.object({ desde: z.string(), hasta: z.string() }))
+    .query(async ({ input }) => {
+      const { getDb } = await import("./db");
+      const { ventas } = await import("../drizzle/schema");
+      const { and, gte, lte, sql, desc } = await import("drizzle-orm");
+      const db = await getDb();
+      if (!db) return [];
+      return db.select({
+        sucursal: ventas.nombreSucursal,
+        monto: sql<number>`sum(${ventas.total})`,
+        ventas: sql<number>`count(*)`,
+      }).from(ventas).where(and(gte(ventas.fecha, input.desde), lte(ventas.fecha, input.hasta)))
+        .groupBy(ventas.nombreSucursal)
+        .orderBy(desc(sql`sum(${ventas.total})`));
+    }),
+
+  // Mejores días de venta (por día de la semana) en un rango
+  ventasPorDiaSemana: publicProcedure
+    .input(z.object({ desde: z.string(), hasta: z.string() }))
+    .query(async ({ input }) => {
+      const { getDb } = await import("./db");
+      const { ventas } = await import("../drizzle/schema");
+      const { and, gte, lte, sql } = await import("drizzle-orm");
+      const db = await getDb();
+      if (!db) return [];
+      return db.select({
+        diaSemana: ventas.diaSemana,
+        monto: sql<number>`sum(${ventas.total})`,
+        ventas: sql<number>`count(*)`,
+      }).from(ventas).where(and(gte(ventas.fecha, input.desde), lte(ventas.fecha, input.hasta)))
+        .groupBy(ventas.diaSemana)
+        .orderBy(ventas.diaSemana);
+    }),
 });
 
 export const appRouter = router({
