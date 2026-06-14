@@ -97,13 +97,20 @@ async function guardarVenta(db: any, venta: any): Promise<boolean> {
  * Sincronización INCREMENTAL: trae solo las ventas nuevas (id mayor al último guardado).
  * Recorre las primeras páginas (las más recientes) hasta encontrar ventas ya conocidas.
  */
-export async function sincronizarVentasIncremental(maxPaginas = 30): Promise<{ nuevas: number; ultimoId: number }> {
+export async function sincronizarVentasIncremental(maxPaginas = 5): Promise<{ nuevas: number; ultimoId: number; omitido?: boolean }> {
   const { getDb } = await import("./db");
   const { inventarios365 } = await import("./inventarios365");
   const db = await getDb();
   if (!db) return { nuevas: 0, ultimoId: 0 };
 
   const ultimoIdPrevio = await leerUltimoId();
+  // Seguridad: si nunca se hizo una carga inicial (ultimoId = 0), NO recorrer todo el
+  // historial (saturaría el sistema). Se requiere una carga inicial controlada primero.
+  if (ultimoIdPrevio === 0) {
+    console.log("[SyncVentas] Incremental omitida: falta carga inicial (ultimoId=0)");
+    return { nuevas: 0, ultimoId: 0, omitido: true };
+  }
+
   let nuevas = 0;
   let maxIdVisto = ultimoIdPrevio;
   let alcanzado = false;
@@ -221,4 +228,25 @@ export async function sincronizarClientes(maxPaginas = 60): Promise<{ total: num
     console.warn("[SyncClientes] Error:", e);
   }
   return { total };
+}
+
+/**
+ * Establece el punto de partida SIN traer histórico: lee el id de la venta más
+ * reciente y lo guarda como ultimoId. A partir de ahí, la incremental solo trae lo nuevo.
+ * Seguro y rápido (1 sola llamada). Es lo que se llama la primera vez.
+ */
+export async function inicializarPuntoDePartida(): Promise<{ ultimoId: number }> {
+  const { inventarios365 } = await import("./inventarios365");
+  try {
+    const { ventas } = await inventarios365.listarVentasPagina(1);
+    const maxId = ventas.reduce((m: number, v: any) => Math.max(m, Number(v.id) || 0), 0);
+    if (maxId > 0) {
+      await guardarUltimoId(maxId, "punto de partida inicial");
+      console.log(`[SyncVentas] Punto de partida establecido: ultimoId=${maxId}`);
+    }
+    return { ultimoId: maxId };
+  } catch (e) {
+    console.warn("[SyncVentas] Error inicializando punto de partida:", e);
+    return { ultimoId: 0 };
+  }
 }
