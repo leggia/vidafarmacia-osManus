@@ -205,6 +205,29 @@ async function startServer() {
         out.syncEstado = rows;
       } catch (e: any) { out.syncEstadoError = e.message; }
 
+      // 6. Probar escribir en sync_estado (lo que falla silenciosamente)
+      try {
+        await db.execute(sql.raw(
+          `INSERT INTO sync_estado (clave, ultimoId, notas) VALUES ('test', 999, 'prueba')
+           ON DUPLICATE KEY UPDATE ultimoId=999, notas='prueba', ultimaSync=CURRENT_TIMESTAMP`
+        ));
+        out.escrituraSyncEstado = "OK";
+      } catch (e: any) { out.escrituraSyncEstadoError = e.message; }
+
+      // 7. Probar el INSERT COMPLETO de guardarVenta (todas las columnas)
+      if (ventas[0]) {
+        const v = ventas[0];
+        const fecha = String(v.fecha_hora || "").slice(0, 10);
+        const escF = (x: any) => x === null || x === undefined ? "NULL" : `'${String(x).replace(/'/g, "''")}'`;
+        try {
+          await db.execute(sql.raw(
+            `INSERT INTO ventas (id, numComprobante, tipoComprobante, fechaHora, fecha, diaSemana, total, descuentoTotal, vendedor, nombreSucursal, idCliente, razonSocialCliente, estado)
+             VALUES (${Number(v.id) + 1}, ${escF(v.num_comprobante)}, ${escF(v.tipo_comprobante)}, ${escF(v.fecha_hora)}, ${escF(fecha)}, 0, ${Number(v.total) || 0}, 0, ${escF(v.usuario)}, ${escF(v.nombre_sucursal)}, NULL, ${escF(v.razonSocial)}, '1')`
+          ));
+          out.insertCompleto = "OK";
+        } catch (e: any) { out.insertCompletoError = e.message; }
+      }
+
       res.json(out);
     } catch (e: any) {
       res.status(500).json({ error: e.message, parcial: out });
