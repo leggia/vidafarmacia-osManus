@@ -194,17 +194,20 @@ export default function Asistencia() {
                         {d.esTurnoExtra && <span className="text-amber-600 font-medium flex items-center gap-0.5"><Star className="h-3 w-3" />extra</span>}
                       </div>
                       {/* Acciones del día */}
-                      <div className="flex gap-2 mt-1.5">
+                      <div className="flex gap-2 mt-1.5 items-center">
                         <button
+                          disabled={guardarAjusteMut.isPending}
                           onClick={() => guardarAjusteMut.mutate({ trabajadorId: trabajadorSel!, fecha: d.fecha, justificado: !d.justificado, esTurnoExtra: d.esTurnoExtra, motivo: d.justificado ? null : "Justificado" })}
-                          className={`text-[10px] px-2 py-0.5 rounded flex items-center gap-1 ${d.justificado ? "bg-blue-600 text-white" : "bg-muted text-muted-foreground hover:bg-blue-100"}`}>
+                          className={`text-[10px] px-2 py-0.5 rounded flex items-center gap-1 disabled:opacity-50 ${d.justificado ? "bg-blue-600 text-white" : "bg-muted text-muted-foreground hover:bg-blue-100"}`}>
                           <ShieldCheck className="h-3 w-3" /> {d.justificado ? "Justificado" : "Justificar"}
                         </button>
                         <button
+                          disabled={guardarAjusteMut.isPending}
                           onClick={() => guardarAjusteMut.mutate({ trabajadorId: trabajadorSel!, fecha: d.fecha, justificado: d.justificado, esTurnoExtra: !d.esTurnoExtra })}
-                          className={`text-[10px] px-2 py-0.5 rounded flex items-center gap-1 ${d.esTurnoExtra ? "bg-amber-600 text-white" : "bg-muted text-muted-foreground hover:bg-amber-100"}`}>
+                          className={`text-[10px] px-2 py-0.5 rounded flex items-center gap-1 disabled:opacity-50 ${d.esTurnoExtra ? "bg-amber-600 text-white" : "bg-muted text-muted-foreground hover:bg-amber-100"}`}>
                           <Star className="h-3 w-3" /> {d.esTurnoExtra ? "Turno extra" : "Marcar extra"}
                         </button>
+                        {guardarAjusteMut.isPending && <Loader2 className="h-3 w-3 animate-spin text-muted-foreground" />}
                       </div>
                     </div>
                   ))}

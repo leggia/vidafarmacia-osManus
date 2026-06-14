@@ -453,18 +453,20 @@ export type VentaDetalle = typeof ventasDetalle.$inferSelect;
 export type InsertVentaDetalle = typeof ventasDetalle.$inferInsert;
 
 // ─── CLIENTES — capturados de inventarios365 ──────────────────────────────────
-// Estructura provisional; se ajusta tras ver el JSON real del endpoint de clientes.
 export const clientes = mysqlTable("clientes", {
   id: int("id").primaryKey(), // id de inventarios365
   nombre: varchar("nombre", { length: 255 }),
-  documento: varchar("documento", { length: 50 }),         // NIT/CI
+  tipoDocumento: varchar("tipoDocumento", { length: 10 }),
+  numDocumento: varchar("numDocumento", { length: 50 }),    // NIT/CI
+  complementoId: varchar("complementoId", { length: 20 }),
   telefono: varchar("telefono", { length: 50 }),
-  correo: varchar("correo", { length: 150 }),
+  email: varchar("email", { length: 150 }),
   direccion: varchar("direccion", { length: 500 }),
-  datosExtra: json("datosExtra"),                          // resto de campos por si acaso
+  creadoEnSistema: varchar("creadoEnSistema", { length: 25 }), // created_at del POS
   capturadoEn: timestamp("capturadoEn").defaultNow().notNull(),
 }, (t) => ({
   idxNombre: index("idx_clientes_nombre").on(t.nombre),
+  idxDocumento: index("idx_clientes_documento").on(t.numDocumento),
 }));
 
 export type Cliente = typeof clientes.$inferSelect;

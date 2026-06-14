@@ -173,3 +173,52 @@ export async function cargarVentasHistorico(desde: string, hasta: string, maxPag
   }
   return { guardadas };
 }
+
+/**
+ * Sincroniza CLIENTES desde inventarios365 (son ~500, se traen todos).
+ * Idempotente: actualiza los existentes, inserta los nuevos.
+ */
+export async function sincronizarClientes(maxPaginas = 60): Promise<{ total: number }> {
+  const { getDb } = await import("./db");
+  const { clientes } = await import("../drizzle/schema");
+  const { eq } = await import("drizzle-orm");
+  const { inventarios365 } = await import("./inventarios365");
+  const db = await getDb();
+  if (!db) return { total: 0 };
+
+  let total = 0;
+  try {
+    for (let page = 1; page <= maxPaginas; page++) {
+      const { clientes: lista } = await inventarios365.listarClientesPagina(page);
+      if (lista.length === 0) break;
+
+      for (const c of lista) {
+        const id = Number(c.id);
+        if (!id) continue;
+        const valores = {
+          nombre: c.nombre || null,
+          tipoDocumento: c.tipo_documento != null ? String(c.tipo_documento) : null,
+          numDocumento: c.num_documento || null,
+          complementoId: c.complemento_id || null,
+          telefono: c.telefono || null,
+          email: c.email || null,
+          direccion: c.direccion || null,
+          creadoEnSistema: c.created_at || null,
+        };
+        const [existe] = await db.select().from(clientes).where(eq(clientes.id, id));
+        if (existe) {
+          await db.update(clientes).set(valores).where(eq(clientes.id, id));
+        } else {
+          await db.insert(clientes).values({ id, ...valores });
+        }
+        total++;
+      }
+      // Si la página vino incompleta, es la última
+      if (lista.length < 10) break;
+      await new Promise((r) => setTimeout(r, 100));
+    }
+  } catch (e) {
+    console.warn("[SyncClientes] Error:", e);
+  }
+  return { total };
+}
