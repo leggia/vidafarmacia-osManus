@@ -275,16 +275,16 @@ async function startServer() {
       // miles de llamadas a inventarios365). Se hará bajo demanda y por lotes pequeños.
     }, 3000);
 
-    // ── Cron diario: sincronización incremental de ventas a las 8:00 AM ──
-    // Chequea cada 5 min si es la hora; sincroniza una vez al día.
-    let ultimoDiaSync = "";
+    // ── Cron diario de ventas DESHABILITADO temporalmente ──
+    // Se reactivará una vez confirmado que el arranque es 100% estable.
+    // (Evita cualquier proceso en background que pueda afectar recursos limitados.)
+    /* let ultimoDiaSync = "";
     setInterval(async () => {
       try {
         const ahora = new Date();
         const hora = ahora.getHours();
         const min = ahora.getMinutes();
         const hoy = ahora.toISOString().slice(0, 10);
-        // Entre 8:00 y 8:05, y no sincronizado hoy aún
         if (hora === 8 && min < 5 && ultimoDiaSync !== hoy) {
           ultimoDiaSync = hoy;
           console.log("[SyncVentas] Sincronización diaria 8 AM iniciada");
@@ -295,7 +295,7 @@ async function startServer() {
       } catch (e) {
         console.warn("[SyncVentas] Error en cron diario:", e);
       }
-    }, 5 * 60 * 1000); // cada 5 minutos
+    }, 5 * 60 * 1000); */
   }
 
   // Servir archivos subidos localmente
@@ -303,18 +303,21 @@ async function startServer() {
     (await import("path")).default.join(process.cwd(), "uploads")
   ));
 
-  // Sincronizar almacenes desde inventarios365 al arrancar
-  try {
-    const almacenes = await inventarios365.listarAlmacenes();
-    const { upsertBranchByName } = await import("../db");
-    for (let i = 0; i < almacenes.length; i++) {
-      const a = almacenes[i] as any;
-      await upsertBranchByName(a.nombre_almacen, i === 0 ? 1 : 0);
+  // Sincronizar almacenes desde inventarios365 (NO bloquea el arranque)
+  // Se mueve a background: si inventarios365 está lento, el server igual escucha.
+  setTimeout(async () => {
+    try {
+      const almacenes = await inventarios365.listarAlmacenes();
+      const { upsertBranchByName } = await import("../db");
+      for (let i = 0; i < almacenes.length; i++) {
+        const a = almacenes[i] as any;
+        await upsertBranchByName(a.nombre_almacen, i === 0 ? 1 : 0);
+      }
+      console.log(`[Sync] ${almacenes.length} almacenes sincronizados`);
+    } catch (e) {
+      console.warn("[Sync] No se pudieron sincronizar almacenes:", e);
     }
-    console.log(`[Sync] ${almacenes.length} almacenes sincronizados`);
-  } catch (e) {
-    console.warn("[Sync] No se pudieron sincronizar almacenes:", e);
-  }
+  }, 5000);
 
   // OAuth callback under /api/oauth/callback
   registerOAuthRoutes(app);
@@ -378,7 +381,11 @@ async function startServer() {
   }
 
   const preferredPort = parseInt(process.env.PORT || "3000");
-  const port = await findAvailablePort(preferredPort);
+  // En producción (Railway/Cloud) usar EXACTAMENTE el puerto asignado.
+  // Buscar otro puerto rompería el ruteo de la plataforma ("failed to respond").
+  const port = process.env.NODE_ENV === "production"
+    ? preferredPort
+    : await findAvailablePort(preferredPort);
 
   if (port !== preferredPort) {
     console.log(`Port ${preferredPort} is busy, using port ${port} instead`);
