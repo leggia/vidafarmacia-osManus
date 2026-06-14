@@ -1421,6 +1421,40 @@ const consultaRouter = router({
     }),
 });
 
+// ─── Ventas (sincronización bajo demanda + reportes) ──────────────────────────
+const ventasRouter = router({
+  // Botón: sincronizar ventas ahora (incremental, conservador)
+  sincronizar: publicProcedure.mutation(async () => {
+    const { sincronizarVentasIncremental } = await import("./sync-ventas");
+    return sincronizarVentasIncremental();
+  }),
+
+  // Botón: sincronizar clientes
+  sincronizarClientes: publicProcedure.mutation(async () => {
+    const { sincronizarClientes } = await import("./sync-ventas");
+    return sincronizarClientes();
+  }),
+
+  // Estado de la sincronización
+  estado: publicProcedure.query(async () => {
+    const { getDb } = await import("./db");
+    const { sql } = await import("drizzle-orm");
+    const db = await getDb();
+    if (!db) return null;
+    try {
+      const totalV: any = await db.execute(sql.raw("SELECT COUNT(*) as n FROM ventas"));
+      const totalC: any = await db.execute(sql.raw("SELECT COUNT(*) as n FROM clientes"));
+      const est: any = await db.execute(sql.raw("SELECT ultimoId, ultimaSync FROM sync_estado WHERE clave='ventas' LIMIT 1"));
+      const num = (r: any) => { const rows = Array.isArray(r) ? r[0] : r?.rows ?? r; return Number((Array.isArray(rows) ? rows[0]?.n : rows?.n) ?? 0); };
+      const estRow = Array.isArray(est) ? est[0] : est?.rows ?? est;
+      const e = Array.isArray(estRow) ? estRow[0] : estRow;
+      return { totalVentas: num(totalV), totalClientes: num(totalC), ultimoId: e?.ultimoId ?? 0, ultimaSync: e?.ultimaSync ?? null };
+    } catch (err: any) {
+      return { error: err.message, totalVentas: 0, totalClientes: 0, ultimoId: 0, ultimaSync: null };
+    }
+  }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -1443,6 +1477,7 @@ export const appRouter = router({
   inventario: inventarioRouter,
   asistencia: asistenciaRouter,
   consulta: consultaRouter,
+  ventas: ventasRouter,
 });
 
 export type AppRouter = typeof appRouter;
