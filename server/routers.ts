@@ -377,6 +377,17 @@ INSTRUCCIONES GENERALES:
             if (syncResult.productosNoEncontrados && syncResult.productosNoEncontrados.length > 0) {
               syncMessage += ` | Productos no encontrados: ${syncResult.productosNoEncontrados.map((p: any) => p.nombre).join(", ")}`;
             }
+            // Inteligencia de negocio (no bloquea): acumular unidades compradas por producto
+            import("./inteligencia").then(({ registrarCompraProducto }) => {
+              for (const item of input.items) {
+                registrarCompraProducto({
+                  articuloId: (item as any).articuloId ?? 0,
+                  articuloNombre: item.productName,
+                  unidades: item.quantity,
+                  costoUnitario: item.unitCost,
+                });
+              }
+            }).catch(() => { /* nunca debe afectar la compra */ });
           } else {
             syncSuccess = false;
             syncMessage = syncResult.message;
@@ -1417,7 +1428,77 @@ const consultaRouter = router({
     .query(async ({ input }) => {
       if (!input.buscar || input.buscar.trim().length < 2) return [];
       const { inventarios365 } = await import("./inventarios365");
-      return inventarios365.consultarProductos(input.buscar.trim());
+      const resultados = await inventarios365.consultarProductos(input.buscar.trim());
+
+      // Inteligencia de negocio (no bloquea la respuesta): registrar el producto
+      // más relevante como consultado. Si está sin stock, también se anota.
+      if (resultados.length > 0) {
+        const top = resultados[0];
+        import("./inteligencia").then(({ registrarConsultaProducto }) => {
+          registrarConsultaProducto({
+            articuloId: top.id,
+            articuloNombre: top.nombre,
+            sinStock: top.stock <= 0,
+          });
+        }).catch(() => { /* nunca debe afectar la consulta */ });
+      }
+
+      return resultados;
+    }),
+});
+
+// ─── Inteligencia de negocio (lectura: estadísticas + sugerencias) ────────────
+const inteligenciaRouter = router({
+  // Top productos del mes por unidades compradas (o consultadas)
+  topProductos: publicProcedure
+    .input(z.object({
+      anioMes: z.string(),
+      criterio: z.enum(["comprados", "consultados", "sinStock"]).default("comprados"),
+      limite: z.number().default(15),
+    }))
+    .query(async ({ input }) => {
+      const { getDb } = await import("./db");
+      const { estadisticasProducto } = await import("../drizzle/schema");
+      const { eq, desc } = await import("drizzle-orm");
+      const db = await getDb();
+      if (!db) return [];
+      const orden =
+        input.criterio === "consultados" ? desc(estadisticasProducto.vecesConsultado)
+        : input.criterio === "sinStock" ? desc(estadisticasProducto.vecesSinStock)
+        : desc(estadisticasProducto.unidadesCompradas);
+      return db.select().from(estadisticasProducto)
+        .where(eq(estadisticasProducto.anioMes, input.anioMes))
+        .orderBy(orden)
+        .limit(input.limite);
+    }),
+
+  // Listar sugerencias de mejora (bitácora)
+  listarSugerencias: publicProcedure
+    .input(z.object({ estado: z.string().optional() }))
+    .query(async ({ input }) => {
+      const { getDb } = await import("./db");
+      const { sugerenciasSistema } = await import("../drizzle/schema");
+      const { eq, desc } = await import("drizzle-orm");
+      const db = await getDb();
+      if (!db) return [];
+      const q = db.select().from(sugerenciasSistema);
+      const rows = input.estado
+        ? await q.where(eq(sugerenciasSistema.estado, input.estado)).orderBy(desc(sugerenciasSistema.actualizadoEn))
+        : await q.orderBy(desc(sugerenciasSistema.actualizadoEn));
+      return rows;
+    }),
+
+  // Cambiar el estado de una sugerencia (revisada/implementada/descartada)
+  actualizarSugerencia: publicProcedure
+    .input(z.object({ id: z.number(), estado: z.enum(["nueva", "revisada", "implementada", "descartada"]) }))
+    .mutation(async ({ input }) => {
+      const { getDb } = await import("./db");
+      const { sugerenciasSistema } = await import("../drizzle/schema");
+      const { eq } = await import("drizzle-orm");
+      const db = await getDb();
+      if (!db) throw new Error("Sin base de datos");
+      await db.update(sugerenciasSistema).set({ estado: input.estado }).where(eq(sugerenciasSistema.id, input.id));
+      return { success: true };
     }),
 });
 
@@ -1443,6 +1524,7 @@ export const appRouter = router({
   inventario: inventarioRouter,
   asistencia: asistenciaRouter,
   consulta: consultaRouter,
+  inteligencia: inteligenciaRouter,
 });
 
 export type AppRouter = typeof appRouter;

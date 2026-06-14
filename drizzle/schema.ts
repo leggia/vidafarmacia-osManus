@@ -363,3 +363,42 @@ export const pagosSueldo = mysqlTable("pagos_sueldo", {
 
 export type PagoSueldo = typeof pagosSueldo.$inferSelect;
 export type InsertPagoSueldo = typeof pagosSueldo.$inferInsert;
+
+// ─── Estadísticas de Producto (inteligencia de negocio, Capa 3) ───────────────
+// Acumula métricas por producto y mes. Agnóstica de la fuente: hoy se llena desde
+// compras; cuando se descubra el endpoint de ventas de inventarios365, se sumará esa fuente.
+// El backend la llena automáticamente (sin IA). La IA solo la LEE para responder.
+export const estadisticasProducto = mysqlTable("estadisticas_producto", {
+  id: int("id").autoincrement().primaryKey(),
+  articuloId: int("articuloId").notNull(),          // id del producto en inventarios365
+  articuloNombre: varchar("articuloNombre", { length: 500 }).notNull(),
+  anioMes: varchar("anioMes", { length: 7 }).notNull(), // "YYYY-MM"
+  // Métricas acumuladas (se suman con cada evento del mes)
+  unidadesCompradas: decimal("unidadesCompradas", { precision: 14, scale: 2 }).notNull().default("0"),
+  vecesComprado: int("vecesComprado").notNull().default(0),       // nº de compras distintas
+  unidadesVendidas: decimal("unidadesVendidas", { precision: 14, scale: 2 }).notNull().default("0"), // futuro (ventas)
+  vecesConsultado: int("vecesConsultado").notNull().default(0),   // veces buscado (consulta/agente)
+  vecesSinStock: int("vecesSinStock").notNull().default(0),       // veces consultado y sin stock
+  ultimoCostoUnitario: decimal("ultimoCostoUnitario", { precision: 12, scale: 4 }),
+  actualizadoEn: timestamp("actualizadoEn").defaultNow().onUpdateNow().notNull(),
+});
+
+export type EstadisticaProducto = typeof estadisticasProducto.$inferSelect;
+export type InsertEstadisticaProducto = typeof estadisticasProducto.$inferInsert;
+
+// ─── Bitácora de sugerencias (auto-mejora: el agente/sistema anota, el humano aprueba) ──
+// El sistema y (a futuro) el agente acumulan observaciones aquí. NUNCA se auto-implementan.
+export const sugerenciasSistema = mysqlTable("sugerencias_sistema", {
+  id: int("id").autoincrement().primaryKey(),
+  origen: varchar("origen", { length: 20 }).notNull().default("sistema"), // "sistema" | "agente"
+  categoria: varchar("categoria", { length: 30 }).notNull(), // catalogo|precio|rendimiento|ux|inventario
+  descripcion: varchar("descripcion", { length: 1000 }).notNull(),
+  datosRespaldo: varchar("datosRespaldo", { length: 1000 }), // JSON o texto con evidencia
+  estado: varchar("estado", { length: 20 }).notNull().default("nueva"), // nueva|revisada|implementada|descartada
+  vecesDetectado: int("vecesDetectado").notNull().default(1), // cuántas veces se observó el patrón
+  createdAt: timestamp("createdAt").defaultNow().notNull(),
+  actualizadoEn: timestamp("actualizadoEn").defaultNow().onUpdateNow().notNull(),
+});
+
+export type SugerenciaSistema = typeof sugerenciasSistema.$inferSelect;
+export type InsertSugerenciaSistema = typeof sugerenciasSistema.$inferInsert;

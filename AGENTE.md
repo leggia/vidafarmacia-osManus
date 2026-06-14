@@ -194,9 +194,20 @@ qué cambia sigue siendo tuyo.
 
 ## 8. Plan por fases (incremental, sin romper lo que funciona)
 
-### Fase 0 — Preparación (sin IA conversacional aún)
+### Fase 0 — Preparación (sin IA conversacional aún)  ✅ INICIADA (v1.32.0)
 - Definir y crear las tablas de inteligencia (ventas/rotación) que el backend llena solo.
 - Empezar a acumular datos desde ya, para que cuando llegue el agente tenga historia que leer.
+
+**Implementado:**
+- Tabla `estadisticas_producto`: acumula por producto/mes (unidades compradas, veces comprado,
+  veces consultado, veces sin stock, último costo). Agnóstica de fuente.
+- Tabla `sugerencias_sistema`: bitácora de auto-mejora (origen, categoría, descripción, estado).
+- Servicio `server/inteligencia.ts`: registrarCompraProducto, registrarConsultaProducto,
+  registrarSugerencia. Defensivo (nunca rompe el flujo principal, fire-and-forget).
+- Captura conectada: al confirmar compra (unidades) y al consultar producto (demanda + sin stock).
+- Router `inteligencia`: topProductos, listarSugerencias, actualizarSugerencia.
+- **Pendiente Fase 0:** descubrir endpoint de VENTAS de inventarios365 (para unidadesVendidas).
+  La UI de visualización se hará en Fase 2, cuando haya datos acumulados.
 
 ### Fase 1 — Agente de consulta (solo lectura)
 - Integrar DeepSeek V4 Flash (o Groq) con prompt de sistema fijo cacheable.
