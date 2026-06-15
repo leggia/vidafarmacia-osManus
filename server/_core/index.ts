@@ -232,6 +232,26 @@ async function startServer() {
         }
       }
 
+      // 7. Probar la función REAL guardarVenta (la que usa la sincronización)
+      if (ventas[0]) {
+        try {
+          const { sincronizarVentasIncremental } = await import("../sync-ventas");
+          // Forzar: borrar el punto de partida para que intente guardar de verdad
+          await db.execute(sql.raw("DELETE FROM sync_estado WHERE clave='ventas'"));
+          // Poner un ultimoId bajo para que considere TODAS las de la página 1 como nuevas
+          await db.execute(sql.raw("INSERT INTO sync_estado (clave, ultimoId, notas) VALUES ('ventas', 1, 'diag') ON DUPLICATE KEY UPDATE ultimoId=1"));
+          const resultado = await sincronizarVentasIncremental(2);
+          out.syncRealResultado = resultado;
+          // Ver cuántas ventas hay ahora
+          const c2: any = await db.execute(sql.raw("SELECT COUNT(*) as n FROM ventas"));
+          const rows2 = Array.isArray(c2) ? c2[0] : c2?.rows ?? c2;
+          out.ventasTrasSync = Number((Array.isArray(rows2) ? rows2[0]?.n : rows2?.n) ?? 0);
+        } catch (e: any) {
+          out.syncRealError = e.message;
+          out.syncRealCausa = e.cause?.sqlMessage || e.cause?.message || e.code || "?";
+        }
+      }
+
       res.json(out);
     } catch (e: any) {
       res.status(500).json({ error: e.message, parcial: out });
