@@ -162,8 +162,8 @@ export async function sincronizarClientes(maxPaginas = 60): Promise<{ total: num
 export async function cargarHistoricoLote(
   desde: string,
   hasta: string,
-  paginasPorLote = 8
-): Promise<{ guardadas: number; paginaActual: number; terminado: boolean; mensaje: string }> {
+  paginasPorLote = 40
+): Promise<{ guardadas: number; paginaActual: number; terminado: boolean; mensaje: string; enRango?: boolean }> {
   const { getDb } = await import("./db");
   const { sql } = await import("drizzle-orm");
   const { inventarios365 } = await import("./inventarios365");
@@ -184,40 +184,60 @@ export async function cargarHistoricoLote(
   let pagina = paginaInicio;
   let terminado = false;
   let mensaje = "";
+  let llegoAlRango = false;
+  let paginasSaltadas = 0;
 
   try {
-    const finLote = paginaInicio + paginasPorLote - 1;
-    for (pagina = paginaInicio; pagina <= finLote; pagina++) {
+    // Tope por llamada: saltar páginas recientes es rápido, pero limitamos para
+    // no acercarnos al timeout. El progreso se guarda y se continúa en el siguiente clic.
+    const TOPE_DURO = 150;
+    for (pagina = paginaInicio; pagina < paginaInicio + TOPE_DURO; pagina++) {
       const { ventas: lista } = await inventarios365.listarVentasPagina(pagina);
       if (lista.length === 0) { terminado = true; mensaje = "No hay más ventas"; break; }
 
-      // Fechas de esta página
       const fechas = lista.map((v: any) => String(v.fecha_hora || "").slice(0, 10)).filter(Boolean);
-      const todasMasViejas = fechas.length > 0 && fechas.every((f: string) => f < desde);
-      if (todasMasViejas) { terminado = true; mensaje = `Llegamos antes de ${desde}, histórico completo`; break; }
 
-      // Guardar solo las del rango
+      // Página toda más NUEVA que el rango (junio): saltar rápido, sin pausa
+      if (fechas.length > 0 && fechas.every((f: string) => f > hasta)) {
+        paginasSaltadas++;
+        // Mientras solo saltamos, avanzar hasta el tope duro para llegar pronto al rango
+        if (!llegoAlRango && paginasSaltadas >= TOPE_DURO) break;
+        continue;
+      }
+      // Página toda más VIEJA que el rango: ya pasamos mayo, terminado
+      if (fechas.length > 0 && fechas.every((f: string) => f < desde)) {
+        terminado = true; mensaje = `Histórico de ${desde} a ${hasta} completo`; break;
+      }
+
+      // Página dentro del rango: guardar las que caen en mayo
+      llegoAlRango = true;
       for (const v of lista) {
         const fecha = String(v.fecha_hora || "").slice(0, 10);
         if (!fecha || fecha < desde || fecha > hasta) continue;
         const guardada = await guardarVenta(db, sql, v);
         if (guardada) guardadas++;
       }
-      await new Promise((r) => setTimeout(r, 120));
+      await new Promise((r) => setTimeout(r, 80));
+
+      // Si ya estamos en rango, parar tras procesar el lote pedido (para responder)
+      if (llegoAlRango && (pagina - paginaInicio + 1) >= paginasPorLote) break;
     }
 
-    // Guardar progreso (última página procesada)
-    const ultimaPagina = pagina - 1;
+    const ultimaPagina = pagina;
     await db.execute(sql.raw(
       `INSERT INTO sync_estado (clave, ultimoId, notas) VALUES ('historico', ${ultimaPagina}, ${esc(`${desde}..${hasta}`)})
        ON DUPLICATE KEY UPDATE ultimoId=${ultimaPagina}, notas=${esc(`${desde}..${hasta}`)}, ultimaSync=CURRENT_TIMESTAMP`
     ));
-    if (!mensaje) mensaje = `Lote procesado hasta página ${ultimaPagina}`;
+    if (!mensaje) {
+      mensaje = llegoAlRango
+        ? `Procesado hasta pág. ${ultimaPagina} · +${guardadas} ventas de mayo`
+        : `Avanzando... saltadas ${paginasSaltadas} pág. de junio (pág. ${ultimaPagina})`;
+    }
   } catch (e: any) {
     mensaje = `Error: ${e.message}`;
   }
 
-  return { guardadas, paginaActual: pagina - 1, terminado, mensaje };
+  return { guardadas, paginaActual: pagina, terminado, mensaje, enRango: llegoAlRango };
 }
 
 /** Reinicia el progreso de la carga histórica (para empezar de nuevo). */

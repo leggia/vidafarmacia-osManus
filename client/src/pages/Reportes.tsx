@@ -45,10 +45,12 @@ export default function Reportes() {
   const [histProgreso, setHistProgreso] = useState<string>("");
   const cargarHistorico = trpc.ventas.cargarHistoricoLote.useMutation({
     onSuccess: (d: any) => {
-      setHistProgreso(`${d.mensaje} · +${d.guardadas} ventas (pág. ${d.paginaActual})`);
+      setHistProgreso(d.mensaje);
       utils.ventas.estado.invalidate();
       utils.ventas.reportes.invalidate();
       if (d.terminado) toast.success("Histórico completo");
+      else if (!d.enRango) toast.info("Avanzando hacia el mes anterior, sigue presionando");
+      else toast.success(`+${d.guardadas} ventas del histórico`);
     },
     onError: (e) => toast.error(e.message),
   });
