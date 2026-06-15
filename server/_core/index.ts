@@ -225,7 +225,11 @@ async function startServer() {
              VALUES (${Number(v.id) + 1}, ${escF(v.num_comprobante)}, ${escF(v.tipo_comprobante)}, ${escF(v.fecha_hora)}, ${escF(fecha)}, 0, ${Number(v.total) || 0}, 0, ${escF(v.usuario)}, ${escF(v.nombre_sucursal)}, NULL, ${escF(v.razonSocial)}, '1')`
           ));
           out.insertCompleto = "OK";
-        } catch (e: any) { out.insertCompletoError = e.message; }
+        } catch (e: any) {
+          out.insertCompletoError = e.message;
+          out.insertCompletoCausa = e.cause?.message || e.cause?.code || e.code || "?";
+          out.insertCompletoSqlMessage = e.cause?.sqlMessage || e.sqlMessage || "?";
+        }
       }
 
       res.json(out);
