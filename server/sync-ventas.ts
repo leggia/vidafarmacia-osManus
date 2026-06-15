@@ -81,10 +81,11 @@ async function guardarVenta(db: any, sql: any, venta: any): Promise<boolean> {
 }
 
 /**
- * Incremental: trae solo ventas nuevas (id > último). Conservadora (límite bajo).
- * Si no hay punto de partida, lo establece SIN traer histórico.
+ * Incremental: trae las ventas nuevas (id > último guardado).
+ * La PRIMERA vez (sin punto de partida) captura las páginas recientes y deja el
+ * punto en la más antigua que trajo, para que llamadas siguientes continúen el hueco.
  */
-export async function sincronizarVentasIncremental(maxPaginas = 5): Promise<{ nuevas: number; ultimoId: number; omitido?: boolean }> {
+export async function sincronizarVentasIncremental(maxPaginas = 8): Promise<{ nuevas: number; ultimoId: number; primeraVez?: boolean }> {
   const { getDb } = await import("./db");
   const { sql } = await import("drizzle-orm");
   const { inventarios365 } = await import("./inventarios365");
@@ -92,12 +93,7 @@ export async function sincronizarVentasIncremental(maxPaginas = 5): Promise<{ nu
   if (!db) return { nuevas: 0, ultimoId: 0 };
 
   const ultimoIdPrevio = await leerUltimoId(db, sql);
-  if (ultimoIdPrevio === 0) {
-    const { ventas } = await inventarios365.listarVentasPagina(1);
-    const maxId = ventas.reduce((m: number, v: any) => Math.max(m, Number(v.id) || 0), 0);
-    if (maxId > 0) await guardarUltimoId(db, sql, maxId, "punto de partida");
-    return { nuevas: 0, ultimoId: maxId, omitido: true };
-  }
+  const primeraVez = ultimoIdPrevio === 0;
 
   let nuevas = 0;
   let maxIdVisto = ultimoIdPrevio;
@@ -108,17 +104,18 @@ export async function sincronizarVentasIncremental(maxPaginas = 5): Promise<{ nu
       if (lista.length === 0) break;
       for (const v of lista) {
         const vid = Number(v.id);
-        if (vid <= ultimoIdPrevio) { alcanzado = true; break; }
+        // Si ya teníamos punto de partida, parar al alcanzar lo conocido
+        if (!primeraVez && vid <= ultimoIdPrevio) { alcanzado = true; break; }
         const guardada = await guardarVenta(db, sql, v);
         if (guardada) nuevas++;
         if (vid > maxIdVisto) maxIdVisto = vid;
       }
     }
-    if (maxIdVisto > ultimoIdPrevio) await guardarUltimoId(db, sql, maxIdVisto, `incremental +${nuevas}`);
+    if (maxIdVisto > ultimoIdPrevio) await guardarUltimoId(db, sql, maxIdVisto, primeraVez ? `inicial +${nuevas}` : `incremental +${nuevas}`);
   } catch (e) {
     console.warn("[SyncVentas] Error incremental:", e);
   }
-  return { nuevas, ultimoId: maxIdVisto };
+  return { nuevas, ultimoId: maxIdVisto, primeraVez };
 }
 
 /** Sincroniza clientes (~500, todos). Idempotente. */

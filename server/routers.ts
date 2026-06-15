@@ -1425,6 +1425,21 @@ const consultaRouter = router({
 const ventasRouter = router({
   // Botón: sincronizar ventas ahora (incremental, conservador)
   sincronizar: publicProcedure.mutation(async () => {
+    const { getDb } = await import("./db");
+    const { sql } = await import("drizzle-orm");
+    const db = await getDb();
+    // Si hay un punto de partida viejo pero 0 ventas guardadas, limpiarlo para
+    // que la sincronización capture bien desde las páginas recientes (evita el hueco).
+    if (db) {
+      try {
+        const c: any = await db.execute(sql.raw("SELECT COUNT(*) as n FROM ventas"));
+        const rows = Array.isArray(c) ? c[0] : c?.rows ?? c;
+        const total = Number((Array.isArray(rows) ? rows[0]?.n : rows?.n) ?? 0);
+        if (total === 0) {
+          await db.execute(sql.raw("DELETE FROM sync_estado WHERE clave='ventas'"));
+        }
+      } catch { /* continuar */ }
+    }
     const { sincronizarVentasIncremental } = await import("./sync-ventas");
     return sincronizarVentasIncremental();
   }),

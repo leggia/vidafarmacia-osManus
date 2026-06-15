@@ -33,8 +33,8 @@ export default function Reportes() {
 
   const sincronizar = trpc.ventas.sincronizar.useMutation({
     onSuccess: (d: any) => {
-      if (d?.omitido) toast.success("Punto de partida establecido. Vuelve a sincronizar para traer ventas nuevas.");
-      else toast.success(`Sincronización lista: ${d?.nuevas ?? 0} ventas nuevas`);
+      if ((d?.nuevas ?? 0) > 0) toast.success(`${d.nuevas} ventas sincronizadas`);
+      else toast.success("Ya está al día, no hay ventas nuevas");
       utils.ventas.estado.invalidate();
       utils.ventas.reportes.invalidate();
     },
