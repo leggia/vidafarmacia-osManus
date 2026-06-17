@@ -88,5 +88,13 @@ export async function crearTablasVentas(): Promise<void> {
       // Continúa con las demás; una falla no debe detener el resto
     }
   }
+  // Índice en productos_cache.nombre: acelera el JOIN de rentabilidad (ventas↔costo).
+  // Sin esto, cada reporte de ganancia escanea toda la tabla de productos.
+  try {
+    await db.execute(sql.raw("CREATE INDEX idx_cache_nombre ON productos_cache (nombre)"));
+  } catch (e) {
+    // Si ya existe, MySQL lanza error: ignorar (idempotencia)
+  }
+
   console.log("[TablasVentas] Tablas de ventas verificadas/creadas");
 }

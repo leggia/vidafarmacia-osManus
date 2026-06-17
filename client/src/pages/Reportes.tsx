@@ -1,30 +1,30 @@
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
-import { Card, CardContent } from "@/components/ui/card";
-import { Button } from "@/components/ui/button";
-import { Input } from "@/components/ui/input";
 import {
-  TrendingUp, RefreshCw, Loader2, Package, Users, Building2,
-  Calendar, DollarSign, ShoppingCart, Award, Coins, Percent,
+  TrendingUp, RefreshCw, Loader2, Package, Building2, Calendar,
+  ShoppingCart, Award, Coins, Percent, ChevronDown, ArrowUpRight,
 } from "lucide-react";
 import { toast } from "sonner";
-import { BarChart, Bar, XAxis, YAxis, ResponsiveContainer, Cell } from "recharts";
+import { BarChart, Bar, XAxis, ResponsiveContainer, Cell } from "recharts";
 
 const DIAS = ["Domingo", "Lunes", "Martes", "Miércoles", "Jueves", "Viernes", "Sábado"];
+const DIAS_CORTO = ["Dom", "Lun", "Mar", "Mié", "Jue", "Vie", "Sáb"];
 
-// Primer y último día del mes actual por defecto
-function rangoMesActual() {
+function ymd(d: Date) { return d.toISOString().slice(0, 10); }
+function rangoMes(offset: number) {
   const hoy = new Date();
-  const ini = new Date(hoy.getFullYear(), hoy.getMonth(), 1);
-  const fmt = (d: Date) => d.toISOString().slice(0, 10);
-  return { desde: fmt(ini), hasta: fmt(hoy) };
+  const ini = new Date(hoy.getFullYear(), hoy.getMonth() + offset, 1);
+  const fin = offset === 0 ? hoy : new Date(hoy.getFullYear(), hoy.getMonth() + offset + 1, 0);
+  return { desde: ymd(ini), hasta: ymd(fin) };
 }
 
 export default function Reportes() {
-  const r0 = rangoMesActual();
+  const [periodo, setPeriodo] = useState<"actual" | "anterior" | "custom">("actual");
+  const r0 = rangoMes(0);
   const [desde, setDesde] = useState(r0.desde);
   const [hasta, setHasta] = useState(r0.hasta);
   const [sucursal, setSucursal] = useState<string>("");
+  const [showCustom, setShowCustom] = useState(false);
 
   const utils = trpc.useUtils();
   const estado = trpc.ventas.estado.useQuery();
@@ -32,23 +32,31 @@ export default function Reportes() {
   const reportes = trpc.ventas.reportes.useQuery({ desde, hasta, sucursal: sucursal || undefined });
   const rentabilidad = trpc.ventas.rentabilidad.useQuery({ desde, hasta, sucursal: sucursal || undefined });
 
+  function seleccionarPeriodo(p: "actual" | "anterior") {
+    setPeriodo(p);
+    setShowCustom(false);
+    const r = rangoMes(p === "actual" ? 0 : -1);
+    setDesde(r.desde); setHasta(r.hasta);
+  }
+
   const sincronizar = trpc.ventas.sincronizar.useMutation({
     onSuccess: (d: any) => {
-      if ((d?.nuevas ?? 0) > 0) toast.success(`${d.nuevas} ventas sincronizadas`);
-      else toast.success("Ya está al día, no hay ventas nuevas");
+      if ((d?.nuevas ?? 0) > 0) toast.success(`${d.nuevas} ventas nuevas`);
+      else toast.success("Ya está al día");
       utils.ventas.estado.invalidate();
       utils.ventas.reportes.invalidate();
+      utils.ventas.rentabilidad.invalidate();
     },
     onError: (e) => toast.error(e.message),
   });
 
-  // Carga histórica del mes anterior, por lotes
   const [histProgreso, setHistProgreso] = useState<string>("");
   const cargarHistorico = trpc.ventas.cargarHistoricoLote.useMutation({
     onSuccess: (d: any) => {
       setHistProgreso(d.mensaje);
       utils.ventas.estado.invalidate();
       utils.ventas.reportes.invalidate();
+      utils.ventas.rentabilidad.invalidate();
       if (d.terminado) toast.success("Histórico completo");
       else if (!d.enRango) toast.info("Avanzando hacia el mes anterior, sigue presionando");
       else toast.success(`+${d.guardadas} ventas del histórico`);
@@ -56,224 +64,289 @@ export default function Reportes() {
     onError: (e) => toast.error(e.message),
   });
 
-  function rangoMesAnterior() {
-    const hoy = new Date();
-    const ini = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
-    const fin = new Date(hoy.getFullYear(), hoy.getMonth(), 0);
-    const fmt = (dt: Date) => dt.toISOString().slice(0, 10);
-    return { desde: fmt(ini), hasta: fmt(fin) };
-  }
-
   const d = reportes.data;
+  const rent = rentabilidad.data;
   const fmtBs = (n: any) => Number(n || 0).toLocaleString("es-BO", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmtNum = (n: any) => Number(n || 0).toLocaleString("es-BO");
+  const cargando = reportes.isLoading || rentabilidad.isLoading;
+  const sinDatos = !d || (d.totales?.ventas ?? 0) === 0;
+
+  // Máximo para escalar barras del top de productos
+  const maxUnidades = useMemo(() => Math.max(1, ...(d?.masVendidos ?? []).map((p: any) => Number(p.unidades))), [d]);
+
+  const margenGlobal = rent?.resumen && Number(rent.resumen.ingreso) > 0
+    ? (Number(rent.resumen.ganancia) / Number(rent.resumen.ingreso) * 100) : 0;
 
   return (
-    <div className="max-w-3xl mx-auto p-4 space-y-4">
-      <div className="flex items-center justify-between border-b border-foreground pb-3">
-        <div className="flex items-center gap-2">
-          <TrendingUp className="h-6 w-6 text-primary" />
-          <h1 className="text-xl font-black uppercase tracking-tight">Reportes de ventas</h1>
-        </div>
-        <Button size="sm" onClick={() => sincronizar.mutate()} disabled={sincronizar.isPending} className="gap-1 text-xs">
-          {sincronizar.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
-          Sincronizar
-        </Button>
-      </div>
+    <div className="min-h-full bg-gradient-to-b from-muted/30 to-transparent">
+      <div className="max-w-5xl mx-auto p-4 sm:p-6 space-y-5">
 
-      {/* Estado de datos */}
-      <div className="flex items-center justify-between text-[11px] text-muted-foreground bg-muted/40 rounded px-3 py-2">
-        <span>{estado.data?.totalVentas ?? 0} ventas · {estado.data?.totalClientes ?? 0} clientes guardados</span>
-        {estado.data?.ultimaSync && <span>Últ. sync: {new Date(estado.data.ultimaSync).toLocaleString("es-BO")}</span>}
-      </div>
-
-      {/* Carga histórica del mes anterior (por lotes) */}
-      <Card className="border-dashed">
-        <CardContent className="p-3 space-y-2">
-          <div className="flex items-center justify-between gap-2">
-            <div className="min-w-0">
-              <p className="text-xs font-bold flex items-center gap-1"><Calendar className="h-3.5 w-3.5" /> Cargar histórico (mes anterior)</p>
-              <p className="text-[10px] text-muted-foreground">Trae las ventas pasadas por lotes. Presiona varias veces hasta "completo".</p>
+        {/* ─── Cabecera ─── */}
+        <div className="flex items-start justify-between gap-3 flex-wrap">
+          <div>
+            <div className="flex items-center gap-2">
+              <div className="h-9 w-9 rounded-xl bg-primary/10 flex items-center justify-center">
+                <TrendingUp className="h-5 w-5 text-primary" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-black tracking-tight leading-none">Reportes de ventas</h1>
+                <p className="text-[11px] text-muted-foreground mt-0.5">
+                  {estado.data?.totalVentas ?? 0} ventas guardadas
+                  {estado.data?.ultimaSync && ` · actualizado ${new Date(estado.data.ultimaSync).toLocaleDateString("es-BO")}`}
+                </p>
+              </div>
             </div>
-            <Button size="sm" variant="outline" disabled={cargarHistorico.isPending}
-              onClick={() => { const r = rangoMesAnterior(); cargarHistorico.mutate(r); }}
-              className="gap-1 text-xs shrink-0">
-              {cargarHistorico.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
-              Cargar lote
-            </Button>
           </div>
-          {histProgreso && <p className="text-[10px] text-blue-600 bg-blue-50 dark:bg-blue-950/30 rounded px-2 py-1">{histProgreso}</p>}
-        </CardContent>
-      </Card>
-
-      {/* Filtros de fecha y sucursal */}
-      <div className="grid grid-cols-2 gap-2">
-        <div>
-          <label className="text-[11px] text-muted-foreground">Desde</label>
-          <Input type="date" value={desde} onChange={(e) => setDesde(e.target.value)} className="h-9" />
+          <button
+            onClick={() => sincronizar.mutate()} disabled={sincronizar.isPending}
+            className="inline-flex items-center gap-1.5 rounded-lg bg-primary text-primary-foreground px-3.5 py-2 text-xs font-semibold shadow-sm hover:opacity-90 disabled:opacity-50 transition">
+            {sincronizar.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
+            Actualizar
+          </button>
         </div>
-        <div>
-          <label className="text-[11px] text-muted-foreground">Hasta</label>
-          <Input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} className="h-9" />
+
+        {/* ─── Selector de periodo ─── */}
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="inline-flex rounded-lg border bg-card p-0.5 shadow-sm">
+            <button onClick={() => seleccionarPeriodo("actual")}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition ${periodo === "actual" && !showCustom ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
+              Este mes
+            </button>
+            <button onClick={() => seleccionarPeriodo("anterior")}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition ${periodo === "anterior" && !showCustom ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
+              Mes anterior
+            </button>
+            <button onClick={() => { setShowCustom(!showCustom); setPeriodo("custom"); }}
+              className={`px-3 py-1.5 text-xs font-medium rounded-md transition inline-flex items-center gap-1 ${showCustom ? "bg-primary text-primary-foreground shadow-sm" : "text-muted-foreground hover:text-foreground"}`}>
+              <Calendar className="h-3 w-3" /> Personalizado <ChevronDown className="h-3 w-3" />
+            </button>
+          </div>
+          {/* Filtro de sucursal */}
+          {(sucursales.data?.length ?? 0) > 0 && (
+            <select value={sucursal} onChange={(e) => setSucursal(e.target.value)}
+              className="text-xs rounded-lg border bg-card px-3 py-1.5 shadow-sm font-medium">
+              <option value="">Todas las sucursales</option>
+              {sucursales.data!.map((s: string) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          )}
+        </div>
+
+        {/* Rango personalizado desplegable */}
+        {showCustom && (
+          <div className="flex items-end gap-2 flex-wrap bg-card border rounded-lg p-3 shadow-sm">
+            <div>
+              <label className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide">Desde</label>
+              <input type="date" value={desde} onChange={(e) => setDesde(e.target.value)} className="block h-8 text-xs rounded-md border px-2 mt-0.5" />
+            </div>
+            <div>
+              <label className="text-[10px] text-muted-foreground font-medium uppercase tracking-wide">Hasta</label>
+              <input type="date" value={hasta} onChange={(e) => setHasta(e.target.value)} className="block h-8 text-xs rounded-md border px-2 mt-0.5" />
+            </div>
+          </div>
+        )}
+
+        {cargando ? (
+          <div className="flex flex-col items-center justify-center py-24 gap-3">
+            <Loader2 className="h-7 w-7 animate-spin text-primary" />
+            <p className="text-xs text-muted-foreground">Calculando reportes…</p>
+          </div>
+        ) : sinDatos ? (
+          <div className="text-center py-20 bg-card rounded-2xl border border-dashed">
+            <ShoppingCart className="h-12 w-12 mx-auto mb-3 text-muted-foreground/30" />
+            <p className="text-sm font-medium">No hay ventas en este periodo</p>
+            <p className="text-xs text-muted-foreground mt-1 max-w-xs mx-auto">Usa "Actualizar" para traer las ventas recientes, o carga el histórico del mes anterior abajo.</p>
+          </div>
+        ) : (
+          <>
+            {/* ─── KPIs principales ─── */}
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+              <KpiCard label="Ventas" valor={fmtNum(d.totales.ventas)} icon={<ShoppingCart className="h-4 w-4" />} tono="neutral" />
+              <KpiCard label="Ingreso total" valor={`Bs ${fmtBs(d.totales.monto)}`} icon={<Coins className="h-4 w-4" />} tono="primary" />
+              {rent?.resumen && Number(rent.resumen.ganancia) > 0 ? (
+                <>
+                  <KpiCard label="Ganancia est." valor={`Bs ${fmtBs(rent.resumen.ganancia)}`} icon={<ArrowUpRight className="h-4 w-4" />} tono="success" />
+                  <KpiCard label="Margen global" valor={`${margenGlobal.toFixed(1)}%`} icon={<Percent className="h-4 w-4" />} tono="info" />
+                </>
+              ) : (
+                <>
+                  <KpiCard label="Ticket promedio" valor={`Bs ${fmtBs(d.totales.promedio)}`} icon={<TrendingUp className="h-4 w-4" />} tono="info" />
+                  <KpiCard label="Productos" valor={fmtNum(d.masVendidos.length)} icon={<Package className="h-4 w-4" />} tono="neutral" />
+                </>
+              )}
+            </div>
+
+            {/* ─── Grid principal de 2 columnas ─── */}
+            <div className="grid lg:grid-cols-2 gap-4">
+
+              {/* Productos más vendidos con barras */}
+              <Panel titulo="Productos más vendidos" icon={<Package className="h-4 w-4" />}>
+                <div className="space-y-2.5">
+                  {d.masVendidos.slice(0, 8).map((p: any, i: number) => (
+                    <div key={i}>
+                      <div className="flex items-center justify-between gap-2 text-xs mb-1">
+                        <span className="truncate font-medium">{p.articuloNombre}</span>
+                        <span className="font-bold tabular-nums shrink-0">{fmtNum(p.unidades)} u.</span>
+                      </div>
+                      <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                        <div className="h-full rounded-full bg-primary/70" style={{ width: `${Number(p.unidades) / maxUnidades * 100}%` }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </Panel>
+
+              {/* Productos que más ganancia generaron */}
+              {(rent?.masGanancia?.length ?? 0) > 0 ? (
+                <Panel titulo="Mayor ganancia generada" icon={<Coins className="h-4 w-4 text-emerald-600" />} acento="emerald">
+                  <div className="space-y-2">
+                    {rent!.masGanancia.slice(0, 8).map((p: any, i: number) => (
+                      <div key={i} className="flex items-center justify-between gap-2 text-xs">
+                        <span className="flex items-center gap-2 min-w-0">
+                          <span className="w-4 text-right text-muted-foreground tabular-nums">{i + 1}</span>
+                          <span className="truncate font-medium">{p.articuloNombre}</span>
+                        </span>
+                        <span className="font-bold text-emerald-600 tabular-nums shrink-0">+{fmtBs(p.ganancia)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </Panel>
+              ) : (
+                <Panel titulo="Mejores vendedores" icon={<Award className="h-4 w-4" />}>
+                  <div className="space-y-2">
+                    {d.vendedores.slice(0, 8).map((v: any, i: number) => (
+                      <div key={i} className="flex items-center justify-between gap-2 text-xs">
+                        <span className="flex items-center gap-2">
+                          <span className={`w-5 h-5 rounded-full grid place-items-center text-[10px] font-bold ${i === 0 ? "bg-amber-400 text-amber-950" : i === 1 ? "bg-slate-300 text-slate-700" : i === 2 ? "bg-orange-300 text-orange-900" : "bg-muted text-muted-foreground"}`}>{i + 1}</span>
+                          <span className="font-medium">{v.vendedor || "—"}</span>
+                        </span>
+                        <span className="font-bold tabular-nums">Bs {fmtBs(v.monto)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </Panel>
+              )}
+            </div>
+
+            {/* ─── Segunda fila ─── */}
+            <div className="grid lg:grid-cols-2 gap-4">
+              {/* Mayor margen */}
+              {(rent?.mayorMargen?.length ?? 0) > 0 && (
+                <Panel titulo="Mayor margen de ganancia" icon={<Percent className="h-4 w-4 text-blue-600" />} acento="blue">
+                  <div className="space-y-2">
+                    {rent!.mayorMargen.slice(0, 8).map((p: any, i: number) => (
+                      <div key={i} className="flex items-center justify-between gap-2 text-xs">
+                        <span className="flex items-center gap-2 min-w-0">
+                          <span className="w-4 text-right text-muted-foreground tabular-nums">{i + 1}</span>
+                          <span className="truncate font-medium">{p.articuloNombre}</span>
+                        </span>
+                        <span className="font-bold text-blue-600 tabular-nums shrink-0">{Number(p.margenPct).toFixed(1)}%</span>
+                      </div>
+                    ))}
+                  </div>
+                </Panel>
+              )}
+
+              {/* Mejores vendedores (si ganancia ocupó la col anterior) */}
+              {(rent?.masGanancia?.length ?? 0) > 0 && (
+                <Panel titulo="Mejores vendedores" icon={<Award className="h-4 w-4" />}>
+                  <div className="space-y-2">
+                    {d.vendedores.slice(0, 8).map((v: any, i: number) => (
+                      <div key={i} className="flex items-center justify-between gap-2 text-xs">
+                        <span className="flex items-center gap-2">
+                          <span className={`w-5 h-5 rounded-full grid place-items-center text-[10px] font-bold ${i === 0 ? "bg-amber-400 text-amber-950" : i === 1 ? "bg-slate-300 text-slate-700" : i === 2 ? "bg-orange-300 text-orange-900" : "bg-muted text-muted-foreground"}`}>{i + 1}</span>
+                          <span className="font-medium">{v.vendedor || "—"}</span>
+                        </span>
+                        <span className="font-bold tabular-nums">Bs {fmtBs(v.monto)}</span>
+                      </div>
+                    ))}
+                  </div>
+                </Panel>
+              )}
+            </div>
+
+            {/* ─── Ventas por día (gráfica ancha) ─── */}
+            <Panel titulo="Ventas por día de la semana" icon={<Calendar className="h-4 w-4" />}>
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={DIAS.map((_, idx) => {
+                  const row = d.diasSemana.find((x: any) => Number(x.diaSemana) === idx);
+                  return { dia: DIAS_CORTO[idx], monto: row ? Number(row.monto) : 0 };
+                })} margin={{ top: 8, right: 8, bottom: 0, left: 8 }}>
+                  <XAxis dataKey="dia" tick={{ fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <Bar dataKey="monto" radius={[6, 6, 0, 0]}>
+                    {DIAS.map((_, idx) => <Cell key={idx} fill={idx === 0 || idx === 6 ? "#f59e0b" : "hsl(var(--primary))"} />)}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </Panel>
+
+            {/* ─── Sucursales ─── */}
+            {d.sucursales.length > 1 && (
+              <Panel titulo="Desempeño por sucursal" icon={<Building2 className="h-4 w-4" />}>
+                <div className="grid sm:grid-cols-2 gap-2">
+                  {d.sucursales.map((s: any, i: number) => (
+                    <div key={i} className="flex items-center justify-between rounded-lg bg-muted/40 px-3 py-2">
+                      <span className="text-xs font-medium truncate">{s.nombreSucursal || "—"}</span>
+                      <div className="text-right shrink-0">
+                        <p className="text-xs font-bold tabular-nums">Bs {fmtBs(s.monto)}</p>
+                        <p className="text-[10px] text-muted-foreground">{fmtNum(s.ventas)} ventas</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </Panel>
+            )}
+          </>
+        )}
+
+        {/* ─── Carga histórica (discreta, al final) ─── */}
+        <div className="rounded-xl border border-dashed bg-muted/20 p-3 flex items-center justify-between gap-3 flex-wrap">
+          <div className="min-w-0">
+            <p className="text-xs font-semibold flex items-center gap-1.5"><Calendar className="h-3.5 w-3.5" /> Cargar histórico (mes anterior)</p>
+            <p className="text-[10px] text-muted-foreground">{histProgreso || "Trae las ventas pasadas por lotes. Presiona hasta \"completo\"."}</p>
+          </div>
+          <button disabled={cargarHistorico.isPending}
+            onClick={() => cargarHistorico.mutate(rangoMes(-1))}
+            className="inline-flex items-center gap-1.5 rounded-lg border bg-card px-3 py-1.5 text-xs font-medium shadow-sm hover:bg-muted disabled:opacity-50 transition shrink-0">
+            {cargarHistorico.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+            Cargar lote
+          </button>
         </div>
       </div>
-      {(sucursales.data?.length ?? 0) > 0 && (
-        <div className="flex gap-1 flex-wrap">
-          <button onClick={() => setSucursal("")} className={`text-[11px] px-2 py-1 rounded ${!sucursal ? "bg-primary text-white" : "bg-muted"}`}>Todas</button>
-          {sucursales.data!.map((s: string) => (
-            <button key={s} onClick={() => setSucursal(s)} className={`text-[11px] px-2 py-1 rounded ${sucursal === s ? "bg-primary text-white" : "bg-muted"}`}>{s}</button>
-          ))}
-        </div>
-      )}
+    </div>
+  );
+}
 
-      {reportes.isLoading ? (
-        <div className="text-center py-12"><Loader2 className="h-6 w-6 animate-spin mx-auto text-primary" /></div>
-      ) : !d || (d.totales?.ventas ?? 0) === 0 ? (
-        <div className="text-center py-12 text-muted-foreground">
-          <ShoppingCart className="h-10 w-10 mx-auto mb-2 opacity-40" />
-          <p className="text-sm">No hay ventas en este periodo.</p>
-          <p className="text-[11px] mt-1">Usa "Sincronizar" para traer ventas desde inventarios365.</p>
-        </div>
-      ) : (
-        <>
-          {/* Totales */}
-          <div className="grid grid-cols-3 gap-2">
-            <Card><CardContent className="p-3">
-              <div className="flex items-center gap-1 text-muted-foreground text-[11px] mb-1"><ShoppingCart className="h-3 w-3" /> Ventas</div>
-              <p className="text-lg font-black">{d.totales.ventas}</p>
-            </CardContent></Card>
-            <Card><CardContent className="p-3">
-              <div className="flex items-center gap-1 text-muted-foreground text-[11px] mb-1"><DollarSign className="h-3 w-3" /> Total</div>
-              <p className="text-lg font-black">{fmtBs(d.totales.monto)}</p>
-            </CardContent></Card>
-            <Card><CardContent className="p-3">
-              <div className="flex items-center gap-1 text-muted-foreground text-[11px] mb-1"><TrendingUp className="h-3 w-3" /> Promedio</div>
-              <p className="text-lg font-black">{fmtBs(d.totales.promedio)}</p>
-            </CardContent></Card>
-          </div>
+// ─── Componentes ───
+function KpiCard({ label, valor, icon, tono }: { label: string; valor: string; icon: React.ReactNode; tono: "neutral" | "primary" | "success" | "info" }) {
+  const tonos: Record<string, string> = {
+    neutral: "text-foreground",
+    primary: "text-primary",
+    success: "text-emerald-600",
+    info: "text-blue-600",
+  };
+  const bgs: Record<string, string> = {
+    neutral: "bg-muted text-muted-foreground",
+    primary: "bg-primary/10 text-primary",
+    success: "bg-emerald-100 text-emerald-600 dark:bg-emerald-950/40",
+    info: "bg-blue-100 text-blue-600 dark:bg-blue-950/40",
+  };
+  return (
+    <div className="rounded-xl border bg-card p-3.5 shadow-sm">
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground">{label}</span>
+        <span className={`h-7 w-7 rounded-lg grid place-items-center ${bgs[tono]}`}>{icon}</span>
+      </div>
+      <p className={`text-xl font-black tabular-nums leading-none ${tonos[tono]}`}>{valor}</p>
+    </div>
+  );
+}
 
-          {/* Productos más vendidos */}
-          <Card><CardContent className="p-4">
-            <div className="flex items-center gap-2 mb-3 text-sm font-bold"><Package className="h-4 w-4 text-primary" /> Productos más vendidos</div>
-            <div className="space-y-1.5">
-              {d.masVendidos.map((p: any, i: number) => (
-                <div key={i} className="flex items-center justify-between gap-2 text-xs">
-                  <span className="flex items-center gap-2 min-w-0 flex-1">
-                    <span className="text-muted-foreground w-4 text-right">{i + 1}</span>
-                    <span className="truncate">{p.articuloNombre}</span>
-                  </span>
-                  <span className="font-bold shrink-0">{Number(p.unidades)} u.</span>
-                </div>
-              ))}
-            </div>
-          </CardContent></Card>
-
-          {/* Resumen de ganancia del periodo */}
-          {rentabilidad.data?.resumen && Number(rentabilidad.data.resumen.ganancia) > 0 && (
-            <Card className="border-emerald-200 dark:border-emerald-900"><CardContent className="p-4">
-              <div className="flex items-center gap-2 mb-2 text-sm font-bold"><Coins className="h-4 w-4 text-emerald-600" /> Ganancia estimada del periodo</div>
-              <div className="grid grid-cols-3 gap-2 text-center">
-                <div>
-                  <p className="text-[10px] text-muted-foreground">Ingreso</p>
-                  <p className="text-sm font-black">{fmtBs(rentabilidad.data.resumen.ingreso)}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] text-muted-foreground">Costo</p>
-                  <p className="text-sm font-black text-muted-foreground">{fmtBs(rentabilidad.data.resumen.costo)}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] text-muted-foreground">Ganancia</p>
-                  <p className="text-sm font-black text-emerald-600">{fmtBs(rentabilidad.data.resumen.ganancia)}</p>
-                </div>
-              </div>
-              <p className="text-[10px] text-muted-foreground mt-2 text-center">Calculado sobre {rentabilidad.data.resumen.productosConCosto} productos con costo conocido</p>
-            </CardContent></Card>
-          )}
-
-          {/* Productos que más ganancia generaron */}
-          {(rentabilidad.data?.masGanancia?.length ?? 0) > 0 && (
-            <Card><CardContent className="p-4">
-              <div className="flex items-center gap-2 mb-3 text-sm font-bold"><Coins className="h-4 w-4 text-emerald-600" /> Productos que más ganancia generaron</div>
-              <div className="space-y-1.5">
-                {rentabilidad.data!.masGanancia.map((p: any, i: number) => (
-                  <div key={i} className="flex items-center justify-between gap-2 text-xs">
-                    <span className="flex items-center gap-2 min-w-0 flex-1">
-                      <span className="text-muted-foreground w-4 text-right">{i + 1}</span>
-                      <span className="truncate">{p.articuloNombre}</span>
-                    </span>
-                    <span className="font-bold shrink-0 text-emerald-600">+{fmtBs(p.ganancia)} Bs</span>
-                  </div>
-                ))}
-              </div>
-            </CardContent></Card>
-          )}
-
-          {/* Productos con mayor margen % */}
-          {(rentabilidad.data?.mayorMargen?.length ?? 0) > 0 && (
-            <Card><CardContent className="p-4">
-              <div className="flex items-center gap-2 mb-3 text-sm font-bold"><Percent className="h-4 w-4 text-blue-600" /> Productos con mayor margen</div>
-              <div className="space-y-1.5">
-                {rentabilidad.data!.mayorMargen.map((p: any, i: number) => (
-                  <div key={i} className="flex items-center justify-between gap-2 text-xs">
-                    <span className="flex items-center gap-2 min-w-0 flex-1">
-                      <span className="text-muted-foreground w-4 text-right">{i + 1}</span>
-                      <span className="truncate">{p.articuloNombre}</span>
-                    </span>
-                    <span className="font-bold shrink-0 text-blue-600">{Number(p.margenPct).toFixed(1)}%</span>
-                  </div>
-                ))}
-              </div>
-            </CardContent></Card>
-          )}
-
-          {/* Mejores vendedores */}
-          <Card><CardContent className="p-4">
-            <div className="flex items-center gap-2 mb-3 text-sm font-bold"><Award className="h-4 w-4 text-primary" /> Mejores vendedores</div>
-            <div className="space-y-1.5">
-              {d.vendedores.map((v: any, i: number) => (
-                <div key={i} className="flex items-center justify-between gap-2 text-xs">
-                  <span className="flex items-center gap-2">
-                    <span className={`w-5 h-5 rounded-full flex items-center justify-center text-[10px] font-bold ${i === 0 ? "bg-amber-400 text-amber-900" : "bg-muted"}`}>{i + 1}</span>
-                    {v.vendedor || "—"}
-                  </span>
-                  <span className="font-bold">{fmtBs(v.monto)} Bs <span className="text-muted-foreground font-normal">({v.ventas})</span></span>
-                </div>
-              ))}
-            </div>
-          </CardContent></Card>
-
-          {/* Ventas por sucursal */}
-          {d.sucursales.length > 1 && (
-            <Card><CardContent className="p-4">
-              <div className="flex items-center gap-2 mb-3 text-sm font-bold"><Building2 className="h-4 w-4 text-primary" /> Ventas por sucursal</div>
-              <div className="space-y-1.5">
-                {d.sucursales.map((s: any, i: number) => (
-                  <div key={i} className="flex items-center justify-between gap-2 text-xs">
-                    <span>{s.nombreSucursal || "—"}</span>
-                    <span className="font-bold">{fmtBs(s.monto)} Bs <span className="text-muted-foreground font-normal">({s.ventas})</span></span>
-                  </div>
-                ))}
-              </div>
-            </CardContent></Card>
-          )}
-
-          {/* Mejores días de la semana (gráfica) */}
-          <Card><CardContent className="p-4">
-            <div className="flex items-center gap-2 mb-3 text-sm font-bold"><Calendar className="h-4 w-4 text-primary" /> Ventas por día de la semana</div>
-            <ResponsiveContainer width="100%" height={180}>
-              <BarChart data={DIAS.map((nombre, idx) => {
-                const row = d.diasSemana.find((x: any) => Number(x.diaSemana) === idx);
-                return { dia: nombre.slice(0, 3), monto: row ? Number(row.monto) : 0 };
-              })}>
-                <XAxis dataKey="dia" tick={{ fontSize: 11 }} />
-                <YAxis tick={{ fontSize: 10 }} width={45} />
-                <Bar dataKey="monto" radius={[4, 4, 0, 0]}>
-                  {DIAS.map((_, idx) => <Cell key={idx} fill={idx === 0 || idx === 6 ? "#f59e0b" : "#3b82f6"} />)}
-                </Bar>
-              </BarChart>
-            </ResponsiveContainer>
-          </CardContent></Card>
-        </>
-      )}
+function Panel({ titulo, icon, children, acento }: { titulo: string; icon: React.ReactNode; children: React.ReactNode; acento?: "emerald" | "blue" }) {
+  const borde = acento === "emerald" ? "border-emerald-200/60 dark:border-emerald-900/40" : acento === "blue" ? "border-blue-200/60 dark:border-blue-900/40" : "";
+  return (
+    <div className={`rounded-xl border bg-card p-4 shadow-sm ${borde}`}>
+      <div className="flex items-center gap-2 mb-3 text-sm font-bold">{icon} {titulo}</div>
+      {children}
     </div>
   );
 }
