@@ -51,5 +51,17 @@ export async function crearTablasGastos(): Promise<void> {
       console.warn("[TablasGastos] Error creando tabla:", e);
     }
   }
+
+  // Migraciones incrementales: agregar columna sucursal (si no existe).
+  // ALTER TABLE ADD COLUMN falla si ya existe -> se ignora (idempotente).
+  const migraciones = [
+    "ALTER TABLE gastos_fijos ADD COLUMN sucursal VARCHAR(150)",
+    "ALTER TABLE gastos_registro ADD COLUMN sucursal VARCHAR(150)",
+    "ALTER TABLE gastos_registro ADD INDEX idx_gastos_sucursal (sucursal)",
+  ];
+  for (const m of migraciones) {
+    try { await db.execute(sql.raw(m)); } catch { /* ya existe */ }
+  }
+
   console.log("[TablasGastos] Tablas de gastos verificadas/creadas");
 }

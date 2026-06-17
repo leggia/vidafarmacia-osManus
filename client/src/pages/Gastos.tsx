@@ -1,8 +1,8 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import {
-  Wallet, Plus, Check, Loader2, Trash2, Home, Zap, Wifi, Droplet,
-  Wrench, Package, ChevronDown, X, CalendarDays,
+  Wallet, Plus, Check, Loader2, Trash2, Home, Zap,
+  Wrench, Package, CalendarDays, Building2,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -15,33 +15,39 @@ const CATEGORIAS = [
 ];
 const catInfo = (id: string) => CATEGORIAS.find((c) => c.id === id) || CATEGORIAS[4];
 
-function ymd(d: Date) { return d.toISOString().slice(0, 10); }
 function mesActual() { const h = new Date(); return `${h.getFullYear()}-${String(h.getMonth() + 1).padStart(2, "0")}`; }
 
 export default function Gastos() {
   const [anioMes, setAnioMes] = useState(mesActual());
+  const [sucursal, setSucursal] = useState<string>("");
   const [showNuevoFijo, setShowNuevoFijo] = useState(false);
   const [showNuevoOcasional, setShowNuevoOcasional] = useState(false);
 
   const utils = trpc.useUtils();
-  const gastosMes = trpc.gastos.delMes.useQuery({ anioMes });
+  const sucursales = trpc.ventas.sucursalesDisponibles.useQuery();
+  const gastosMes = trpc.gastos.delMes.useQuery({ anioMes, sucursal: sucursal || undefined });
 
   const fmtBs = (n: any) => Number(n || 0).toLocaleString("es-BO", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
   const marcarPago = trpc.gastos.marcarPago.useMutation({
     onMutate: async (nuevo) => {
       await utils.gastos.delMes.cancel();
-      const previo = utils.gastos.delMes.getData({ anioMes });
+      const previo = utils.gastos.delMes.getData({ anioMes, sucursal: sucursal || undefined });
       if (previo) {
-        utils.gastos.delMes.setData({ anioMes }, {
+        utils.gastos.delMes.setData({ anioMes, sucursal: sucursal || undefined }, {
           ...previo,
           gastos: previo.gastos.map((g: any) => g.id === nuevo.id ? { ...g, pagado: nuevo.pagado ? 1 : 0 } : g),
         });
       }
       return { previo };
     },
-    onError: (e, _v, ctx) => { if (ctx?.previo) utils.gastos.delMes.setData({ anioMes }, ctx.previo); toast.error(e.message); },
+    onError: (e, _v, ctx) => { if (ctx?.previo) utils.gastos.delMes.setData({ anioMes, sucursal: sucursal || undefined }, ctx.previo); toast.error(e.message); },
     onSettled: () => utils.gastos.delMes.invalidate(),
+  });
+
+  const cambiarFecha = trpc.gastos.cambiarFechaPago.useMutation({
+    onSuccess: () => { utils.gastos.delMes.invalidate(); toast.success("Fecha actualizada"); },
+    onError: (e) => toast.error(e.message),
   });
 
   const eliminar = trpc.gastos.eliminar.useMutation({
@@ -54,6 +60,7 @@ export default function Gastos() {
   const fijos = gastos.filter((g: any) => !g.esOcasional);
   const ocasionales = gastos.filter((g: any) => g.esOcasional);
   const totalMes = Number(data?.totalPagado ?? 0) + Number(data?.totalPendiente ?? 0);
+  const sucList = sucursales.data ?? [];
 
   return (
     <div className="min-h-full bg-gradient-to-b from-muted/30 to-transparent">
@@ -67,12 +74,29 @@ export default function Gastos() {
             </div>
             <div>
               <h1 className="text-2xl font-black tracking-tight leading-none">Gastos</h1>
-              <p className="text-[11px] text-muted-foreground mt-0.5">Control de gastos fijos y ocasionales</p>
+              <p className="text-[11px] text-muted-foreground mt-0.5">Control de gastos por sucursal</p>
             </div>
           </div>
           <input type="month" value={anioMes} onChange={(e) => setAnioMes(e.target.value)}
             className="text-xs rounded-lg border bg-card px-3 py-2 shadow-sm font-medium" />
         </div>
+
+        {/* Selector de sucursal */}
+        {sucList.length > 0 && (
+          <div className="flex gap-1 flex-wrap items-center">
+            <Building2 className="h-3.5 w-3.5 text-muted-foreground mr-1" />
+            <button onClick={() => setSucursal("")}
+              className={`text-[11px] px-2.5 py-1 rounded-lg font-medium transition ${!sucursal ? "bg-primary text-primary-foreground" : "bg-card border hover:bg-muted"}`}>
+              Todas
+            </button>
+            {sucList.map((s: string) => (
+              <button key={s} onClick={() => setSucursal(s)}
+                className={`text-[11px] px-2.5 py-1 rounded-lg font-medium transition ${sucursal === s ? "bg-primary text-primary-foreground" : "bg-card border hover:bg-muted"}`}>
+                {s}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Resumen */}
         <div className="grid grid-cols-3 gap-3">
@@ -104,13 +128,13 @@ export default function Gastos() {
                 </button>
               </div>
 
-              {showNuevoFijo && <NuevoFijoForm anioMes={anioMes} onClose={() => setShowNuevoFijo(false)} />}
+              {showNuevoFijo && <NuevoFijoForm sucList={sucList} sucursalActual={sucursal} onClose={() => setShowNuevoFijo(false)} />}
 
               {fijos.length === 0 ? (
-                <p className="text-xs text-muted-foreground text-center py-4">Aún no hay gastos fijos. Crea uno (alquiler, luz, internet...) y aparecerá cada mes para marcar el pago.</p>
+                <p className="text-xs text-muted-foreground text-center py-4">Aún no hay gastos fijos{sucursal ? ` en ${sucursal}` : ""}. Crea uno (alquiler, luz, internet...) y aparecerá cada mes.</p>
               ) : (
                 <div className="space-y-1.5">
-                  {fijos.map((g: any) => <GastoFila key={g.id} g={g} fmtBs={fmtBs} marcarPago={marcarPago} eliminar={eliminar} />)}
+                  {fijos.map((g: any) => <GastoFila key={g.id} g={g} fmtBs={fmtBs} marcarPago={marcarPago} eliminar={eliminar} cambiarFecha={cambiarFecha} />)}
                 </div>
               )}
             </div>
@@ -125,19 +149,19 @@ export default function Gastos() {
                 </button>
               </div>
 
-              {showNuevoOcasional && <NuevoOcasionalForm anioMes={anioMes} onClose={() => setShowNuevoOcasional(false)} />}
+              {showNuevoOcasional && <NuevoOcasionalForm anioMes={anioMes} sucList={sucList} sucursalActual={sucursal} onClose={() => setShowNuevoOcasional(false)} />}
 
               {ocasionales.length === 0 ? (
                 <p className="text-xs text-muted-foreground text-center py-4">Sin gastos ocasionales este mes (reparaciones, compras puntuales, etc.).</p>
               ) : (
                 <div className="space-y-1.5">
-                  {ocasionales.map((g: any) => <GastoFila key={g.id} g={g} fmtBs={fmtBs} marcarPago={marcarPago} eliminar={eliminar} />)}
+                  {ocasionales.map((g: any) => <GastoFila key={g.id} g={g} fmtBs={fmtBs} marcarPago={marcarPago} eliminar={eliminar} cambiarFecha={cambiarFecha} />)}
                 </div>
               )}
             </div>
 
             <p className="text-[10px] text-muted-foreground text-center">
-              Los sueldos se gestionan en la sección Asistencia y se suman aparte para la rentabilidad total.
+              Los sueldos se gestionan en Asistencia y se suman aparte para la rentabilidad total.
             </p>
           </>
         )}
@@ -146,7 +170,7 @@ export default function Gastos() {
   );
 }
 
-function GastoFila({ g, fmtBs, marcarPago, eliminar }: any) {
+function GastoFila({ g, fmtBs, marcarPago, eliminar, cambiarFecha }: any) {
   const info = catInfo(g.categoria);
   const Icon = info.icon;
   return (
@@ -154,8 +178,16 @@ function GastoFila({ g, fmtBs, marcarPago, eliminar }: any) {
       <Icon className={`h-4 w-4 shrink-0 ${info.color}`} />
       <div className="min-w-0 flex-1">
         <p className="text-xs font-medium truncate">{g.nombre}</p>
-        <p className="text-[10px] text-muted-foreground">{info.label}{g.fechaPago ? ` · pagado ${g.fechaPago}` : ""}</p>
+        <p className="text-[10px] text-muted-foreground flex items-center gap-1">
+          {info.label}
+          {g.sucursal && <span className="inline-flex items-center gap-0.5"><Building2 className="h-2.5 w-2.5" />{g.sucursal}</span>}
+        </p>
       </div>
+      {/* Fecha de pago: editable si está pagado */}
+      {g.pagado ? (
+        <input type="date" value={g.fechaPago || ""} onChange={(e) => cambiarFecha.mutate({ id: g.id, fechaPago: e.target.value })}
+          className="text-[10px] rounded border px-1 py-0.5 bg-background shrink-0 w-[110px]" title="Fecha de pago" />
+      ) : null}
       <span className="text-xs font-bold tabular-nums shrink-0">Bs {fmtBs(g.monto)}</span>
       <button
         onClick={() => marcarPago.mutate({ id: g.id, pagado: !g.pagado })}
@@ -170,11 +202,22 @@ function GastoFila({ g, fmtBs, marcarPago, eliminar }: any) {
   );
 }
 
-function NuevoFijoForm({ anioMes, onClose }: { anioMes: string; onClose: () => void }) {
+function SucursalSelect({ sucList, value, onChange }: { sucList: string[]; value: string; onChange: (v: string) => void }) {
+  if (sucList.length === 0) return null;
+  return (
+    <select value={value} onChange={(e) => onChange(e.target.value)} className="text-xs rounded-md border px-2 py-1.5 bg-background">
+      <option value="">Toda la farmacia</option>
+      {sucList.map((s) => <option key={s} value={s}>{s}</option>)}
+    </select>
+  );
+}
+
+function NuevoFijoForm({ sucList, sucursalActual, onClose }: { sucList: string[]; sucursalActual: string; onClose: () => void }) {
   const utils = trpc.useUtils();
   const [nombre, setNombre] = useState("");
   const [categoria, setCategoria] = useState("servicios");
   const [monto, setMonto] = useState("");
+  const [suc, setSuc] = useState(sucursalActual);
   const crear = trpc.gastos.crearFijo.useMutation({
     onSuccess: () => { utils.gastos.delMes.invalidate(); toast.success("Gasto fijo creado"); onClose(); },
     onError: (e) => toast.error(e.message),
@@ -183,16 +226,17 @@ function NuevoFijoForm({ anioMes, onClose }: { anioMes: string; onClose: () => v
     <div className="rounded-lg border bg-muted/30 p-3 mb-3 space-y-2">
       <input placeholder="Nombre (ej. Alquiler local)" value={nombre} onChange={(e) => setNombre(e.target.value)}
         className="w-full text-xs rounded-md border px-2 py-1.5 bg-background" />
-      <div className="flex gap-2">
-        <select value={categoria} onChange={(e) => setCategoria(e.target.value)} className="flex-1 text-xs rounded-md border px-2 py-1.5 bg-background">
+      <div className="flex gap-2 flex-wrap">
+        <select value={categoria} onChange={(e) => setCategoria(e.target.value)} className="flex-1 min-w-[140px] text-xs rounded-md border px-2 py-1.5 bg-background">
           {CATEGORIAS.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
         </select>
         <input type="number" placeholder="Monto Bs" value={monto} onChange={(e) => setMonto(e.target.value)}
-          className="w-28 text-xs rounded-md border px-2 py-1.5 bg-background" />
+          className="w-24 text-xs rounded-md border px-2 py-1.5 bg-background" />
       </div>
+      <SucursalSelect sucList={sucList} value={suc} onChange={setSuc} />
       <div className="flex gap-2 justify-end">
         <button onClick={onClose} className="text-xs px-2 py-1 rounded-md hover:bg-muted">Cancelar</button>
-        <button onClick={() => nombre && monto && crear.mutate({ nombre, categoria, montoEstimado: parseFloat(monto) })}
+        <button onClick={() => nombre && monto && crear.mutate({ nombre, categoria, montoEstimado: parseFloat(monto), sucursal: suc || undefined })}
           disabled={crear.isPending || !nombre || !monto}
           className="text-xs px-3 py-1 rounded-md bg-primary text-primary-foreground font-medium disabled:opacity-50">
           {crear.isPending ? "Guardando..." : "Crear"}
@@ -202,12 +246,14 @@ function NuevoFijoForm({ anioMes, onClose }: { anioMes: string; onClose: () => v
   );
 }
 
-function NuevoOcasionalForm({ anioMes, onClose }: { anioMes: string; onClose: () => void }) {
+function NuevoOcasionalForm({ anioMes, sucList, sucursalActual, onClose }: { anioMes: string; sucList: string[]; sucursalActual: string; onClose: () => void }) {
   const utils = trpc.useUtils();
   const [nombre, setNombre] = useState("");
   const [categoria, setCategoria] = useState("otros");
   const [monto, setMonto] = useState("");
   const [pagado, setPagado] = useState(true);
+  const [suc, setSuc] = useState(sucursalActual);
+  const [fechaPago, setFechaPago] = useState(new Date().toISOString().slice(0, 10));
   const crear = trpc.gastos.registrarOcasional.useMutation({
     onSuccess: () => { utils.gastos.delMes.invalidate(); toast.success("Gasto registrado"); onClose(); },
     onError: (e) => toast.error(e.message),
@@ -216,19 +262,27 @@ function NuevoOcasionalForm({ anioMes, onClose }: { anioMes: string; onClose: ()
     <div className="rounded-lg border bg-muted/30 p-3 mb-3 space-y-2">
       <input placeholder="Concepto (ej. Reparación refrigerador)" value={nombre} onChange={(e) => setNombre(e.target.value)}
         className="w-full text-xs rounded-md border px-2 py-1.5 bg-background" />
-      <div className="flex gap-2">
-        <select value={categoria} onChange={(e) => setCategoria(e.target.value)} className="flex-1 text-xs rounded-md border px-2 py-1.5 bg-background">
+      <div className="flex gap-2 flex-wrap">
+        <select value={categoria} onChange={(e) => setCategoria(e.target.value)} className="flex-1 min-w-[140px] text-xs rounded-md border px-2 py-1.5 bg-background">
           {CATEGORIAS.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
         </select>
         <input type="number" placeholder="Monto Bs" value={monto} onChange={(e) => setMonto(e.target.value)}
-          className="w-28 text-xs rounded-md border px-2 py-1.5 bg-background" />
+          className="w-24 text-xs rounded-md border px-2 py-1.5 bg-background" />
       </div>
-      <label className="flex items-center gap-2 text-xs">
-        <input type="checkbox" checked={pagado} onChange={(e) => setPagado(e.target.checked)} /> Ya está pagado
-      </label>
+      <SucursalSelect sucList={sucList} value={suc} onChange={setSuc} />
+      <div className="flex items-center gap-3 flex-wrap">
+        <label className="flex items-center gap-2 text-xs">
+          <input type="checkbox" checked={pagado} onChange={(e) => setPagado(e.target.checked)} /> Ya está pagado
+        </label>
+        {pagado && (
+          <label className="flex items-center gap-1 text-xs text-muted-foreground">
+            Fecha: <input type="date" value={fechaPago} onChange={(e) => setFechaPago(e.target.value)} className="text-[11px] rounded border px-1 py-0.5 bg-background" />
+          </label>
+        )}
+      </div>
       <div className="flex gap-2 justify-end">
         <button onClick={onClose} className="text-xs px-2 py-1 rounded-md hover:bg-muted">Cancelar</button>
-        <button onClick={() => nombre && monto && crear.mutate({ anioMes, nombre, categoria, monto: parseFloat(monto), pagado })}
+        <button onClick={() => nombre && monto && crear.mutate({ anioMes, nombre, categoria, monto: parseFloat(monto), pagado, sucursal: suc || undefined, fechaPago: pagado ? fechaPago : undefined })}
           disabled={crear.isPending || !nombre || !monto}
           className="text-xs px-3 py-1 rounded-md bg-primary text-primary-foreground font-medium disabled:opacity-50">
           {crear.isPending ? "Guardando..." : "Registrar"}
