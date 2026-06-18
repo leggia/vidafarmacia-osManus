@@ -2,7 +2,7 @@ import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import {
   Wallet, Plus, Check, Loader2, Trash2, Home, Zap,
-  Wrench, Package, CalendarDays, Building2,
+  Wrench, Package, CalendarDays, Building2, Pencil,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -26,6 +26,7 @@ export default function Gastos() {
   const utils = trpc.useUtils();
   const sucursales = trpc.ventas.sucursalesDisponibles.useQuery();
   const gastosMes = trpc.gastos.delMes.useQuery({ anioMes, sucursal: sucursal || undefined });
+  const sueldos = trpc.gastos.sueldosDelMes.useQuery({ anioMes, sucursal: sucursal || undefined });
 
   const fmtBs = (n: any) => Number(n || 0).toLocaleString("es-BO", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
@@ -54,12 +55,18 @@ export default function Gastos() {
     onSuccess: () => { utils.gastos.delMes.invalidate(); toast.success("Gasto eliminado"); },
     onError: (e) => toast.error(e.message),
   });
+  const editar = trpc.gastos.editar.useMutation({
+    onSuccess: () => { utils.gastos.delMes.invalidate(); toast.success("Gasto actualizado"); },
+    onError: (e) => toast.error(e.message),
+  });
 
   const data = gastosMes.data;
   const gastos = data?.gastos ?? [];
   const fijos = gastos.filter((g: any) => !g.esOcasional);
   const ocasionales = gastos.filter((g: any) => g.esOcasional);
-  const totalMes = Number(data?.totalPagado ?? 0) + Number(data?.totalPendiente ?? 0);
+  const totalGastos = Number(data?.totalPagado ?? 0) + Number(data?.totalPendiente ?? 0);
+  const totalSueldos = Number(sueldos.data?.total ?? 0);
+  const totalMes = totalGastos + totalSueldos;
   const sucList = sucursales.data ?? [];
 
   return (
@@ -99,20 +106,46 @@ export default function Gastos() {
         )}
 
         {/* Resumen */}
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           <div className="rounded-xl border bg-card p-3.5 shadow-sm">
-            <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground mb-1">Total del mes</p>
-            <p className="text-xl font-black tabular-nums">Bs {fmtBs(totalMes)}</p>
+            <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground mb-1">Gastos operativos</p>
+            <p className="text-lg font-black tabular-nums">Bs {fmtBs(totalGastos)}</p>
           </div>
           <div className="rounded-xl border bg-card p-3.5 shadow-sm">
-            <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground mb-1">Pagado</p>
-            <p className="text-xl font-black tabular-nums text-emerald-600">Bs {fmtBs(data?.totalPagado)}</p>
+            <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground mb-1">Sueldos personal</p>
+            <p className="text-lg font-black tabular-nums text-indigo-600">Bs {fmtBs(totalSueldos)}</p>
           </div>
           <div className="rounded-xl border bg-card p-3.5 shadow-sm">
             <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground mb-1">Pendiente</p>
-            <p className="text-xl font-black tabular-nums text-amber-600">Bs {fmtBs(data?.totalPendiente)}</p>
+            <p className="text-lg font-black tabular-nums text-amber-600">Bs {fmtBs(data?.totalPendiente)}</p>
+          </div>
+          <div className="rounded-xl border-2 border-primary/30 bg-primary/5 p-3.5 shadow-sm">
+            <p className="text-[10px] font-medium uppercase tracking-wide text-muted-foreground mb-1">Total egresos</p>
+            <p className="text-lg font-black tabular-nums text-primary">Bs {fmtBs(totalMes)}</p>
           </div>
         </div>
+
+        {/* Personal de la sucursal (sueldos) */}
+        {(sueldos.data?.detalle?.length ?? 0) > 0 && (
+          <div className="rounded-xl border bg-card p-4 shadow-sm">
+            <h2 className="text-sm font-bold flex items-center gap-2 mb-3">
+              <Building2 className="h-4 w-4 text-indigo-600" /> Personal {sucursal ? `de ${sucursal}` : "(toda la farmacia)"}
+            </h2>
+            <div className="space-y-1.5">
+              {sueldos.data!.detalle.map((s: any, i: number) => (
+                <div key={i} className="flex items-center justify-between text-xs">
+                  <span className="font-medium">{s.nombre}</span>
+                  <span className="font-bold tabular-nums text-indigo-600">Bs {fmtBs(s.sueldo)}</span>
+                </div>
+              ))}
+              <div className="flex items-center justify-between text-xs pt-1.5 mt-1.5 border-t font-bold">
+                <span>Total sueldos</span>
+                <span className="tabular-nums text-indigo-600">Bs {fmtBs(totalSueldos)}</span>
+              </div>
+            </div>
+            <p className="text-[10px] text-muted-foreground mt-2">El personal se gestiona en Asistencia. Aquí se muestra para ver el egreso total{sucursal ? " de esta sucursal" : ""}.</p>
+          </div>
+        )}
 
         {gastosMes.isLoading ? (
           <div className="flex justify-center py-16"><Loader2 className="h-6 w-6 animate-spin text-primary" /></div>
@@ -134,7 +167,7 @@ export default function Gastos() {
                 <p className="text-xs text-muted-foreground text-center py-4">Aún no hay gastos fijos{sucursal ? ` en ${sucursal}` : ""}. Crea uno (alquiler, luz, internet...) y aparecerá cada mes.</p>
               ) : (
                 <div className="space-y-1.5">
-                  {fijos.map((g: any) => <GastoFila key={g.id} g={g} fmtBs={fmtBs} marcarPago={marcarPago} eliminar={eliminar} cambiarFecha={cambiarFecha} />)}
+                  {fijos.map((g: any) => <GastoFila key={g.id} g={g} fmtBs={fmtBs} marcarPago={marcarPago} eliminar={eliminar} cambiarFecha={cambiarFecha} editar={editar} sucList={sucList} />)}
                 </div>
               )}
             </div>
@@ -155,7 +188,7 @@ export default function Gastos() {
                 <p className="text-xs text-muted-foreground text-center py-4">Sin gastos ocasionales este mes (reparaciones, compras puntuales, etc.).</p>
               ) : (
                 <div className="space-y-1.5">
-                  {ocasionales.map((g: any) => <GastoFila key={g.id} g={g} fmtBs={fmtBs} marcarPago={marcarPago} eliminar={eliminar} cambiarFecha={cambiarFecha} />)}
+                  {ocasionales.map((g: any) => <GastoFila key={g.id} g={g} fmtBs={fmtBs} marcarPago={marcarPago} eliminar={eliminar} cambiarFecha={cambiarFecha} editar={editar} sucList={sucList} />)}
                 </div>
               )}
             </div>
@@ -170,9 +203,54 @@ export default function Gastos() {
   );
 }
 
-function GastoFila({ g, fmtBs, marcarPago, eliminar, cambiarFecha }: any) {
+function GastoFila({ g, fmtBs, marcarPago, eliminar, cambiarFecha, editar, sucList }: any) {
   const info = catInfo(g.categoria);
   const Icon = info.icon;
+  const [editando, setEditando] = useState(false);
+  const [eNombre, setENombre] = useState(g.nombre);
+  const [eCategoria, setECategoria] = useState(g.categoria);
+  const [eMonto, setEMonto] = useState(String(g.monto));
+  const [eSuc, setESuc] = useState(g.sucursal || "");
+
+  function guardarEdicion() {
+    editar.mutate({ id: g.id, nombre: eNombre, categoria: eCategoria, monto: parseFloat(eMonto) || 0, sucursal: eSuc || undefined });
+    setEditando(false);
+  }
+
+  function pedirEliminar() {
+    if (g.gastoFijoId) {
+      // Es un gasto fijo: preguntar si solo este mes o el fijo completo
+      const soloMes = window.confirm("Este es un gasto FIJO.\n\nAceptar = eliminar el gasto fijo para siempre (no aparecerá más).\nCancelar = quitarlo solo de este mes.");
+      eliminar.mutate({ id: g.id, eliminarPlantilla: soloMes });
+    } else {
+      if (window.confirm("¿Eliminar este gasto?")) eliminar.mutate({ id: g.id });
+    }
+  }
+
+  if (editando) {
+    return (
+      <div className="rounded-lg border bg-muted/40 p-2.5 space-y-2">
+        <input value={eNombre} onChange={(e) => setENombre(e.target.value)} className="w-full text-xs rounded-md border px-2 py-1.5 bg-background" />
+        <div className="flex gap-2 flex-wrap">
+          <select value={eCategoria} onChange={(e) => setECategoria(e.target.value)} className="flex-1 min-w-[120px] text-xs rounded-md border px-2 py-1.5 bg-background">
+            {CATEGORIAS.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+          </select>
+          <input type="number" value={eMonto} onChange={(e) => setEMonto(e.target.value)} className="w-24 text-xs rounded-md border px-2 py-1.5 bg-background" />
+        </div>
+        {sucList.length > 0 && (
+          <select value={eSuc} onChange={(e) => setESuc(e.target.value)} className="text-xs rounded-md border px-2 py-1.5 bg-background w-full">
+            <option value="">Toda la farmacia</option>
+            {sucList.map((s: string) => <option key={s} value={s}>{s}</option>)}
+          </select>
+        )}
+        <div className="flex gap-2 justify-end">
+          <button onClick={() => setEditando(false)} className="text-xs px-2 py-1 rounded-md hover:bg-muted">Cancelar</button>
+          <button onClick={guardarEdicion} className="text-xs px-3 py-1 rounded-md bg-primary text-primary-foreground font-medium">Guardar</button>
+        </div>
+      </div>
+    );
+  }
+
   return (
     <div className={`flex items-center gap-2 rounded-lg px-3 py-2 transition ${g.pagado ? "bg-emerald-50 dark:bg-emerald-950/20" : "bg-muted/40"}`}>
       <Icon className={`h-4 w-4 shrink-0 ${info.color}`} />
@@ -183,19 +261,20 @@ function GastoFila({ g, fmtBs, marcarPago, eliminar, cambiarFecha }: any) {
           {g.sucursal && <span className="inline-flex items-center gap-0.5"><Building2 className="h-2.5 w-2.5" />{g.sucursal}</span>}
         </p>
       </div>
-      {/* Fecha de pago: editable si está pagado */}
       {g.pagado ? (
         <input type="date" value={g.fechaPago || ""} onChange={(e) => cambiarFecha.mutate({ id: g.id, fechaPago: e.target.value })}
           className="text-[10px] rounded border px-1 py-0.5 bg-background shrink-0 w-[110px]" title="Fecha de pago" />
       ) : null}
       <span className="text-xs font-bold tabular-nums shrink-0">Bs {fmtBs(g.monto)}</span>
-      <button
-        onClick={() => marcarPago.mutate({ id: g.id, pagado: !g.pagado })}
+      <button onClick={() => marcarPago.mutate({ id: g.id, pagado: !g.pagado })}
         className={`shrink-0 h-6 w-6 rounded-md grid place-items-center transition ${g.pagado ? "bg-emerald-600 text-white" : "border hover:bg-background"}`}
         title={g.pagado ? "Marcar como no pagado" : "Marcar como pagado"}>
         <Check className="h-3.5 w-3.5" />
       </button>
-      <button onClick={() => eliminar.mutate({ id: g.id })} className="shrink-0 h-6 w-6 rounded-md grid place-items-center text-muted-foreground hover:text-red-600 hover:bg-red-50 transition" title="Eliminar">
+      <button onClick={() => setEditando(true)} className="shrink-0 h-6 w-6 rounded-md grid place-items-center text-muted-foreground hover:text-primary hover:bg-primary/10 transition" title="Editar">
+        <Pencil className="h-3.5 w-3.5" />
+      </button>
+      <button onClick={pedirEliminar} className="shrink-0 h-6 w-6 rounded-md grid place-items-center text-muted-foreground hover:text-red-600 hover:bg-red-50 transition" title="Eliminar">
         <Trash2 className="h-3.5 w-3.5" />
       </button>
     </div>

@@ -1746,15 +1746,113 @@ const gastosRouter = router({
       return { success: true };
     }),
 
-  // Eliminar un gasto del registro
+  // Eliminar un gasto del registro. Si es un fijo, opcionalmente elimina también
+  // la plantilla (para que no se regenere el próximo mes).
   eliminar: publicProcedure
-    .input(z.object({ id: z.number() }))
+    .input(z.object({ id: z.number(), eliminarPlantilla: z.boolean().optional() }))
     .mutation(async ({ input }) => {
       const { getDb } = await import("./db");
       const { sql } = await import("drizzle-orm");
       const db = await getDb();
       if (!db) throw new Error("Sin BD");
+      const rows = (r: any) => { const x = Array.isArray(r) ? r[0] : r?.rows ?? r; return Array.isArray(x) ? x : []; };
+
+      // Ver si el gasto viene de una plantilla fija
+      const g = rows(await db.execute(sql.raw(`SELECT gastoFijoId FROM gastos_registro WHERE id=${input.id} LIMIT 1`)));
+      const gastoFijoId = g[0]?.gastoFijoId;
+
+      // Borrar el registro de este mes
       await db.execute(sql.raw(`DELETE FROM gastos_registro WHERE id=${input.id}`));
+
+      // Si es fijo y se pide eliminar la plantilla, desactivarla (no se regenera más)
+      if (gastoFijoId && input.eliminarPlantilla) {
+        await db.execute(sql.raw(`UPDATE gastos_fijos SET activo=0 WHERE id=${gastoFijoId}`));
+      }
+      return { success: true, eraFijo: !!gastoFijoId };
+    }),
+
+  // Total de sueldos del mes (opcionalmente por sucursal, infiriendo del vendedor).
+  sueldosDelMes: publicProcedure
+    .input(z.object({ anioMes: z.string(), sucursal: z.string().optional() }))
+    .query(async ({ input }) => {
+      const { getDb } = await import("./db");
+      const { trabajadores, ajustesDia } = await import("../drizzle/schema");
+      const { eq, like, and, sql } = await import("drizzle-orm");
+      const { inventarios365 } = await import("./inventarios365");
+      const { calcularResumenMensual } = await import("./domain/sueldos");
+      const db = await getDb();
+      if (!db) return { total: 0, detalle: [] };
+
+      try {
+        const lista = await db.select().from(trabajadores).where(eq(trabajadores.activo, 1));
+
+        let usuariosDeSucursal: Set<string> | null = null;
+        if (input.sucursal) {
+          const esc = (v: string) => `'${String(v).replace(/'/g, "''")}'`;
+          const r: any = await db.execute(sql.raw(
+            `SELECT DISTINCT vendedor FROM ventas WHERE nombreSucursal=${esc(input.sucursal)} AND vendedor IS NOT NULL`
+          ));
+          const rows = Array.isArray(r) ? r[0] : r?.rows ?? r;
+          usuariosDeSucursal = new Set((Array.isArray(rows) ? rows : []).map((x: any) => String(x.vendedor)));
+        }
+
+        let total = 0;
+        const detalle: any[] = [];
+        for (const trab of lista) {
+          if (usuariosDeSucursal && trab.usuarioSistemaId && !usuariosDeSucursal.has(trab.usuarioSistemaId)) continue;
+          if (usuariosDeSucursal && !trab.usuarioSistemaId) continue;
+
+          let sueldoFinal = 0;
+          try {
+            if (trab.usuarioSistemaId) {
+              const aperturas = await inventarios365.aperturasCajaDelMes(trab.usuarioSistemaId, input.anioMes);
+              const ajustesRows = await db.select().from(ajustesDia)
+                .where(and(eq(ajustesDia.trabajadorId, trab.id), like(ajustesDia.fecha, `${input.anioMes}%`)));
+              const ajustes = ajustesRows.map((a: any) => ({
+                fecha: a.fecha, justificado: a.justificado === 1,
+                horaIngresoManual: a.horaIngresoManual || undefined,
+                esTurnoExtra: a.esTurnoExtra === 1, motivo: a.motivo || undefined,
+              }));
+              const r = calcularResumenMensual(aperturas, {
+                tipoTrabajador: (trab.tipoTrabajador || "fijo_mensual") as any,
+                horaIngreso: trab.horaIngreso,
+                horaSalida: trab.horaSalida && trab.horaSalida !== "00:00" ? trab.horaSalida : undefined,
+                horasDia: parseFloat(String(trab.horasDia)) || 8,
+                diasSemana: trab.diasSemana, diasMes: trab.diasMes,
+                horasMesFijas: trab.horasMesFijas,
+                montoPorDia: parseFloat(String(trab.montoPorDia)) || 0,
+                montoTurnoExtra: parseFloat(String(trab.montoTurnoExtra)) || 0,
+                toleranciaSalidaMin: trab.toleranciaSalidaMin,
+                sueldoMensual: parseFloat(String(trab.sueldoMensual)) || 0,
+              }, input.anioMes);
+              sueldoFinal = r.sueldoFinal;
+            } else {
+              sueldoFinal = parseFloat(String(trab.sueldoMensual)) || 0;
+            }
+          } catch {
+            sueldoFinal = parseFloat(String(trab.sueldoMensual)) || 0;
+          }
+          total += sueldoFinal;
+          detalle.push({ nombre: trab.nombre, sueldo: sueldoFinal });
+        }
+        return { total, detalle };
+      } catch (err: any) {
+        return { total: 0, detalle: [], error: err.message };
+      }
+    }),
+
+  // Editar un gasto del registro (nombre, categoría, monto, sucursal)
+  editar: publicProcedure
+    .input(z.object({ id: z.number(), nombre: z.string(), categoria: z.string(), monto: z.number(), sucursal: z.string().optional() }))
+    .mutation(async ({ input }) => {
+      const { getDb } = await import("./db");
+      const { sql } = await import("drizzle-orm");
+      const db = await getDb();
+      if (!db) throw new Error("Sin BD");
+      const esc = (v: any) => v == null ? "NULL" : `'${String(v).replace(/'/g, "''")}'`;
+      await db.execute(sql.raw(
+        `UPDATE gastos_registro SET nombre=${esc(input.nombre)}, categoria=${esc(input.categoria)}, monto=${input.monto}, sucursal=${esc(input.sucursal)} WHERE id=${input.id}`
+      ));
       return { success: true };
     }),
 });
