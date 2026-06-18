@@ -167,6 +167,19 @@ export default defineConfig({
   build: {
     outDir: path.resolve(import.meta.dirname, "dist/public"),
     emptyOutDir: true,
+    // Code-splitting: separar librerías grandes en chunks propios.
+    // Como cambian poco, el navegador las mantiene en caché entre despliegues,
+    // y solo re-descarga el código de la app cuando este cambia.
+    rollupOptions: {
+      output: {
+        manualChunks: {
+          "react-vendor": ["react", "react-dom", "wouter"],
+          "charts": ["recharts"],
+          "icons": ["lucide-react"],
+        },
+      },
+    },
+    chunkSizeWarningLimit: 800,
   },
   server: {
     host: true,

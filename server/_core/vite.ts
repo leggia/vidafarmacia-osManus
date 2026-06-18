@@ -58,10 +58,33 @@ export function serveStatic(app: Express) {
     );
   }
 
-  app.use(express.static(distPath));
+  // Servir estáticos con caché profesional:
+  // - Assets con hash en el nombre (/assets/*): caché 1 año + immutable.
+  //   Como el nombre cambia si el contenido cambia, es seguro cachear "para siempre".
+  //   Esto evita re-descargar el JS/CSS (cientos de kB) en cada recarga.
+  // - index.html y otros: sin caché (siempre la versión nueva).
+  app.use(express.static(distPath, {
+    etag: true,
+    lastModified: true,
+    maxAge: 0,
+    setHeaders: (res, filePath) => {
+      if (/[\/\\]assets[\/\\]/.test(filePath) || /\.[0-9a-f]{8,}\.(js|css|woff2?|png|jpg|jpeg|svg|gif|webp)$/i.test(filePath)) {
+        // Archivos versionados (con hash): cachear agresivamente
+        res.setHeader("Cache-Control", "public, max-age=31536000, immutable");
+      } else if (/\.html?$/i.test(filePath)) {
+        // HTML: nunca cachear (para tomar siempre los assets más recientes)
+        res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
+      } else {
+        // Otros estáticos: caché moderada de 1 hora
+        res.setHeader("Cache-Control", "public, max-age=3600");
+      }
+    },
+  }));
 
   // fall through to index.html if the file doesn't exist
   app.use("*", (_req, res) => {
+    // El HTML de entrada nunca se cachea: garantiza cargar la versión desplegada
+    res.setHeader("Cache-Control", "no-cache, no-store, must-revalidate");
     res.sendFile(path.resolve(distPath, "index.html"));
   });
 }
