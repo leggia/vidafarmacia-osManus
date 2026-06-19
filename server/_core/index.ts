@@ -224,6 +224,16 @@ async function startServer() {
             console.log("[DB] Columna diasPorTurno agregada");
           }
         } catch { /* ya existe */ }
+        // Agregar columna nombreFactura a purchaseItems (preserva emparejamiento en borradores)
+        try {
+          const { getDb } = await import("../db");
+          const { sql } = await import("drizzle-orm");
+          const dbConn = await getDb();
+          if (dbConn) {
+            await dbConn.execute(sql.raw("ALTER TABLE purchaseItems ADD COLUMN nombreFactura VARCHAR(500)"));
+            console.log("[DB] Columna nombreFactura agregada");
+          }
+        } catch { /* ya existe */ }
         // NOTA: se eliminó "drizzle-kit push --force" del arranque.
         // Era DESTRUCTIVO: borraba las tablas que no están en el schema (ventas,
         // ventas_detalle, clientes, sync_estado), perdiendo datos en cada deploy.

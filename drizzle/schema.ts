@@ -81,6 +81,7 @@ export const purchaseItems = mysqlTable("purchase_items", {
   unitCost: decimal("unitCost", { precision: 12, scale: 4 }).default("0"),
   subtotal: decimal("subtotal", { precision: 12, scale: 2 }).default("0"),
   matched: int("matched").default(0), // 1 = matched to local product
+  nombreFactura: varchar("nombreFactura", { length: 500 }), // nombre original en la factura (preserva emparejamiento)
   expiryDate: varchar("expiryDate", { length: 20 }), // Fecha de vencimiento YYYY-MM-DD
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });

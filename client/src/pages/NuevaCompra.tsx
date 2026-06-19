@@ -228,12 +228,24 @@ export default function NuevaCompra() {
         if (its.length > 0) {
           setItems(its.map((it: any) => ({
             productName: it.productName,
-            nombreFacturaOriginal: it.productName,
+            nombreFacturaOriginal: it.nombreFactura || it.productName,
             quantity: it.quantity,
             unitCost: parseFloat(String(it.unitCost)) || 0,
             subtotal: parseFloat(String(it.subtotal)) || 0,
             expiryDate: it.expiryDate || null,
           })));
+          // Restaurar el emparejamiento: si el nombre guardado difiere del de factura,
+          // estaba emparejado (productName = nombre del sistema, nombreFactura = original).
+          const empRestaurado: Record<string, string> = {};
+          for (const it of its) {
+            const original = it.nombreFactura || it.productName;
+            if (it.productName && original && it.productName !== original) {
+              empRestaurado[it.productName] = original;
+            } else if (it.matched) {
+              empRestaurado[it.productName] = original;
+            }
+          }
+          if (Object.keys(empRestaurado).length > 0) setProductosEmparejados(empRestaurado);
           setShowExpiry(its.some((it: any) => it.expiryDate));
           setExtracted(true);
           setBorradorGuardadoId(parseInt(borradorId));
@@ -451,6 +463,7 @@ export default function NuevaCompra() {
         items: items.map(i => ({
           productName: i.productName, quantity: i.quantity, unitCost: i.unitCost,
           subtotal: i.subtotal, expiryDate: i.expiryDate || null,
+          nombreFactura: (i as any).nombreFacturaOriginal || productosEmparejados[i.productName] || i.productName,
           nuevoPrecioVenta: (i.nuevoPrecioVenta != null && i.nuevoPrecioVenta !== i.precioVentaSistema) ? i.nuevoPrecioVenta : null,
         })),
         imageUrl: uploadAndExtract.data?.imageUrl || null,

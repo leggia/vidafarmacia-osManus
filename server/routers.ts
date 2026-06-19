@@ -306,6 +306,7 @@ INSTRUCCIONES GENERALES:
         items: z.array(
           z.object({
             productName: z.string(),
+            nombreFactura: z.string().nullable().optional(),
             quantity: z.number(),
             unitCost: z.number(),
             subtotal: z.number(),

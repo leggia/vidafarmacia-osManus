@@ -125,7 +125,7 @@ export async function createPurchase(data: {
   imageKey?: string | null;
   extractedData?: any;
   status?: string;
-  items: Array<{ productName: string; quantity: number; unitCost: number; subtotal: number; expiryDate?: string | null }>;
+  items: Array<{ productName: string; quantity: number; unitCost: number; subtotal: number; expiryDate?: string | null; nombreFactura?: string | null }>;
 }) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
@@ -152,6 +152,7 @@ export async function createPurchase(data: {
       data.items.map((item) => ({
         purchaseId,
         productName: item.productName,
+        nombreFactura: item.nombreFactura || item.productName,
         quantity: item.quantity,
         unitCost: String(item.unitCost),
         subtotal: String(item.subtotal),
