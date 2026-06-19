@@ -2,7 +2,7 @@ import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import {
   Wallet, Plus, Check, Loader2, Trash2, Home, Zap,
-  Wrench, Package, CalendarDays, Building2,
+  Wrench, Package, CalendarDays, Building2, Pencil, X,
 } from "lucide-react";
 import { toast } from "sonner";
 
@@ -54,6 +54,26 @@ export default function Gastos() {
     onSuccess: () => { utils.gastos.delMes.invalidate(); toast.success("Gasto eliminado"); },
     onError: (e) => toast.error(e.message),
   });
+  // Modal de edición (a nivel del componente principal, no por fila — más seguro)
+  const [gastoEditando, setGastoEditando] = useState<any | null>(null);
+  const editar = trpc.gastos.editar.useMutation({
+    onSuccess: () => { utils.gastos.delMes.invalidate(); toast.success("Gasto actualizado"); setGastoEditando(null); },
+    onError: (e) => toast.error(e.message),
+  });
+
+  // Eliminar con lógica para fijos (preguntar si solo este mes o para siempre)
+  function pedirEliminar(g: any) {
+    if (g.gastoFijoId) {
+      const paraSiempre = window.confirm(
+        "Este es un gasto FIJO recurrente.\n\n" +
+        "Aceptar = eliminarlo para SIEMPRE (no aparecerá más cada mes).\n" +
+        "Cancelar = quitarlo solo de ESTE mes."
+      );
+      eliminar.mutate({ id: g.id, eliminarPlantilla: paraSiempre });
+    } else {
+      if (window.confirm("¿Eliminar este gasto?")) eliminar.mutate({ id: g.id });
+    }
+  }
 
   const data = gastosMes.data;
   const gastos = data?.gastos ?? [];
@@ -134,7 +154,7 @@ export default function Gastos() {
                 <p className="text-xs text-muted-foreground text-center py-4">Aún no hay gastos fijos{sucursal ? ` en ${sucursal}` : ""}. Crea uno (alquiler, luz, internet...) y aparecerá cada mes.</p>
               ) : (
                 <div className="space-y-1.5">
-                  {fijos.map((g: any) => <GastoFila key={g.id} g={g} fmtBs={fmtBs} marcarPago={marcarPago} eliminar={eliminar} cambiarFecha={cambiarFecha} />)}
+                  {fijos.map((g: any) => <GastoFila key={g.id} g={g} fmtBs={fmtBs} marcarPago={marcarPago} pedirEliminar={pedirEliminar} cambiarFecha={cambiarFecha} onEditar={setGastoEditando} />)}
                 </div>
               )}
             </div>
@@ -155,7 +175,7 @@ export default function Gastos() {
                 <p className="text-xs text-muted-foreground text-center py-4">Sin gastos ocasionales este mes (reparaciones, compras puntuales, etc.).</p>
               ) : (
                 <div className="space-y-1.5">
-                  {ocasionales.map((g: any) => <GastoFila key={g.id} g={g} fmtBs={fmtBs} marcarPago={marcarPago} eliminar={eliminar} cambiarFecha={cambiarFecha} />)}
+                  {ocasionales.map((g: any) => <GastoFila key={g.id} g={g} fmtBs={fmtBs} marcarPago={marcarPago} pedirEliminar={pedirEliminar} cambiarFecha={cambiarFecha} onEditar={setGastoEditando} />)}
                 </div>
               )}
             </div>
@@ -165,12 +185,76 @@ export default function Gastos() {
             </p>
           </>
         )}
+
+        {/* Modal de edición de gasto */}
+        {gastoEditando && (
+          <ModalEditarGasto
+            gasto={gastoEditando}
+            sucList={sucList}
+            onClose={() => setGastoEditando(null)}
+            onGuardar={(datos: any) => editar.mutate(datos)}
+            guardando={editar.isPending}
+          />
+        )}
       </div>
     </div>
   );
 }
 
-function GastoFila({ g, fmtBs, marcarPago, eliminar, cambiarFecha }: any) {
+function ModalEditarGasto({ gasto, sucList, onClose, onGuardar, guardando }: any) {
+  const [nombre, setNombre] = useState(gasto.nombre || "");
+  const [categoria, setCategoria] = useState(gasto.categoria || "otros");
+  const [monto, setMonto] = useState(String(gasto.monto || ""));
+  const [suc, setSuc] = useState(gasto.sucursal || "");
+  return (
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
+      <div className="bg-card rounded-2xl shadow-xl max-w-sm w-full p-5">
+        <div className="flex items-center justify-between mb-4">
+          <h3 className="text-base font-black">Editar gasto</h3>
+          <button onClick={onClose} className="h-7 w-7 grid place-items-center rounded-md hover:bg-muted"><X className="h-4 w-4" /></button>
+        </div>
+        <div className="space-y-2.5">
+          <div>
+            <label className="text-[11px] text-muted-foreground">Concepto</label>
+            <input value={nombre} onChange={(e) => setNombre(e.target.value)} className="w-full text-xs rounded-md border px-2 py-1.5 bg-background" />
+          </div>
+          <div className="flex gap-2">
+            <div className="flex-1">
+              <label className="text-[11px] text-muted-foreground">Categoría</label>
+              <select value={categoria} onChange={(e) => setCategoria(e.target.value)} className="w-full text-xs rounded-md border px-2 py-1.5 bg-background">
+                {CATEGORIAS.map((c) => <option key={c.id} value={c.id}>{c.label}</option>)}
+              </select>
+            </div>
+            <div className="w-24">
+              <label className="text-[11px] text-muted-foreground">Monto Bs</label>
+              <input type="number" value={monto} onChange={(e) => setMonto(e.target.value)} className="w-full text-xs rounded-md border px-2 py-1.5 bg-background" />
+            </div>
+          </div>
+          {sucList.length > 0 && (
+            <div>
+              <label className="text-[11px] text-muted-foreground">Sucursal</label>
+              <select value={suc} onChange={(e) => setSuc(e.target.value)} className="w-full text-xs rounded-md border px-2 py-1.5 bg-background">
+                <option value="">Toda la farmacia</option>
+                {sucList.map((s: string) => <option key={s} value={s}>{s}</option>)}
+              </select>
+            </div>
+          )}
+        </div>
+        <div className="flex gap-2 justify-end mt-4">
+          <button onClick={onClose} className="text-xs px-3 py-1.5 rounded-md hover:bg-muted">Cancelar</button>
+          <button
+            onClick={() => onGuardar({ id: gasto.id, nombre, categoria, monto: parseFloat(monto) || 0, sucursal: suc || undefined })}
+            disabled={guardando || !nombre || !monto}
+            className="text-xs px-4 py-1.5 rounded-md bg-primary text-primary-foreground font-medium disabled:opacity-50">
+            {guardando ? "Guardando..." : "Guardar"}
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function GastoFila({ g, fmtBs, marcarPago, pedirEliminar, cambiarFecha, onEditar }: any) {
   const info = catInfo(g.categoria);
   const Icon = info.icon;
   return (
@@ -195,7 +279,10 @@ function GastoFila({ g, fmtBs, marcarPago, eliminar, cambiarFecha }: any) {
         title={g.pagado ? "Marcar como no pagado" : "Marcar como pagado"}>
         <Check className="h-3.5 w-3.5" />
       </button>
-      <button onClick={() => eliminar.mutate({ id: g.id })} className="shrink-0 h-6 w-6 rounded-md grid place-items-center text-muted-foreground hover:text-red-600 hover:bg-red-50 transition" title="Eliminar">
+      <button onClick={() => onEditar(g)} className="shrink-0 h-6 w-6 rounded-md grid place-items-center text-muted-foreground hover:text-primary hover:bg-primary/10 transition" title="Editar">
+        <Pencil className="h-3.5 w-3.5" />
+      </button>
+      <button onClick={() => pedirEliminar(g)} className="shrink-0 h-6 w-6 rounded-md grid place-items-center text-muted-foreground hover:text-red-600 hover:bg-red-50 transition" title="Eliminar">
         <Trash2 className="h-3.5 w-3.5" />
       </button>
     </div>
