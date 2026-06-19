@@ -195,6 +195,11 @@ export default function NuevaCompra() {
   const [buscandoProveedor, setBuscandoProveedor] = useState(false);
   const [proveedorConfirmado, setProveedorConfirmado] = useState<{ id: number; nombre: string } | null>(null);
   const [nuevoProducto, setNuevoProducto] = useState<{ nombre: string; precioVenta: number; idcategoria: number | null; categoriaNombre: string }>({ nombre: "", precioVenta: 0, idcategoria: null, categoriaNombre: "" });
+  // Proveedor elegido para el producto nuevo (por defecto el de la factura, pero editable)
+  const [provNuevoProducto, setProvNuevoProducto] = useState<string>("");
+  const [busquedaProv, setBusquedaProv] = useState<string>("");
+  const [resultadosProv, setResultadosProv] = useState<any[]>([]);
+  const [mostrarBuscarProv, setMostrarBuscarProv] = useState(false);
   const [creandoProducto, setCreandoProducto] = useState(false);
 
   const utils = trpc.useUtils();
@@ -1330,6 +1335,55 @@ export default function NuevaCompra() {
                                 {nuevoProducto.idcategoria && <span className="text-muted-foreground"> (ID: {nuevoProducto.idcategoria})</span>}
                               </p>
                             </div>
+                            {/* Proveedor del producto (preseleccionado el de la factura, editable) */}
+                            <div>
+                              <label className="text-[11px] text-muted-foreground">Proveedor</label>
+                              <div className="flex items-center gap-1.5">
+                                <p className="flex-1 text-xs font-medium bg-white dark:bg-gray-900 rounded px-2 py-1.5 border border-gray-200 dark:border-gray-700 truncate">
+                                  {(provNuevoProducto || supplier) || "Sin proveedor"}
+                                </p>
+                                <Button
+                                  type="button" size="sm" variant="outline"
+                                  className="h-8 text-[11px] shrink-0"
+                                  onClick={() => { setMostrarBuscarProv(!mostrarBuscarProv); setBusquedaProv(""); setResultadosProv([]); }}>
+                                  Cambiar
+                                </Button>
+                              </div>
+                              {mostrarBuscarProv && (
+                                <div className="mt-1.5 p-2 rounded border bg-muted/30 space-y-1.5">
+                                  <Input
+                                    value={busquedaProv}
+                                    onChange={async (e) => {
+                                      const v = e.target.value;
+                                      setBusquedaProv(v);
+                                      if (v.length >= 2) {
+                                        try {
+                                          const res: any = await utils.client.confirmaciones.listarProveedores.query({ filtro: v });
+                                          setResultadosProv(Array.isArray(res) ? res.slice(0, 6) : []);
+                                        } catch { setResultadosProv([]); }
+                                      } else setResultadosProv([]);
+                                    }}
+                                    className="h-8 text-xs"
+                                    placeholder="Buscar otro proveedor..."
+                                  />
+                                  {resultadosProv.map((p: any, i: number) => (
+                                    <button
+                                      key={i} type="button"
+                                      className="w-full text-left text-xs px-2 py-1 rounded hover:bg-primary/10 transition"
+                                      onClick={() => {
+                                        setProvNuevoProducto(p.razonSocial || p.nombre || p.nombreCompleto || "");
+                                        setMostrarBuscarProv(false);
+                                        setResultadosProv([]);
+                                      }}>
+                                      {p.razonSocial || p.nombre || p.nombreCompleto}
+                                    </button>
+                                  ))}
+                                  {busquedaProv.length >= 2 && resultadosProv.length === 0 && (
+                                    <p className="text-[11px] text-muted-foreground px-2">Sin resultados</p>
+                                  )}
+                                </div>
+                              )}
+                            </div>
                             <div className="flex gap-2">
                               <Button
                                 size="sm"
@@ -1346,14 +1400,14 @@ export default function NuevaCompra() {
                                       costoUnitario: item.unitCost,
                                       precioVenta: nuevoProducto.precioVenta,
                                       idcategoria: nuevoProducto.idcategoria,
-                                      nombreProveedor: supplier || undefined,
+                                      nombreProveedor: (provNuevoProducto || supplier) || undefined,
                                       stockMinimo: 10,
                                     });
                                     if (res.success) {
                                       // Auto-emparejar el producto recién creado consigo mismo
                                       const nombreFactura = item.nombreFacturaOriginal || item.productName;
                                       await confirmarEmparejamiento.mutateAsync({
-                                        proveedor: supplier || "Desconocido",
+                                        proveedor: (provNuevoProducto || supplier) || "Desconocido",
                                         nombreFactura,
                                         articuloId: res.id || 0,
                                         articuloNombre: nombreFinal,
@@ -1365,6 +1419,8 @@ export default function NuevaCompra() {
                                       toast.success(`✅ Producto "${nombreFinal}" creado y emparejado.`, { duration: 5000 });
                                       setFilaCreando(null);
                                       setFilaEmparejando(null);
+                                      setProvNuevoProducto("");
+                                      setMostrarBuscarProv(false);
                                     } else {
                                       toast.error(`No se pudo crear: ${res.message}`);
                                     }
