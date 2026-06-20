@@ -240,16 +240,24 @@ function ModalEditarGasto({ gasto, sucList, onClose, onGuardar, guardando }: any
               </select>
             </div>
           )}
-          <div>
-            <label className="text-[11px] text-muted-foreground">Mes al que corresponde</label>
-            <input type="month" value={mes} onChange={(e) => setMes(e.target.value)} className="w-full text-xs rounded-md border px-2 py-1.5 bg-background" />
-            <p className="text-[10px] text-muted-foreground mt-0.5">Para el reporte mensual. Ej: el alquiler de junio corresponde a junio aunque lo pagues en julio.</p>
-          </div>
+          {gasto.esOcasional ? (
+            <div>
+              <label className="text-[11px] text-muted-foreground">Mes al que corresponde</label>
+              <input type="month" value={mes} onChange={(e) => setMes(e.target.value)} className="w-full text-xs rounded-md border px-2 py-1.5 bg-background" />
+              <p className="text-[10px] text-muted-foreground mt-0.5">Para el reporte mensual. Ej: corresponde a mayo aunque lo pagues en junio.</p>
+            </div>
+          ) : (
+            <div className="rounded-md bg-blue-50 dark:bg-blue-950/20 px-2.5 py-2">
+              <p className="text-[10px] text-blue-700 dark:text-blue-300">
+                Este es un gasto recurrente del mes <strong>{gasto.anioMes}</strong>. Para registrar el monto de otro mes (ej. mayo), cambia el mes en el selector de arriba y edita el gasto de ese mes.
+              </p>
+            </div>
+          )}
         </div>
         <div className="flex gap-2 justify-end mt-4">
           <button onClick={onClose} className="text-xs px-3 py-1.5 rounded-md hover:bg-muted">Cancelar</button>
           <button
-            onClick={() => onGuardar({ id: gasto.id, nombre, categoria, monto: parseFloat(monto) || 0, sucursal: suc || undefined, anioMes: mes || undefined })}
+            onClick={() => onGuardar({ id: gasto.id, nombre, categoria, monto: parseFloat(monto) || 0, sucursal: suc || undefined, anioMes: gasto.esOcasional ? (mes || undefined) : undefined })}
             disabled={guardando || !nombre || !monto}
             className="text-xs px-4 py-1.5 rounded-md bg-primary text-primary-foreground font-medium disabled:opacity-50">
             {guardando ? "Guardando..." : "Guardar"}
