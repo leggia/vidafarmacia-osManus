@@ -1983,12 +1983,17 @@ const gastosRouter = router({
       const rows = (r: any) => { const x = Array.isArray(r) ? r[0] : r?.rows ?? r; return Array.isArray(x) ? x : []; };
 
       try {
-        // Generar registros de gastos fijos para el mes si aún no existen
+        // Generar registros de gastos fijos para el mes si aún no existen.
+        // Verificamos por gastoFijoId Y por nombre, para no duplicar gastos que
+        // fueron movidos a este mes (y quedaron desvinculados de la plantilla).
         const fijos = rows(await db.execute(sql.raw("SELECT * FROM gastos_fijos WHERE activo=1")));
-        const existentes = rows(await db.execute(sql.raw(`SELECT gastoFijoId FROM gastos_registro WHERE anioMes=${esc(input.anioMes)} AND gastoFijoId IS NOT NULL`)));
-        const idsExistentes = new Set(existentes.map((e: any) => e.gastoFijoId));
+        const existentes = rows(await db.execute(sql.raw(`SELECT gastoFijoId, nombre FROM gastos_registro WHERE anioMes=${esc(input.anioMes)}`)));
+        const idsExistentes = new Set(existentes.filter((e: any) => e.gastoFijoId != null).map((e: any) => e.gastoFijoId));
+        const nombresExistentes = new Set(existentes.map((e: any) => String(e.nombre || "").trim().toLowerCase()));
         for (const f of fijos) {
-          if (!idsExistentes.has(f.id)) {
+          const yaExistePorId = idsExistentes.has(f.id);
+          const yaExistePorNombre = nombresExistentes.has(String(f.nombre || "").trim().toLowerCase());
+          if (!yaExistePorId && !yaExistePorNombre) {
             // Para gastos variables (luz, agua), el monto inicial es 0 (se ingresa al llegar la factura)
             const montoInicial = f.esVariable ? 0 : (Number(f.montoEstimado) || 0);
             await db.execute(sql.raw(
@@ -2163,29 +2168,28 @@ const gastosRouter = router({
       const rows = (r: any) => { const x = Array.isArray(r) ? r[0] : r?.rows ?? r; return Array.isArray(x) ? x : []; };
 
       // Ver el mes actual y si viene de una plantilla fija
-      const actual = rows(await db.execute(sql.raw(`SELECT anioMes, gastoFijoId FROM gastos_registro WHERE id=${input.id} LIMIT 1`)));
+      const actual = rows(await db.execute(sql.raw(`SELECT anioMes, gastoFijoId, nombre FROM gastos_registro WHERE id=${input.id} LIMIT 1`)));
       const mesActual = actual[0]?.anioMes;
       const esFijo = actual[0]?.gastoFijoId != null;
 
       let setMes = "";
-      let setDesvincular = "";
       if (input.anioMes && input.anioMes !== mesActual) {
         setMes = `, anioMes=${esc(input.anioMes)}`;
-        // Si es un gasto fijo y se MUEVE a otro mes, desvincularlo de la plantilla
-        // para que delMes no lo regenere con monto 0 ni cause duplicados.
+        // Si es un gasto fijo y se MUEVE a otro mes, eliminar en el mes destino
+        // cualquier registro de la MISMA plantilla o mismo nombre (regenerado con
+        // monto 0), para no duplicar. NO desvinculamos: delMes deduplica por nombre.
         if (esFijo) {
-          setDesvincular = ", gastoFijoId=NULL";
-          // Si en el mes destino ya existe el registro de esta plantilla (regenerado
-          // con monto 0), eliminarlo para no duplicar.
           const fijoId = actual[0].gastoFijoId;
+          const nombreActual = String(actual[0].nombre || "").trim().toLowerCase();
           await db.execute(sql.raw(
-            `DELETE FROM gastos_registro WHERE anioMes=${esc(input.anioMes)} AND gastoFijoId=${fijoId} AND id<>${input.id}`
+            `DELETE FROM gastos_registro WHERE anioMes=${esc(input.anioMes)} AND id<>${input.id}
+             AND (gastoFijoId=${fijoId} OR LOWER(TRIM(nombre))=${esc(nombreActual)})`
           ));
         }
       }
 
       await db.execute(sql.raw(
-        `UPDATE gastos_registro SET nombre=${esc(input.nombre)}, categoria=${esc(input.categoria)}, monto=${input.monto}, sucursal=${esc(input.sucursal)}${setMes}${setDesvincular} WHERE id=${input.id}`
+        `UPDATE gastos_registro SET nombre=${esc(input.nombre)}, categoria=${esc(input.categoria)}, monto=${input.monto}, sucursal=${esc(input.sucursal)}${setMes} WHERE id=${input.id}`
       ));
       return { success: true };
     }),
