@@ -130,6 +130,13 @@ export async function createPurchase(data: {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
+  // Garantizar que la columna nombreFactura exista (idempotente). Evita que el
+  // insert falle si la migración en background no corrió en producción.
+  try {
+    const { sql } = await import("drizzle-orm");
+    await db.execute(sql.raw("ALTER TABLE purchase_items ADD COLUMN nombreFactura VARCHAR(500)"));
+  } catch { /* ya existe */ }
+
   const finalStatus = data.status || "draft";
 
   const [purchaseResult] = await db.insert(purchases).values({
@@ -148,17 +155,33 @@ export async function createPurchase(data: {
   const purchaseId = purchaseResult.insertId;
 
   if (data.items.length > 0) {
-    await db.insert(purchaseItems).values(
-      data.items.map((item) => ({
-        purchaseId,
-        productName: item.productName,
-        nombreFactura: item.nombreFactura || item.productName,
-        quantity: item.quantity,
-        unitCost: String(item.unitCost),
-        subtotal: String(item.subtotal),
-        expiryDate: item.expiryDate || null,
-      }))
-    );
+    const valoresItems = data.items.map((item) => ({
+      purchaseId,
+      productName: item.productName,
+      nombreFactura: item.nombreFactura || item.productName,
+      quantity: item.quantity,
+      unitCost: String(item.unitCost),
+      subtotal: String(item.subtotal),
+      expiryDate: item.expiryDate || null,
+    }));
+    try {
+      await db.insert(purchaseItems).values(valoresItems);
+    } catch (e: any) {
+      // Si falla por la columna nombreFactura (no existe en producción), reintentar
+      // sin ella para no perder la compra.
+      if (String(e?.message || "").toLowerCase().includes("nombrefactura") || String(e?.message || "").toLowerCase().includes("unknown column")) {
+        const { sql } = await import("drizzle-orm");
+        for (const it of valoresItems) {
+          const esc = (v: any) => v == null ? "NULL" : `'${String(v).replace(/'/g, "''")}'`;
+          await db.execute(sql.raw(
+            `INSERT INTO purchase_items (purchaseId, productName, quantity, unitCost, subtotal, expiryDate)
+             VALUES (${it.purchaseId}, ${esc(it.productName)}, ${it.quantity}, ${esc(it.unitCost)}, ${esc(it.subtotal)}, ${esc(it.expiryDate)})`
+          ));
+        }
+      } else {
+        throw e;
+      }
+    }
   }
 
   // Log operation
