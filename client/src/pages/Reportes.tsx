@@ -363,6 +363,24 @@ export default function Reportes() {
                   </div>
                 )}
                 <p className="text-[10px] text-muted-foreground mt-2">El costo de productos solo considera los que tienen costo conocido. Para mayor precisión, mantén actualizado el cache de productos.</p>
+
+                {/* Diagnóstico temporal de sueldos */}
+                {(rentSucursal.data as any)?.debugSueldos?.length > 0 && (
+                  <details className="mt-3 text-[10px]">
+                    <summary className="cursor-pointer text-muted-foreground font-medium">🔍 Diagnóstico de sueldos (temporal)</summary>
+                    <div className="mt-2 space-y-1 bg-muted/30 rounded-lg p-2 max-h-60 overflow-auto">
+                      {(rentSucursal.data as any).debugSueldos.map((d: any, i: number) => (
+                        <div key={i} className={`flex flex-wrap gap-x-2 ${d.pertenece ? "text-emerald-700" : "text-muted-foreground"}`}>
+                          <span className="font-medium">{d.trabajador}</span>
+                          <span>→ reporte: "{d.sucursalReporte}"</span>
+                          <span>· sucFija: {d.sucursalFija ? `"${d.sucursalFija}"` : "(ninguna)"}</span>
+                          <span>· usuario: {d.usuarioSistemaId || "(ninguno)"}</span>
+                          <span className="font-bold">{d.pertenece ? "✓ cuenta" : "✗ no cuenta"}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </details>
+                )}
               </Panel>
             )}
           </>

@@ -1651,7 +1651,7 @@ const ventasRouter = router({
           `SELECT DISTINCT nombreSucursal FROM ventas WHERE nombreSucursal IS NOT NULL`
         )));
         const trabajadoresInfo = rows(await db.execute(sql.raw(
-          `SELECT nombre, usuarioSistemaId, tipoTrabajador, activo FROM trabajadores WHERE activo=1`
+          `SELECT nombre, usuarioSistemaId, sucursalFija, tipoTrabajador, sueldoMensual, activo FROM trabajadores WHERE activo=1`
         )));
         const vendedoresVentas = rows(await db.execute(sql.raw(
           `SELECT DISTINCT vendedor, nombreSucursal FROM ventas WHERE vendedor IS NOT NULL LIMIT 30`
@@ -1743,6 +1743,7 @@ const ventasRouter = router({
         const { calcularResumenMensual } = await import("./domain/sueldos");
         const lista = await db.select().from(trabajadores).where(eq(trabajadores.activo, 1));
 
+        const debugSueldos: any[] = [];
         for (const s of Object.keys(mapa)) {
           const vend = rows(await db.execute(sql.raw(
             `SELECT DISTINCT vendedor FROM ventas WHERE nombreSucursal=${esc(s)} AND vendedor IS NOT NULL`
@@ -1756,6 +1757,7 @@ const ventasRouter = router({
             const pertenece = sucFija
               ? sucFija === s
               : (trab.usuarioSistemaId && usuarios.has(trab.usuarioSistemaId));
+            debugSueldos.push({ sucursalReporte: s, trabajador: trab.nombre, sucursalFija: sucFija, usuarioSistemaId: trab.usuarioSistemaId, pertenece: !!pertenece });
             if (!pertenece) continue;
             try {
               if (!trab.usuarioSistemaId) {
@@ -1800,6 +1802,7 @@ const ventasRouter = router({
         return {
           sucursales: resultado,
           gastosGenerales: Number(gastosGenerales) || 0,
+          debugSueldos,
           nota: "El costo de productos solo considera productos con costo conocido. Los gastos generales (sin sucursal) se muestran aparte.",
         };
       } catch (err: any) {
