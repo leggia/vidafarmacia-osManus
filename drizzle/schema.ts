@@ -281,6 +281,7 @@ export const trabajadores = mysqlTable("trabajadores", {
   nombre: varchar("nombre", { length: 255 }).notNull(),
   // Usuario de inventarios365 con el que abre caja (para cruzar las aperturas)
   usuarioSistemaId: varchar("usuarioSistemaId", { length: 50 }), // id del usuario en inventarios365
+  sucursalFija: varchar("sucursalFija", { length: 150 }), // sucursal asignada (para reportes por sucursal)
   usuarioSistemaNombre: varchar("usuarioSistemaNombre", { length: 255 }), // nombre/login en el sistema
   horaIngreso: varchar("horaIngreso", { length: 5 }).notNull().default("08:00"), // HH:MM esperada
   horaSalida: varchar("horaSalida", { length: 5 }).notNull().default("00:00"), // HH:MM salida esperada (0=sin control)

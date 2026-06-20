@@ -1149,6 +1149,7 @@ const asistenciaRouter = router({
       id: z.number().optional(),
       nombre: z.string().min(1),
       usuarioSistemaId: z.string().nullable().optional(),
+      sucursalFija: z.string().nullable().optional(),
       usuarioSistemaNombre: z.string().nullable().optional(),
       horaIngreso: z.string(),
       horaSalida: z.string().optional(),
@@ -1175,6 +1176,7 @@ const asistenciaRouter = router({
       const valores = {
         nombre: input.nombre,
         usuarioSistemaId: input.usuarioSistemaId || null,
+        sucursalFija: input.sucursalFija || null,
         usuarioSistemaNombre: input.usuarioSistemaNombre || null,
         horaIngreso: input.horaIngreso,
         horaSalida: input.horaSalida || "00:00",
@@ -1748,8 +1750,19 @@ const ventasRouter = router({
           const usuarios = new Set(vend.map((v: any) => String(v.vendedor)));
           let sueldos = 0;
           for (const trab of lista) {
-            if (!trab.usuarioSistemaId || !usuarios.has(trab.usuarioSistemaId)) continue;
+            // Prioridad 1: sucursal fija asignada al trabajador (más confiable).
+            // Prioridad 2: inferir por dónde vendió (usuarioSistemaId = vendedor).
+            const sucFija = (trab as any).sucursalFija;
+            const pertenece = sucFija
+              ? sucFija === s
+              : (trab.usuarioSistemaId && usuarios.has(trab.usuarioSistemaId));
+            if (!pertenece) continue;
             try {
+              if (!trab.usuarioSistemaId) {
+                // Sin usuario de sistema: usar el sueldo mensual base directamente
+                sueldos += parseFloat(String(trab.sueldoMensual)) || 0;
+                continue;
+              }
               const aperturas = await inventarios365.aperturasCajaDelMes(trab.usuarioSistemaId, input.anioMes);
               const res = calcularResumenMensual(aperturas, {
                 tipoTrabajador: (trab.tipoTrabajador || "fijo_mensual") as any,
@@ -2094,9 +2107,32 @@ const gastosRouter = router({
       const db = await getDb();
       if (!db) throw new Error("Sin BD");
       const esc = (v: any) => v == null ? "NULL" : `'${String(v).replace(/'/g, "''")}'`;
-      const setMes = input.anioMes ? `, anioMes=${esc(input.anioMes)}` : "";
+      const rows = (r: any) => { const x = Array.isArray(r) ? r[0] : r?.rows ?? r; return Array.isArray(x) ? x : []; };
+
+      // Ver el mes actual y si viene de una plantilla fija
+      const actual = rows(await db.execute(sql.raw(`SELECT anioMes, gastoFijoId FROM gastos_registro WHERE id=${input.id} LIMIT 1`)));
+      const mesActual = actual[0]?.anioMes;
+      const esFijo = actual[0]?.gastoFijoId != null;
+
+      let setMes = "";
+      let setDesvincular = "";
+      if (input.anioMes && input.anioMes !== mesActual) {
+        setMes = `, anioMes=${esc(input.anioMes)}`;
+        // Si es un gasto fijo y se MUEVE a otro mes, desvincularlo de la plantilla
+        // para que delMes no lo regenere con monto 0 ni cause duplicados.
+        if (esFijo) {
+          setDesvincular = ", gastoFijoId=NULL";
+          // Si en el mes destino ya existe el registro de esta plantilla (regenerado
+          // con monto 0), eliminarlo para no duplicar.
+          const fijoId = actual[0].gastoFijoId;
+          await db.execute(sql.raw(
+            `DELETE FROM gastos_registro WHERE anioMes=${esc(input.anioMes)} AND gastoFijoId=${fijoId} AND id<>${input.id}`
+          ));
+        }
+      }
+
       await db.execute(sql.raw(
-        `UPDATE gastos_registro SET nombre=${esc(input.nombre)}, categoria=${esc(input.categoria)}, monto=${input.monto}, sucursal=${esc(input.sucursal)}${setMes} WHERE id=${input.id}`
+        `UPDATE gastos_registro SET nombre=${esc(input.nombre)}, categoria=${esc(input.categoria)}, monto=${input.monto}, sucursal=${esc(input.sucursal)}${setMes}${setDesvincular} WHERE id=${input.id}`
       ));
       return { success: true };
     }),

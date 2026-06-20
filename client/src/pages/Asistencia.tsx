@@ -474,8 +474,10 @@ export default function Asistencia() {
 }
 
 function FormTrabajador({ editando, usuariosSistema, onCancel, onSave, guardando }: any) {
+  const sucursales = trpc.ventas.sucursalesDisponibles.useQuery();
   const [nombre, setNombre] = useState(editando?.nombre || "");
   const [usuarioId, setUsuarioId] = useState(editando?.usuarioSistemaId || "");
+  const [sucursalFija, setSucursalFija] = useState(editando?.sucursalFija || "");
   const [tipoTrabajador, setTipoTrabajador] = useState(editando?.tipoTrabajador || "fijo_mensual");
   const [horasMesFijas, setHorasMesFijas] = useState(editando?.horasMesFijas ?? 192);
   const [diasPorTurno, setDiasPorTurno] = useState(editando?.diasPorTurno ?? 3);
@@ -504,6 +506,7 @@ function FormTrabajador({ editando, usuariosSistema, onCancel, onSave, guardando
       id: editando?.id,
       nombre: nombre.trim(),
       usuarioSistemaId: usuarioId || null,
+      sucursalFija: sucursalFija || null,
       usuarioSistemaNombre: usel?.nombre || null,
       horaIngreso,
       horasDia: Number(horasDia),
@@ -543,6 +546,16 @@ function FormTrabajador({ editando, usuariosSistema, onCancel, onSave, guardando
             {usuariosSistema.map((u: any) => <option key={u.id} value={u.id}>{u.nombre}</option>)}
           </select>
           {usuariosSistema.length === 0 && <p className="text-[11px] text-orange-600 mt-1">No se pudieron cargar los usuarios del sistema.</p>}
+        </div>
+
+        <div>
+          <Label className="text-xs">Sucursal asignada (para reportes por sucursal)</Label>
+          <select value={sucursalFija} onChange={(e) => setSucursalFija(e.target.value)}
+            className="w-full h-10 rounded-md border border-input bg-background px-3 text-sm">
+            <option value="">Automática (según dónde vende)</option>
+            {(sucursales.data || []).map((s: string) => <option key={s} value={s}>{s}</option>)}
+          </select>
+          <p className="text-[11px] text-muted-foreground mt-1">Asigna la sucursal del trabajador para que su sueldo cuente en esa sucursal en el reporte de rentabilidad.</p>
         </div>
 
         {/* Tipo de trabajador */}
