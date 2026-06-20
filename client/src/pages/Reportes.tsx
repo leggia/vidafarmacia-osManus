@@ -35,7 +35,10 @@ export default function Reportes() {
   const [mesRentabilidad, setMesRentabilidad] = useState(() => {
     const h = new Date(); return `${h.getFullYear()}-${String(h.getMonth() + 1).padStart(2, "0")}`;
   });
-  const rentSucursal = trpc.ventas.rentabilidadPorSucursal.useQuery({ anioMes: mesRentabilidad });
+  const rentSucursal = trpc.ventas.rentabilidadPorSucursal.useQuery(
+    { anioMes: mesRentabilidad },
+    { placeholderData: (prev) => prev }
+  );
 
   function seleccionarPeriodo(p: "actual" | "anterior") {
     setPeriodo(p);
@@ -317,8 +320,11 @@ export default function Reportes() {
               <Panel titulo="Rentabilidad real por sucursal" icon={<Coins className="h-4 w-4 text-emerald-600" />}>
                 <div className="flex items-center justify-between gap-2 mb-3 flex-wrap">
                   <p className="text-[11px] text-muted-foreground">Ingresos − costo de productos − sueldos − gastos. Reporte <strong>mensual</strong>.</p>
-                  <input type="month" value={mesRentabilidad} onChange={(e) => setMesRentabilidad(e.target.value)}
-                    className="text-xs rounded-lg border bg-card px-2 py-1 shadow-sm font-medium" />
+                  <div className="flex items-center gap-2">
+                    {rentSucursal.isFetching && <Loader2 className="h-3.5 w-3.5 animate-spin text-muted-foreground" />}
+                    <input type="month" value={mesRentabilidad} onChange={(e) => setMesRentabilidad(e.target.value)}
+                      className="text-xs rounded-lg border bg-card px-2 py-1 shadow-sm font-medium" />
+                  </div>
                 </div>
                 <div className="space-y-3">
                   {rentSucursal.data!.sucursales.map((s: any, i: number) => {

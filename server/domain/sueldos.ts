@@ -114,7 +114,9 @@ const aMinutos = (hhmm: string) => {
 export function calcularRetraso(horaApertura: string, cfg: ConfigTrabajador): number {
   const esperado = aMinutos(cfg.horaIngreso);
   const real = aMinutos(horaApertura);
-  return Math.max(0, real - esperado - cfg.toleranciaMin);
+  const tolerancia = Number(cfg.toleranciaMin) || 0;
+  const retraso = real - esperado - tolerancia;
+  return isNaN(retraso) ? 0 : Math.max(0, retraso);
 }
 
 /** Calcula horas trabajadas entre apertura y cierre.
@@ -241,7 +243,8 @@ export function calcularResumenMensual(
   descuento = redondear(descuento);
 
   // El sueldo final del MES NO incluye los turnos extra (esos ya se pagaron aparte)
-  const sueldoFinal = redondear(sueldoBase - descuento);
+  const descuentoSeguro = isNaN(descuento) ? 0 : descuento;
+  const sueldoFinal = redondear((isNaN(sueldoBase) ? 0 : sueldoBase) - descuentoSeguro);
 
   return {
     diasTrabajados,

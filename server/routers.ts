@@ -1751,64 +1751,66 @@ const ventasRouter = router({
         const lista = await db.select().from(trabajadores).where(eq(trabajadores.activo, 1));
 
         const debugSueldos: any[] = [];
+
+        // Calcular el sueldo de cada trabajador UNA SOLA VEZ (optimización de velocidad).
+        const norm = (x: any) => String(x || "").trim().toLowerCase().replace(/\s+/g, " ");
+        const sueldoPorTrabajador: any[] = [];
+        for (const trab of lista) {
+          const sueldoMensualNum = parseFloat(String(trab.sueldoMensual)) || 0;
+          const esTipoFijo = (trab.tipoTrabajador || "fijo_mensual") === "fijo_mensual" || trab.tipoTrabajador === "fijo_turnos" || trab.tipoTrabajador === "fijo_horas";
+          let sueldoCalc = 0;
+          let metodoCalc = "";
+          try {
+            if (!trab.usuarioSistemaId) {
+              sueldoCalc = sueldoMensualNum;
+              metodoCalc = "base (sin usuario)";
+            } else {
+              const aperturas = await inventarios365.aperturasCajaDelMes(trab.usuarioSistemaId, input.anioMes);
+              const res = calcularResumenMensual(aperturas, {
+                tipoTrabajador: (trab.tipoTrabajador || "fijo_mensual") as any,
+                horaIngreso: trab.horaIngreso,
+                horaSalida: trab.horaSalida && trab.horaSalida !== "00:00" ? trab.horaSalida : undefined,
+                horasDia: parseFloat(String(trab.horasDia)) || 8,
+                diasSemana: trab.diasSemana, diasMes: trab.diasMes,
+                horasMesFijas: trab.horasMesFijas,
+                montoPorDia: parseFloat(String(trab.montoPorDia)) || 0,
+                montoTurnoExtra: parseFloat(String(trab.montoTurnoExtra)) || 0,
+                toleranciaMin: (trab as any).toleranciaMin ?? 5,
+                toleranciaSalidaMin: trab.toleranciaSalidaMin ?? 10,
+                sueldoMensual: sueldoMensualNum,
+                diasPorTurno: (trab as any).diasPorTurno ?? 3,
+              } as any, input.anioMes);
+              sueldoCalc = res.sueldoFinal;
+              metodoCalc = `calculado (${aperturas.length} aperturas)`;
+              if (esTipoFijo && (sueldoCalc === 0 || isNaN(sueldoCalc)) && sueldoMensualNum > 0) {
+                sueldoCalc = sueldoMensualNum;
+                metodoCalc = `fijo base (${aperturas.length} aperturas)`;
+              }
+            }
+          } catch (e: any) {
+            sueldoCalc = sueldoMensualNum;
+            metodoCalc = "catch: " + (e?.message || "error");
+          }
+          if (isNaN(sueldoCalc)) sueldoCalc = sueldoMensualNum;
+          sueldoPorTrabajador.push({ trab, sueldoCalc, metodoCalc, sueldoMensual: trab.sueldoMensual });
+        }
+
+        // Asignar cada sueldo a su sucursal
         for (const s of Object.keys(mapa)) {
           const vend = rows(await db.execute(sql.raw(
             `SELECT DISTINCT vendedor FROM ventas WHERE nombreSucursal=${esc(s)} AND vendedor IS NOT NULL`
           )));
           const usuarios = new Set(vend.map((v: any) => String(v.vendedor)));
           let sueldos = 0;
-          for (const trab of lista) {
-            // Prioridad 1: sucursal fija asignada al trabajador (más confiable).
-            // Prioridad 2: inferir por dónde vendió (usuarioSistemaId = vendedor).
-            // Comparación tolerante (ignora mayúsculas y espacios extra).
-            const norm = (x: any) => String(x || "").trim().toLowerCase().replace(/\s+/g, " ");
+          for (const item of sueldoPorTrabajador) {
+            const trab = item.trab;
             const sucFija = (trab as any).sucursalFija;
             const pertenece = sucFija
               ? norm(sucFija) === norm(s)
               : (trab.usuarioSistemaId && usuarios.has(trab.usuarioSistemaId));
-            debugSueldos.push({ sucursalReporte: s, trabajador: trab.nombre, sucursalFija: sucFija, usuarioSistemaId: trab.usuarioSistemaId, pertenece: !!pertenece });
+            debugSueldos.push({ sucursalReporte: s, trabajador: trab.nombre, sucursalFija: sucFija, usuarioSistemaId: trab.usuarioSistemaId, pertenece: !!pertenece, sueldoCalc: item.sueldoCalc, sueldoMensual: item.sueldoMensual, metodo: item.metodoCalc });
             if (!pertenece) continue;
-            let sueldoCalc = 0;
-            let metodoCalc = "";
-            const sueldoMensualNum = parseFloat(String(trab.sueldoMensual)) || 0;
-            const esTipoFijo = (trab.tipoTrabajador || "fijo_mensual") === "fijo_mensual" || trab.tipoTrabajador === "fijo_turnos" || trab.tipoTrabajador === "fijo_horas";
-            try {
-              if (!trab.usuarioSistemaId) {
-                // Sin usuario de sistema: usar el sueldo mensual base directamente
-                sueldoCalc = sueldoMensualNum;
-                metodoCalc = "base (sin usuario)";
-              } else {
-                const aperturas = await inventarios365.aperturasCajaDelMes(trab.usuarioSistemaId, input.anioMes);
-                const res = calcularResumenMensual(aperturas, {
-                  tipoTrabajador: (trab.tipoTrabajador || "fijo_mensual") as any,
-                  horaIngreso: trab.horaIngreso,
-                  horaSalida: trab.horaSalida && trab.horaSalida !== "00:00" ? trab.horaSalida : undefined,
-                  horasDia: parseFloat(String(trab.horasDia)) || 8,
-                  diasSemana: trab.diasSemana, diasMes: trab.diasMes,
-                  horasMesFijas: trab.horasMesFijas,
-                  montoPorDia: parseFloat(String(trab.montoPorDia)) || 0,
-                  montoTurnoExtra: parseFloat(String(trab.montoTurnoExtra)) || 0,
-                  toleranciaSalidaMin: trab.toleranciaSalidaMin,
-                  sueldoMensual: sueldoMensualNum,
-                  diasPorTurno: (trab as any).diasPorTurno ?? 3,
-                } as any, input.anioMes);
-                sueldoCalc = res.sueldoFinal;
-                metodoCalc = `calculado (${aperturas.length} aperturas)`;
-                // Si es tipo fijo y el cálculo dio 0 pero hay sueldo configurado,
-                // usar el sueldo mensual (el sueldo fijo no debe depender de aperturas)
-                if (esTipoFijo && sueldoCalc === 0 && sueldoMensualNum > 0) {
-                  sueldoCalc = sueldoMensualNum;
-                  metodoCalc = `fijo base (calc dio 0, ${aperturas.length} aperturas)`;
-                }
-              }
-            } catch (e: any) {
-              sueldoCalc = sueldoMensualNum;
-              metodoCalc = "catch: " + (e?.message || "error");
-            }
-            sueldos += sueldoCalc;
-            debugSueldos[debugSueldos.length - 1].sueldoCalc = sueldoCalc;
-            debugSueldos[debugSueldos.length - 1].sueldoMensual = trab.sueldoMensual;
-            debugSueldos[debugSueldos.length - 1].metodo = metodoCalc;
+            sueldos += item.sueldoCalc;
           }
           mapa[s].sueldos = sueldos;
         }
