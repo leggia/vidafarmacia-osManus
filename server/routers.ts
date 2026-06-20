@@ -1753,9 +1753,11 @@ const ventasRouter = router({
           for (const trab of lista) {
             // Prioridad 1: sucursal fija asignada al trabajador (más confiable).
             // Prioridad 2: inferir por dónde vendió (usuarioSistemaId = vendedor).
+            // Comparación tolerante (ignora mayúsculas y espacios extra).
+            const norm = (x: any) => String(x || "").trim().toLowerCase().replace(/\s+/g, " ");
             const sucFija = (trab as any).sucursalFija;
             const pertenece = sucFija
-              ? sucFija === s
+              ? norm(sucFija) === norm(s)
               : (trab.usuarioSistemaId && usuarios.has(trab.usuarioSistemaId));
             debugSueldos.push({ sucursalReporte: s, trabajador: trab.nombre, sucursalFija: sucFija, usuarioSistemaId: trab.usuarioSistemaId, pertenece: !!pertenece });
             if (!pertenece) continue;
