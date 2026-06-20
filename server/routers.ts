@@ -2087,15 +2087,16 @@ const gastosRouter = router({
 
   // Editar un gasto del registro (nombre, categoría, monto, sucursal)
   editar: publicProcedure
-    .input(z.object({ id: z.number(), nombre: z.string(), categoria: z.string(), monto: z.number(), sucursal: z.string().optional() }))
+    .input(z.object({ id: z.number(), nombre: z.string(), categoria: z.string(), monto: z.number(), sucursal: z.string().optional(), anioMes: z.string().optional() }))
     .mutation(async ({ input }) => {
       const { getDb } = await import("./db");
       const { sql } = await import("drizzle-orm");
       const db = await getDb();
       if (!db) throw new Error("Sin BD");
       const esc = (v: any) => v == null ? "NULL" : `'${String(v).replace(/'/g, "''")}'`;
+      const setMes = input.anioMes ? `, anioMes=${esc(input.anioMes)}` : "";
       await db.execute(sql.raw(
-        `UPDATE gastos_registro SET nombre=${esc(input.nombre)}, categoria=${esc(input.categoria)}, monto=${input.monto}, sucursal=${esc(input.sucursal)} WHERE id=${input.id}`
+        `UPDATE gastos_registro SET nombre=${esc(input.nombre)}, categoria=${esc(input.categoria)}, monto=${input.monto}, sucursal=${esc(input.sucursal)}${setMes} WHERE id=${input.id}`
       ));
       return { success: true };
     }),

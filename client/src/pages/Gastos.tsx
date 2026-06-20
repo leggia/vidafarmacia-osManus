@@ -206,6 +206,7 @@ function ModalEditarGasto({ gasto, sucList, onClose, onGuardar, guardando }: any
   const [categoria, setCategoria] = useState(gasto.categoria || "otros");
   const [monto, setMonto] = useState(String(gasto.monto || ""));
   const [suc, setSuc] = useState(gasto.sucursal || "");
+  const [mes, setMes] = useState(gasto.anioMes || "");
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div className="bg-card rounded-2xl shadow-xl max-w-sm w-full p-5">
@@ -239,11 +240,16 @@ function ModalEditarGasto({ gasto, sucList, onClose, onGuardar, guardando }: any
               </select>
             </div>
           )}
+          <div>
+            <label className="text-[11px] text-muted-foreground">Mes al que corresponde</label>
+            <input type="month" value={mes} onChange={(e) => setMes(e.target.value)} className="w-full text-xs rounded-md border px-2 py-1.5 bg-background" />
+            <p className="text-[10px] text-muted-foreground mt-0.5">Para el reporte mensual. Ej: el alquiler de junio corresponde a junio aunque lo pagues en julio.</p>
+          </div>
         </div>
         <div className="flex gap-2 justify-end mt-4">
           <button onClick={onClose} className="text-xs px-3 py-1.5 rounded-md hover:bg-muted">Cancelar</button>
           <button
-            onClick={() => onGuardar({ id: gasto.id, nombre, categoria, monto: parseFloat(monto) || 0, sucursal: suc || undefined })}
+            onClick={() => onGuardar({ id: gasto.id, nombre, categoria, monto: parseFloat(monto) || 0, sucursal: suc || undefined, anioMes: mes || undefined })}
             disabled={guardando || !nombre || !monto}
             className="text-xs px-4 py-1.5 rounded-md bg-primary text-primary-foreground font-medium disabled:opacity-50">
             {guardando ? "Guardando..." : "Guardar"}
@@ -355,6 +361,8 @@ function NuevoOcasionalForm({ anioMes, sucList, sucursalActual, onClose }: { ani
   const [pagado, setPagado] = useState(true);
   const [suc, setSuc] = useState(sucursalActual);
   const [fechaPago, setFechaPago] = useState(new Date().toISOString().slice(0, 10));
+  // Mes al que CORRESPONDE el gasto (por defecto el del selector, editable)
+  const [mesCorresponde, setMesCorresponde] = useState(anioMes);
   const crear = trpc.gastos.registrarOcasional.useMutation({
     onSuccess: () => { utils.gastos.delMes.invalidate(); toast.success("Gasto registrado"); onClose(); },
     onError: (e) => toast.error(e.message),
@@ -371,19 +379,25 @@ function NuevoOcasionalForm({ anioMes, sucList, sucursalActual, onClose }: { ani
           className="w-24 text-xs rounded-md border px-2 py-1.5 bg-background" />
       </div>
       <SucursalSelect sucList={sucList} value={suc} onChange={setSuc} />
+      {/* Mes al que corresponde el gasto (para el reporte mensual) */}
+      <div>
+        <label className="text-[11px] text-muted-foreground">Mes al que corresponde este gasto</label>
+        <input type="month" value={mesCorresponde} onChange={(e) => setMesCorresponde(e.target.value)}
+          className="block text-xs rounded-md border px-2 py-1.5 bg-background mt-0.5" />
+      </div>
       <div className="flex items-center gap-3 flex-wrap">
         <label className="flex items-center gap-2 text-xs">
           <input type="checkbox" checked={pagado} onChange={(e) => setPagado(e.target.checked)} /> Ya está pagado
         </label>
         {pagado && (
           <label className="flex items-center gap-1 text-xs text-muted-foreground">
-            Fecha: <input type="date" value={fechaPago} onChange={(e) => setFechaPago(e.target.value)} className="text-[11px] rounded border px-1 py-0.5 bg-background" />
+            Fecha de pago: <input type="date" value={fechaPago} onChange={(e) => setFechaPago(e.target.value)} className="text-[11px] rounded border px-1 py-0.5 bg-background" />
           </label>
         )}
       </div>
       <div className="flex gap-2 justify-end">
         <button onClick={onClose} className="text-xs px-2 py-1 rounded-md hover:bg-muted">Cancelar</button>
-        <button onClick={() => nombre && monto && crear.mutate({ anioMes, nombre, categoria, monto: parseFloat(monto), pagado, sucursal: suc || undefined, fechaPago: pagado ? fechaPago : undefined })}
+        <button onClick={() => nombre && monto && crear.mutate({ anioMes: mesCorresponde, nombre, categoria, monto: parseFloat(monto), pagado, sucursal: suc || undefined, fechaPago: pagado ? fechaPago : undefined })}
           disabled={crear.isPending || !nombre || !monto}
           className="text-xs px-3 py-1 rounded-md bg-primary text-primary-foreground font-medium disabled:opacity-50">
           {crear.isPending ? "Guardando..." : "Registrar"}
