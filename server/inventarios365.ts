@@ -510,30 +510,96 @@ class Inventarios365Service {
 
   /**
    * Actualizar el precio de COSTO de un artículo tras una compra.
-   * El endpoint /ingreso/registrar sube stock pero no siempre refresca el costo
-   * en la ficha del producto, así que lo actualizamos explícitamente.
+   * El endpoint /ingreso/registrar sube stock pero NO refresca el costo en la ficha
+   * del producto. Replicamos el form-data de /articulo/registrar (que sí setea costo)
+   * apuntando a /articulo/actualizar con el id del artículo existente.
    */
   async actualizarPrecioCosto(idarticulo: number, costoUnitario: number, unidadEnvase = 1): Promise<boolean> {
     const costoPaquete = costoUnitario * (unidadEnvase || 1);
-    const intentos = [
-      { url: "/articulo/actualizarPrecioCosto", body: { id: idarticulo, precio_costo_unid: costoUnitario, precio_costo_paq: costoPaquete } },
-      { url: "/articulo/actualizarCosto", body: { id: idarticulo, precio_costo_unid: costoUnitario, precio_costo_paq: costoPaquete } },
-      { url: "/articulo/actualizar", body: { id: idarticulo, precio_costo_unid: costoUnitario, precio_costo_paq: costoPaquete } },
-    ];
-    for (const intento of intentos) {
-      try {
-        const respData = await this.post<any>(intento.url, intento.body);
-        const txt = JSON.stringify(respData || {}).toLowerCase();
-        if (respData && !txt.includes("error") && !txt.includes("not found") && !txt.includes("404")) {
-          console.log(`[Inventarios365] Costo actualizado vía ${intento.url}: artículo ${idarticulo} → ${costoUnitario} Bs (paq ${costoPaquete})`);
-          return true;
-        }
-      } catch (error: any) {
-        console.warn(`[Inventarios365] ${intento.url} no funcionó:`, error?.message);
+    try {
+      // 1. Obtener los datos actuales del artículo para no perder nada al actualizar
+      const articulo: any = await this.obtenerArticuloPorId(idarticulo);
+      if (!articulo) {
+        console.warn(`[Inventarios365] No se encontró el artículo ${idarticulo} para actualizar costo`);
+        return false;
       }
+
+      // 2. Construir form-data con TODOS los campos (como /articulo/registrar) pero
+      //    cambiando el costo. Mantenemos el resto de valores del artículo.
+      const form = new FormData();
+      form.append("id", String(idarticulo));
+      form.append("nombre", String(articulo.nombre || ""));
+      form.append("descripcion", String(articulo.descripcion || ""));
+      form.append("nombre_generico", String(articulo.nombre_generico || ""));
+      form.append("unidad_envase", String(articulo.unidad_envase ?? unidadEnvase ?? 1));
+      form.append("precio_costo_unid", String(costoUnitario));
+      form.append("precio_costo_paq", String(costoPaquete));
+      form.append("precio_venta", String(articulo.precio_venta ?? "0"));
+      form.append("precio_uno", String(articulo.precio_uno ?? "0"));
+      form.append("precio_dos", String(articulo.precio_dos ?? "0"));
+      form.append("precio_tres", String(articulo.precio_tres ?? "0"));
+      form.append("precio_cuatro", String(articulo.precio_cuatro ?? "0"));
+      form.append("stock", String(articulo.stock ?? "0"));
+      form.append("costo_compra", String(costoUnitario));
+      form.append("codigo", String(articulo.codigo || ""));
+      form.append("codigo_alfanumerico", String(articulo.codigo_alfanumerico || ""));
+      form.append("descripcion_fabrica", String(articulo.descripcion_fabrica || ""));
+      form.append("idcategoria", String(articulo.idcategoria ?? articulo.categoria_id ?? ""));
+      form.append("idmarca", String(articulo.idmarca ?? "null"));
+      form.append("idindustria", String(articulo.idindustria ?? "null"));
+      form.append("idgrupo", String(articulo.idgrupo ?? "null"));
+      form.append("idproveedor", String(articulo.idproveedor ?? 0));
+      form.append("idmedida", String(articulo.idmedida ?? "undefined"));
+      form.append("fechaVencimientoSeleccion", "0");
+      form.append("precio_costo_paqVacio", "false");
+
+      const cookie = this.buildCookieHeader();
+      const xsrfDecoded = this.xsrfToken ? decodeURIComponent(this.xsrfToken) : "";
+
+      // Usar solo /articulo/actualizar (seguro). Evitamos /articulo/registrar con id
+      // porque podría crear un duplicado si el sistema no lo trata como update.
+      for (const url of ["/articulo/actualizar"]) {
+        try {
+          const resp = await this.client.post(url, form, {
+            headers: {
+              Cookie: cookie,
+              "X-XSRF-TOKEN": xsrfDecoded,
+              "X-CSRF-TOKEN": this.csrfToken || "",
+              "X-Requested-With": "XMLHttpRequest",
+              Referer: `${BASE_URL}/main`,
+            },
+            maxRedirects: 0,
+            validateStatus: () => true,
+          });
+          console.log(`[Inventarios365] actualizarCosto ${url} art ${idarticulo} → status ${resp.status}:`, JSON.stringify(resp.data).substring(0, 150));
+          if (resp.status >= 200 && resp.status < 300) {
+            console.log(`[Inventarios365] ✓ Costo actualizado: artículo ${idarticulo} → ${costoUnitario} Bs (paq ${costoPaquete})`);
+            return true;
+          }
+        } catch (e: any) {
+          console.warn(`[Inventarios365] ${url} falló:`, e?.message);
+        }
+      }
+      return false;
+    } catch (error: any) {
+      console.error(`[Inventarios365] Error actualizando costo del artículo ${idarticulo}:`, error?.message);
+      return false;
     }
-    console.warn(`[Inventarios365] No se pudo actualizar el costo del artículo ${idarticulo}`);
-    return false;
+  }
+
+  /** Obtener un artículo por su id (busca en el listado). */
+  async obtenerArticuloPorId(idarticulo: number): Promise<any | null> {
+    try {
+      const data = await this.get<any>(
+        `/articulo/listarArticulo?buscar=&criterio=todos&idProveedor=`
+      );
+      const lista = data?.articulos?.data ?? data?.articulos ?? data?.data ?? [];
+      const arr = Array.isArray(lista) ? lista : [];
+      return arr.find((a: any) => Number(a.id) === Number(idarticulo)) || null;
+    } catch (e: any) {
+      console.warn(`[Inventarios365] obtenerArticuloPorId(${idarticulo}) falló:`, e?.message);
+      return null;
+    }
   }
 
   /**
