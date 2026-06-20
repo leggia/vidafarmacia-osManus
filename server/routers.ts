@@ -1456,6 +1456,12 @@ const consultaRouter = router({
 });
 
 // ─── Ventas (sincronización bajo demanda + reportes) ──────────────────────────
+// Caché en memoria del reporte de rentabilidad por sucursal (TTL 10 min).
+// La primera carga lo calcula (hace llamadas a inventarios365); las siguientes
+// son instantáneas hasta que expira o se fuerza recálculo.
+const cacheRentabilidadSucursal = new Map<string, { data: any; expira: number }>();
+const RENTABILIDAD_TTL = 10 * 60 * 1000;
+
 const ventasRouter = router({
   // Botón: sincronizar ventas ahora (incremental, conservador)
   sincronizar: publicProcedure.mutation(async () => {
@@ -1592,12 +1598,18 @@ const ventasRouter = router({
       const excluirMenores = ` AND articuloNombre NOT LIKE '%ventas menores%' AND articuloNombre NOT LIKE '%venta menor%'`;
 
       try {
-        const [masVendidos, vendedores, sucursales, diasSemana, totales] = await Promise.all([
-          // Productos más vendidos
+        const [masVendidos, masVendidosValor, vendedores, sucursales, diasSemana, totales] = await Promise.all([
+          // Productos más vendidos POR CANTIDAD
           db.execute(sql.raw(
             `SELECT articuloNombre, SUM(cantidad) as unidades, SUM(subtotal) as monto, COUNT(*) as veces
              FROM ventas_detalle WHERE ${rango}${filtroSuc}${excluirMenores}
              GROUP BY articuloNombre ORDER BY unidades DESC LIMIT 15`
+          )),
+          // Productos más vendidos POR VALOR (ingreso generado)
+          db.execute(sql.raw(
+            `SELECT articuloNombre, SUM(cantidad) as unidades, SUM(subtotal) as monto, COUNT(*) as veces
+             FROM ventas_detalle WHERE ${rango}${filtroSuc}${excluirMenores}
+             GROUP BY articuloNombre ORDER BY monto DESC LIMIT 15`
           )),
           // Mejores vendedores
           db.execute(sql.raw(
@@ -1625,6 +1637,7 @@ const ventasRouter = router({
         ]);
         return {
           masVendidos: rows(masVendidos),
+          masVendidosValor: rows(masVendidosValor),
           vendedores: rows(vendedores),
           sucursales: rows(sucursales),
           diasSemana: rows(diasSemana),
@@ -1684,8 +1697,14 @@ const ventasRouter = router({
   // Rentabilidad REAL por sucursal: ingresos − costo productos − sueldos − gastos.
   // Responde: ¿las ganancias de cada sucursal cubren sus gastos?
   rentabilidadPorSucursal: publicProcedure
-    .input(z.object({ anioMes: z.string() }))
+    .input(z.object({ anioMes: z.string(), forzar: z.boolean().optional() }))
     .query(async ({ input }) => {
+      // Servir desde caché si está fresco (salvo que se fuerce recálculo)
+      const cacheKey = input.anioMes;
+      if (!input.forzar) {
+        const cached = cacheRentabilidadSucursal.get(cacheKey);
+        if (cached && cached.expira > Date.now()) return cached.data;
+      }
       const { getDb } = await import("./db");
       const { sql } = await import("drizzle-orm");
       const db = await getDb();
@@ -1827,12 +1846,15 @@ const ventasRouter = router({
           };
         }).sort((a: any, b: any) => b.netaAntesGenerales - a.netaAntesGenerales);
 
-        return {
+        const respuesta = {
           sucursales: resultado,
           gastosGenerales: Number(gastosGenerales) || 0,
           debugSueldos,
           nota: "El costo de productos solo considera productos con costo conocido. Los gastos generales (sin sucursal) se muestran aparte.",
         };
+        // Guardar en caché para que las próximas cargas sean instantáneas
+        cacheRentabilidadSucursal.set(cacheKey, { data: respuesta, expira: Date.now() + RENTABILIDAD_TTL });
+        return respuesta;
       } catch (err: any) {
         return { sucursales: [], error: err.message };
       }

@@ -92,6 +92,12 @@ export default function Reportes() {
 
   // Máximo para escalar barras del top de productos
   const maxUnidades = useMemo(() => Math.max(1, ...(d?.masVendidos ?? []).map((p: any) => Number(p.unidades))), [d]);
+  const [vistaProductos, setVistaProductos] = useState<"cantidad" | "valor">("cantidad");
+  const listaProductos = vistaProductos === "cantidad" ? (d?.masVendidos ?? []) : ((d as any)?.masVendidosValor ?? []);
+  const maxProducto = useMemo(() => {
+    const campo = vistaProductos === "cantidad" ? "unidades" : "monto";
+    return Math.max(1, ...listaProductos.map((p: any) => Number(p[campo])));
+  }, [listaProductos, vistaProductos]);
 
   const margenGlobal = rent?.resumen && Number(rent.resumen.ingreso) > 0
     ? (Number(rent.resumen.ganancia) / Number(rent.resumen.ingreso) * 100) : 0;
@@ -197,20 +203,35 @@ export default function Reportes() {
             {/* ─── Grid principal de 2 columnas ─── */}
             <div className="grid lg:grid-cols-2 gap-4">
 
-              {/* Productos más vendidos con barras */}
+              {/* Productos más vendidos con barras (por cantidad o valor) */}
               <Panel titulo="Productos más vendidos" icon={<Package className="h-4 w-4" />}>
+                <div className="inline-flex rounded-lg border bg-card p-0.5 shadow-sm mb-3">
+                  <button onClick={() => setVistaProductos("cantidad")}
+                    className={`px-2.5 py-1 text-[11px] font-medium rounded-md transition ${vistaProductos === "cantidad" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+                    Por cantidad
+                  </button>
+                  <button onClick={() => setVistaProductos("valor")}
+                    className={`px-2.5 py-1 text-[11px] font-medium rounded-md transition ${vistaProductos === "valor" ? "bg-primary text-primary-foreground" : "text-muted-foreground hover:text-foreground"}`}>
+                    Por valor (Bs)
+                  </button>
+                </div>
                 <div className="space-y-2.5">
-                  {d.masVendidos.slice(0, 8).map((p: any, i: number) => (
-                    <div key={i}>
-                      <div className="flex items-center justify-between gap-2 text-xs mb-1">
-                        <span className="truncate font-medium">{p.articuloNombre}</span>
-                        <span className="font-bold tabular-nums shrink-0">{fmtNum(p.unidades)} u.</span>
+                  {listaProductos.slice(0, 8).map((p: any, i: number) => {
+                    const valor = vistaProductos === "cantidad" ? Number(p.unidades) : Number(p.monto);
+                    return (
+                      <div key={i}>
+                        <div className="flex items-center justify-between gap-2 text-xs mb-1">
+                          <span className="truncate font-medium">{p.articuloNombre}</span>
+                          <span className="font-bold tabular-nums shrink-0">
+                            {vistaProductos === "cantidad" ? `${fmtNum(p.unidades)} u.` : `Bs ${fmtBs(p.monto)}`}
+                          </span>
+                        </div>
+                        <div className="h-1.5 rounded-full bg-muted overflow-hidden">
+                          <div className="h-full rounded-full bg-primary/70" style={{ width: `${valor / maxProducto * 100}%` }} />
+                        </div>
                       </div>
-                      <div className="h-1.5 rounded-full bg-muted overflow-hidden">
-                        <div className="h-full rounded-full bg-primary/70" style={{ width: `${Number(p.unidades) / maxUnidades * 100}%` }} />
-                      </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               </Panel>
 
@@ -369,24 +390,6 @@ export default function Reportes() {
                   </div>
                 )}
                 <p className="text-[10px] text-muted-foreground mt-2">El costo de productos solo considera los que tienen costo conocido. Para mayor precisión, mantén actualizado el cache de productos.</p>
-
-                {/* Diagnóstico temporal de sueldos */}
-                {(rentSucursal.data as any)?.debugSueldos?.length > 0 && (
-                  <details className="mt-3 text-[10px]">
-                    <summary className="cursor-pointer text-muted-foreground font-medium">🔍 Diagnóstico de sueldos (temporal)</summary>
-                    <div className="mt-2 space-y-1 bg-muted/30 rounded-lg p-2 max-h-60 overflow-auto">
-                      {(rentSucursal.data as any).debugSueldos.filter((d: any) => d.pertenece).map((d: any, i: number) => (
-                        <div key={i} className="flex flex-wrap gap-x-2 text-emerald-700">
-                          <span className="font-medium">{d.trabajador}</span>
-                          <span>→ "{d.sucursalReporte}"</span>
-                          <span>· sueldoMensual: {d.sueldoMensual ?? "?"}</span>
-                          <span>· calculado: <strong>{d.sueldoCalc ?? "?"}</strong></span>
-                          <span>· {d.metodo || ""}</span>
-                        </div>
-                      ))}
-                    </div>
-                  </details>
-                )}
               </Panel>
             )}
           </>
