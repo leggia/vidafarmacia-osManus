@@ -1650,38 +1650,6 @@ const ventasRouter = router({
 
   // Lista de sucursales disponibles (para el filtro)
   // Diagnóstico temporal: ver qué gastos y sucursales hay (para depurar el reporte)
-  diagRentabilidad: publicProcedure
-    .input(z.object({ anioMes: z.string() }))
-    .query(async ({ input }) => {
-      const { getDb } = await import("./db");
-      const { sql } = await import("drizzle-orm");
-      const db = await getDb();
-      if (!db) return { error: "Sin BD" };
-      const rows = (r: any) => { const x = Array.isArray(r) ? r[0] : r?.rows ?? r; return Array.isArray(x) ? x : []; };
-      const esc = (v: string) => `'${String(v).replace(/'/g, "''")}'`;
-      try {
-        const gastosPorMes = rows(await db.execute(sql.raw(
-          `SELECT anioMes, sucursal, COUNT(*) as n, SUM(monto) as total FROM gastos_registro GROUP BY anioMes, sucursal ORDER BY anioMes DESC LIMIT 30`
-        )));
-        const sucursalesVentas = rows(await db.execute(sql.raw(
-          `SELECT DISTINCT nombreSucursal FROM ventas WHERE nombreSucursal IS NOT NULL`
-        )));
-        const trabajadoresInfo = rows(await db.execute(sql.raw(
-          `SELECT nombre, usuarioSistemaId, sucursalFija, tipoTrabajador, sueldoMensual, activo FROM trabajadores WHERE activo=1`
-        )));
-        // Verificar qué columnas existen realmente en la tabla trabajadores
-        const columnas = rows(await db.execute(sql.raw(
-          `SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='trabajadores'`
-        )));
-        const vendedoresVentas = rows(await db.execute(sql.raw(
-          `SELECT DISTINCT vendedor, nombreSucursal FROM ventas WHERE vendedor IS NOT NULL LIMIT 30`
-        )));
-        return { gastosPorMes, sucursalesVentas, trabajadoresInfo, vendedoresVentas, columnasTrabajadores: columnas, anioMesConsultado: input.anioMes };
-      } catch (e: any) {
-        return { error: e.message };
-      }
-    }),
-
   sucursalesDisponibles: publicProcedure.query(async () => {
     const { getDb } = await import("./db");
     const { sql } = await import("drizzle-orm");
@@ -1769,8 +1737,6 @@ const ventasRouter = router({
         const { calcularResumenMensual } = await import("./domain/sueldos");
         const lista = await db.select().from(trabajadores).where(eq(trabajadores.activo, 1));
 
-        const debugSueldos: any[] = [];
-
         // Calcular el sueldo de cada trabajador UNA SOLA VEZ (optimización de velocidad).
         const norm = (x: any) => String(x || "").trim().toLowerCase().replace(/\s+/g, " ");
         const sueldoPorTrabajador: any[] = [];
@@ -1827,7 +1793,6 @@ const ventasRouter = router({
             const pertenece = sucFija
               ? norm(sucFija) === norm(s)
               : (trab.usuarioSistemaId && usuarios.has(trab.usuarioSistemaId));
-            debugSueldos.push({ sucursalReporte: s, trabajador: trab.nombre, sucursalFija: sucFija, usuarioSistemaId: trab.usuarioSistemaId, pertenece: !!pertenece, sueldoCalc: item.sueldoCalc, sueldoMensual: item.sueldoMensual, metodo: item.metodoCalc });
             if (!pertenece) continue;
             sueldos += item.sueldoCalc;
           }
@@ -1849,7 +1814,6 @@ const ventasRouter = router({
         const respuesta = {
           sucursales: resultado,
           gastosGenerales: Number(gastosGenerales) || 0,
-          debugSueldos,
           nota: "El costo de productos solo considera productos con costo conocido. Los gastos generales (sin sucursal) se muestran aparte.",
         };
         // Guardar en caché para que las próximas cargas sean instantáneas

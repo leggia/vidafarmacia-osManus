@@ -536,7 +536,7 @@ class Inventarios365Service {
       };
 
       const respData = await this.post<any>("/articulo/actualizarPrecios", payload);
-      console.log(`[Inventarios365] actualizarPrecios art ${idarticulo} → costo ${costoUnitario} (paq ${costoPaquete}):`, JSON.stringify(respData || {}).substring(0, 150));
+      console.log(`[Inventarios365] Costo actualizado: artículo ${idarticulo} → ${costoUnitario} Bs`);
       return true;
     } catch (error: any) {
       console.error(`[Inventarios365] Error actualizando costo del artículo ${idarticulo}:`, error?.message);
@@ -1200,7 +1200,6 @@ class Inventarios365Service {
             cantidad: item.cantidad,
           });
           console.log(`[Inventarios365] ✓ "${item.nombre}" → "${articulo.nombre}" (ID:${articulo.id}, score:${score.toFixed(2)})`);
-          console.log(`[Precio] "${articulo.nombre}": costo unitario=${precioCosto}, unidad_x_paquete=${unidadXPaq}, precio_paquete=${precioPaquete}, cantidad=${item.cantidad}, precio_costo_paq viejo=${articulo.precio_costo_paq}`);
           productosEmparejados.push({ nombreFactura: item.nombre, nombreSistema: articulo.nombre, id: articulo.id });
           // Recolectar para historial de precios
           historialParaGuardar.push({
