@@ -511,76 +511,33 @@ class Inventarios365Service {
   /**
    * Actualizar el precio de COSTO de un artículo tras una compra.
    * El endpoint /ingreso/registrar sube stock pero NO refresca el costo en la ficha
-   * del producto. Replicamos el form-data de /articulo/registrar (que sí setea costo)
-   * apuntando a /articulo/actualizar con el id del artículo existente.
+   * del producto. El sistema web usa POST /articulo/actualizarPrecios con el payload:
+   *   { id, precio_costo_paquete, precio_costo_unidad, precio_uno, precio_dos, precio_tres, precio_cuatro }
+   * (Confirmado capturando la petición real del sistema 365.)
    */
   async actualizarPrecioCosto(idarticulo: number, costoUnitario: number, unidadEnvase = 1): Promise<boolean> {
     const costoPaquete = costoUnitario * (unidadEnvase || 1);
     try {
-      // 1. Obtener los datos actuales del artículo para no perder nada al actualizar
+      // Traer los precios de venta actuales para no perderlos al actualizar
       const articulo: any = await this.obtenerArticuloPorId(idarticulo);
-      if (!articulo) {
-        console.warn(`[Inventarios365] No se encontró el artículo ${idarticulo} para actualizar costo`);
-        return false;
-      }
+      const precioUno = articulo?.precio_uno ?? "0";
+      const precioDos = articulo?.precio_dos ?? "0";
+      const precioTres = articulo?.precio_tres ?? 0;
+      const precioCuatro = articulo?.precio_cuatro ?? 0;
 
-      // 2. Construir form-data con TODOS los campos (como /articulo/registrar) pero
-      //    cambiando el costo. Mantenemos el resto de valores del artículo.
-      const form = new FormData();
-      form.append("id", String(idarticulo));
-      form.append("nombre", String(articulo.nombre || ""));
-      form.append("descripcion", String(articulo.descripcion || ""));
-      form.append("nombre_generico", String(articulo.nombre_generico || ""));
-      form.append("unidad_envase", String(articulo.unidad_envase ?? unidadEnvase ?? 1));
-      form.append("precio_costo_unid", String(costoUnitario));
-      form.append("precio_costo_paq", String(costoPaquete));
-      form.append("precio_venta", String(articulo.precio_venta ?? "0"));
-      form.append("precio_uno", String(articulo.precio_uno ?? "0"));
-      form.append("precio_dos", String(articulo.precio_dos ?? "0"));
-      form.append("precio_tres", String(articulo.precio_tres ?? "0"));
-      form.append("precio_cuatro", String(articulo.precio_cuatro ?? "0"));
-      form.append("stock", String(articulo.stock ?? "0"));
-      form.append("costo_compra", String(costoUnitario));
-      form.append("codigo", String(articulo.codigo || ""));
-      form.append("codigo_alfanumerico", String(articulo.codigo_alfanumerico || ""));
-      form.append("descripcion_fabrica", String(articulo.descripcion_fabrica || ""));
-      form.append("idcategoria", String(articulo.idcategoria ?? articulo.categoria_id ?? ""));
-      form.append("idmarca", String(articulo.idmarca ?? "null"));
-      form.append("idindustria", String(articulo.idindustria ?? "null"));
-      form.append("idgrupo", String(articulo.idgrupo ?? "null"));
-      form.append("idproveedor", String(articulo.idproveedor ?? 0));
-      form.append("idmedida", String(articulo.idmedida ?? "undefined"));
-      form.append("fechaVencimientoSeleccion", "0");
-      form.append("precio_costo_paqVacio", "false");
+      const payload = {
+        id: idarticulo,
+        precio_costo_paquete: costoPaquete,
+        precio_costo_unidad: costoUnitario,
+        precio_uno: precioUno,
+        precio_dos: precioDos,
+        precio_tres: precioTres,
+        precio_cuatro: precioCuatro,
+      };
 
-      const cookie = this.buildCookieHeader();
-      const xsrfDecoded = this.xsrfToken ? decodeURIComponent(this.xsrfToken) : "";
-
-      // Usar solo /articulo/actualizar (seguro). Evitamos /articulo/registrar con id
-      // porque podría crear un duplicado si el sistema no lo trata como update.
-      for (const url of ["/articulo/actualizar"]) {
-        try {
-          const resp = await this.client.post(url, form, {
-            headers: {
-              Cookie: cookie,
-              "X-XSRF-TOKEN": xsrfDecoded,
-              "X-CSRF-TOKEN": this.csrfToken || "",
-              "X-Requested-With": "XMLHttpRequest",
-              Referer: `${BASE_URL}/main`,
-            },
-            maxRedirects: 0,
-            validateStatus: () => true,
-          });
-          console.log(`[Inventarios365] actualizarCosto ${url} art ${idarticulo} → status ${resp.status}:`, JSON.stringify(resp.data).substring(0, 150));
-          if (resp.status >= 200 && resp.status < 300) {
-            console.log(`[Inventarios365] ✓ Costo actualizado: artículo ${idarticulo} → ${costoUnitario} Bs (paq ${costoPaquete})`);
-            return true;
-          }
-        } catch (e: any) {
-          console.warn(`[Inventarios365] ${url} falló:`, e?.message);
-        }
-      }
-      return false;
+      const respData = await this.post<any>("/articulo/actualizarPrecios", payload);
+      console.log(`[Inventarios365] actualizarPrecios art ${idarticulo} → costo ${costoUnitario} (paq ${costoPaquete}):`, JSON.stringify(respData || {}).substring(0, 150));
+      return true;
     } catch (error: any) {
       console.error(`[Inventarios365] Error actualizando costo del artículo ${idarticulo}:`, error?.message);
       return false;
