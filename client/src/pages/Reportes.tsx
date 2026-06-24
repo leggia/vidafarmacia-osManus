@@ -419,7 +419,7 @@ export default function Reportes() {
                 )}
 
                 {/* Lista de compras */}
-                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Detalle</p>
+                <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Cada factura del mes (mayor a menor) · toca para ver productos</p>
                 <div className="space-y-1 max-h-96 overflow-auto pr-1">
                   {comprasMes.data!.compras.map((c: any) => (
                     <ComprasMesFila key={c.id} compra={c} fmtBs={fmtBs} />
@@ -493,7 +493,10 @@ function ComprasMesFila({ compra, fmtBs }: { compra: any; fmtBs: (n: any) => str
     <div className="bg-muted/30 rounded-md overflow-hidden">
       <button onClick={() => setAbierto(!abierto)} className="w-full flex items-center justify-between gap-2 text-xs px-2.5 py-1.5 hover:bg-muted/50 transition">
         <div className="min-w-0 flex-1 text-left">
-          <p className="font-medium truncate">{compra.receiptNumber || `Compra #${compra.id}`}</p>
+          <p className="font-medium truncate flex items-center gap-1">
+            {compra.receiptNumber || `Compra #${compra.id}`}
+            {compra.posibleDuplicado && <span className="text-[8px] px-1 rounded bg-amber-100 text-amber-700 font-bold shrink-0">POSIBLE DUPLICADO</span>}
+          </p>
           <p className="text-[10px] text-muted-foreground truncate">
             {compra.supplier || "Sin proveedor"}{compra.branchName ? ` · ${compra.branchName}` : ""} · {new Date(compra.createdAt).toLocaleDateString("es-BO")}
           </p>

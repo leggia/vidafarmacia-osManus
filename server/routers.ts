@@ -1684,9 +1684,19 @@ const ventasRouter = router({
           `SELECT p.id, p.receiptNumber, p.supplier, p.totalAmount, p.createdAt, p.status, b.name as branchName
            FROM purchases p LEFT JOIN branches b ON b.id = p.branchId
            WHERE p.status='completed' AND p.createdAt >= ${esc(desde)} AND p.createdAt <= ${esc(hasta)}
-           ORDER BY p.createdAt DESC`
+           ORDER BY CAST(p.totalAmount AS DECIMAL(12,2)) DESC`
         )));
         const total = compras.reduce((s: number, c: any) => s + Number(c.totalAmount || 0), 0);
+        // Detectar posibles duplicados (mismo número de factura y mismo monto)
+        const claveCount: Record<string, number> = {};
+        for (const c of compras) {
+          const clave = `${(c.receiptNumber || "").trim()}|${Number(c.totalAmount || 0).toFixed(2)}`;
+          claveCount[clave] = (claveCount[clave] || 0) + 1;
+        }
+        for (const c of compras) {
+          const clave = `${(c.receiptNumber || "").trim()}|${Number(c.totalAmount || 0).toFixed(2)}`;
+          c.posibleDuplicado = c.receiptNumber && claveCount[clave] > 1;
+        }
         // Total por proveedor
         const porProveedor: Record<string, number> = {};
         for (const c of compras) {
