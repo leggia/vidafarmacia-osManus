@@ -1119,6 +1119,9 @@ class Inventarios365Service {
   }> {
     // Forzar re-login para garantizar sesión fresca en Railway
     this.invalidateSession();
+    // Declarado ANTES del try para que el bloque catch también pueda accederlo
+    // (una const dentro del try no es visible desde el catch → "is not defined").
+    const productosNoEncontrados: { nombre: string; nombreLimpio?: string; cantidad: number; precio?: number; sugerencia?: any }[] = [];
     try {
       // 1. Listar almacenes
       const almacenes = await this.listarAlmacenes();
@@ -1161,7 +1164,6 @@ class Inventarios365Service {
       // 3. Buscar cada artículo (con filtro de proveedor si se encontró, sin filtro si no)
       const arrayDetalle: DetalleCompra[] = [];
       const erroresArticulos: string[] = [];
-      const productosNoEncontrados: { nombre: string; nombreLimpio?: string; cantidad: number; precio?: number; sugerencia?: any }[] = [];
       const productosEmparejados: { nombreFactura: string; nombreSistema: string; id: number }[] = [];
       const preciosActualizar: { id: number; precio: number; nombre: string }[] = [];
       const costosActualizar: { id: number; costo: number; nombre: string; unidadEnvase: number }[] = [];
