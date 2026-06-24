@@ -168,17 +168,21 @@ export async function createPurchase(data: {
     } catch { tieneNombreFactura = false; }
 
     const esc = (v: any) => v == null ? "NULL" : `'${String(v).replace(/'/g, "''")}'`;
+    const num = (v: any) => { const n = Number(v); return isNaN(n) ? 0 : n; };
     for (const item of data.items) {
       const nombreFactura = item.nombreFactura || item.productName;
+      const cant = num(item.quantity);
+      const costo = num(item.unitCost);
+      const subt = num(item.subtotal);
       if (tieneNombreFactura) {
         await db.execute(sql.raw(
           `INSERT INTO purchase_items (purchaseId, productName, nombreFactura, quantity, unitCost, subtotal, expiryDate)
-           VALUES (${purchaseId}, ${esc(item.productName)}, ${esc(nombreFactura)}, ${item.quantity}, ${esc(String(item.unitCost))}, ${esc(String(item.subtotal))}, ${esc(item.expiryDate || null)})`
+           VALUES (${purchaseId}, ${esc(item.productName)}, ${esc(nombreFactura)}, ${cant}, ${esc(String(costo))}, ${esc(String(subt))}, ${esc(item.expiryDate || null)})`
         ));
       } else {
         await db.execute(sql.raw(
           `INSERT INTO purchase_items (purchaseId, productName, quantity, unitCost, subtotal, expiryDate)
-           VALUES (${purchaseId}, ${esc(item.productName)}, ${item.quantity}, ${esc(String(item.unitCost))}, ${esc(String(item.subtotal))}, ${esc(item.expiryDate || null)})`
+           VALUES (${purchaseId}, ${esc(item.productName)}, ${cant}, ${esc(String(costo))}, ${esc(String(subt))}, ${esc(item.expiryDate || null)})`
         ));
       }
     }

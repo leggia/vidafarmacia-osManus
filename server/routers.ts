@@ -322,8 +322,10 @@ INSTRUCCIONES GENERALES:
     )
     .mutation(async ({ ctx, input }) => {
       const status = input.confirmDirectly ? "completed" : "draft";
-      const result = await db.createPurchase({
-        userId: ctx.user.id,
+      let result: any;
+      try {
+        result = await db.createPurchase({
+          userId: ctx.user.id,
         branchId: input.branchId,
         receiptNumber: input.receiptNumber,
         receiptType: input.receiptType || "BOLETA",
@@ -334,6 +336,10 @@ INSTRUCCIONES GENERALES:
         imageKey: input.imageKey,
         status,
       });
+      } catch (createError: any) {
+        console.error("[Compras] Error creando compra:", createError?.message, createError?.stack);
+        throw new Error(`No se pudo guardar la compra: ${createError?.message || "error desconocido"}`);
+      }
 
       // Si se completó y venía de un borrador, eliminar el borrador viejo para no duplicar
       if (input.confirmDirectly && input.borradorIdEliminar) {
