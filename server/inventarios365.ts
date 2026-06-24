@@ -1170,11 +1170,22 @@ class Inventarios365Service {
       const historialParaGuardar: Array<{ articuloId: number; articuloNombre: string; proveedor?: string; costoUnitario: number; precioVenta?: number; numComprobante?: string }> = [];
 
       for (const item of params.items) {
+        // Blindaje: si el item no tiene nombre válido, registrarlo como no encontrado
+        // y continuar (evita que un item mal creado rompa toda la sincronización).
+        if (!item || !item.nombre || String(item.nombre).trim() === "") {
+          console.warn("[Inventarios365] Item sin nombre válido, se omite:", JSON.stringify(item));
+          productosNoEncontrados.push({
+            nombre: item?.nombre || "(sin nombre)",
+            cantidad: Number(item?.cantidad) || 0,
+            precio: Number(item?.precio) || 0,
+          });
+          continue;
+        }
         // Buscar con filtro de proveedor si existe, sino buscar en todo el inventario
         const articulo = await this.buscarArticulo(item.nombre, idproveedor, params.proveedor);
         const score = articulo ? ((articulo as any)._score ?? 1.0) : 0;
         console.log(`[Fecha] "${item.nombre}" → fechaVencimiento recibida: ${JSON.stringify(item.fechaVencimiento)}`);
-        const nombreLimpio = item.nombre.replace(/^\d+\s+/, "").trim();
+        const nombreLimpio = String(item.nombre).replace(/^\d+\s+/, "").trim();
 
         // Con filtro de proveedor: threshold 0.50 (resultados ya son del proveedor correcto)
         // Sin filtro de proveedor: threshold 0.80 (más estricto para evitar falsos positivos)

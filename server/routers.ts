@@ -478,6 +478,41 @@ INSTRUCCIONES GENERALES:
       return db.getPurchaseById(input.id);
     }),
 
+  // Diagnóstico temporal: revisar un borrador y detectar items problemáticos
+  diagBorrador: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      const compra: any = await db.getPurchaseById(input.id);
+      if (!compra) return { error: "No existe la compra" };
+      const items = compra.items || [];
+      const problemas: any[] = [];
+      for (const it of items) {
+        const issues: string[] = [];
+        if (!it.productName || String(it.productName).trim() === "") issues.push("sin nombre");
+        if (it.quantity == null || isNaN(Number(it.quantity))) issues.push(`quantity inválido (${it.quantity})`);
+        if (it.unitCost == null || isNaN(Number(it.unitCost))) issues.push(`unitCost inválido (${it.unitCost})`);
+        if (it.subtotal == null || isNaN(Number(it.subtotal))) issues.push(`subtotal inválido (${it.subtotal})`);
+        problemas.push({
+          id: it.id,
+          productName: it.productName,
+          nombreFactura: it.nombreFactura,
+          quantity: it.quantity,
+          unitCost: it.unitCost,
+          subtotal: it.subtotal,
+          expiryDate: it.expiryDate,
+          issues: issues.length ? issues : ["OK"],
+        });
+      }
+      return {
+        compraId: compra.id,
+        receiptNumber: compra.receiptNumber,
+        supplier: compra.supplier,
+        status: compra.status,
+        totalItems: items.length,
+        items: problemas,
+      };
+    }),
+
   // Verifica si ya existe una compra COMPLETADA con el mismo número de factura
   // (para alertar de posible duplicado). Ignora borradores.
   verificarFacturaDuplicada: protectedProcedure
