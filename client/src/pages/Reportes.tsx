@@ -2,7 +2,7 @@ import { useState, useMemo } from "react";
 import { trpc } from "@/lib/trpc";
 import {
   TrendingUp, RefreshCw, Loader2, Package, Building2, Calendar,
-  ShoppingCart, Award, Coins, Percent, ChevronDown, ArrowUpRight,
+  ShoppingCart, Award, Coins, Percent, ChevronDown, ChevronUp, ArrowUpRight,
 } from "lucide-react";
 import { toast } from "sonner";
 import { BarChart, Bar, XAxis, ResponsiveContainer, Cell } from "recharts";
@@ -40,10 +40,7 @@ export default function Reportes() {
     { placeholderData: (prev) => prev }
   );
   // Compras realizadas del mes (usa el mismo selector de mes que la rentabilidad)
-  const comprasMes = trpc.ventas.comprasDelMes.useQuery(
-    { anioMes: mesRentabilidad },
-    { placeholderData: (prev) => prev }
-  );
+  const comprasMes = trpc.ventas.comprasDelMes.useQuery({ anioMes: mesRentabilidad });
 
   function seleccionarPeriodo(p: "actual" | "anterior") {
     setPeriodo(p);
@@ -423,17 +420,9 @@ export default function Reportes() {
 
                 {/* Lista de compras */}
                 <p className="text-[10px] font-semibold text-muted-foreground uppercase tracking-wider mb-1.5">Detalle</p>
-                <div className="space-y-1 max-h-64 overflow-auto">
+                <div className="space-y-1 max-h-96 overflow-auto pr-1">
                   {comprasMes.data!.compras.map((c: any) => (
-                    <div key={c.id} className="flex items-center justify-between gap-2 text-xs bg-muted/30 rounded-md px-2.5 py-1.5">
-                      <div className="min-w-0 flex-1">
-                        <p className="font-medium truncate">{c.receiptNumber || `Compra #${c.id}`}</p>
-                        <p className="text-[10px] text-muted-foreground truncate">
-                          {c.supplier || "Sin proveedor"}{c.branchName ? ` · ${c.branchName}` : ""} · {new Date(c.createdAt).toLocaleDateString("es-BO")}
-                        </p>
-                      </div>
-                      <span className="font-bold tabular-nums shrink-0">Bs {fmtBs(c.totalAmount)}</span>
-                    </div>
+                    <ComprasMesFila key={c.id} compra={c} fmtBs={fmtBs} />
                   ))}
                 </div>
                 <p className="text-[10px] text-muted-foreground mt-2">Compras registradas y sincronizadas en este mes. El total es lo invertido en inventario.</p>
@@ -491,6 +480,46 @@ function Panel({ titulo, icon, children, acento }: { titulo: string; icon: React
     <div className={`rounded-xl border bg-card p-4 shadow-sm ${borde}`}>
       <div className="flex items-center gap-2 mb-3 text-sm font-bold">{icon} {titulo}</div>
       {children}
+    </div>
+  );
+}
+
+// Fila de compra del mes con detalle expandible (factura completa)
+function ComprasMesFila({ compra, fmtBs }: { compra: any; fmtBs: (n: any) => string }) {
+  const [abierto, setAbierto] = useState(false);
+  const detalle = trpc.purchases.getById.useQuery({ id: compra.id }, { enabled: abierto });
+
+  return (
+    <div className="bg-muted/30 rounded-md overflow-hidden">
+      <button onClick={() => setAbierto(!abierto)} className="w-full flex items-center justify-between gap-2 text-xs px-2.5 py-1.5 hover:bg-muted/50 transition">
+        <div className="min-w-0 flex-1 text-left">
+          <p className="font-medium truncate">{compra.receiptNumber || `Compra #${compra.id}`}</p>
+          <p className="text-[10px] text-muted-foreground truncate">
+            {compra.supplier || "Sin proveedor"}{compra.branchName ? ` · ${compra.branchName}` : ""} · {new Date(compra.createdAt).toLocaleDateString("es-BO")}
+          </p>
+        </div>
+        <span className="font-bold tabular-nums shrink-0">Bs {fmtBs(compra.totalAmount)}</span>
+        {abierto ? <ChevronUp className="h-3.5 w-3.5 shrink-0 text-muted-foreground" /> : <ChevronDown className="h-3.5 w-3.5 shrink-0 text-muted-foreground" />}
+      </button>
+      {abierto && (
+        <div className="px-2.5 pb-2 pt-1 border-t border-border/50">
+          {detalle.isLoading ? (
+            <p className="text-[10px] text-muted-foreground py-1">Cargando detalle...</p>
+          ) : detalle.data?.items?.length ? (
+            <div className="space-y-1">
+              {detalle.data.items.map((it: any, i: number) => (
+                <div key={i} className="flex items-center justify-between gap-2 text-[11px]">
+                  <span className="truncate flex-1">{it.productName}</span>
+                  <span className="tabular-nums text-muted-foreground shrink-0">{fmtBs(it.quantity)} × {fmtBs(it.unitCost)}</span>
+                  <span className="tabular-nums font-semibold shrink-0 w-20 text-right">Bs {fmtBs(it.subtotal)}</span>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-[10px] text-muted-foreground py-1">Sin detalle de productos.</p>
+          )}
+        </div>
+      )}
     </div>
   );
 }
