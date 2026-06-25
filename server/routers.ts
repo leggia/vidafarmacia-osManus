@@ -305,11 +305,11 @@ INSTRUCCIONES GENERALES:
         totalAmount: z.number().optional(),
         items: z.array(
           z.object({
-            productName: z.string(),
+            productName: z.string().nullable().optional(),
             nombreFactura: z.string().nullable().optional(),
-            quantity: z.number(),
-            unitCost: z.number(),
-            subtotal: z.number(),
+            quantity: z.number().nullable().optional(),
+            unitCost: z.number().nullable().optional(),
+            subtotal: z.number().nullable().optional(),
             expiryDate: z.string().nullable().optional(),
             nuevoPrecioVenta: z.number().nullable().optional(),
           })
@@ -322,6 +322,17 @@ INSTRUCCIONES GENERALES:
     )
     .mutation(async ({ ctx, input }) => {
       const status = input.confirmDirectly ? "completed" : "draft";
+      // Sanitizar items: dar defaults seguros a valores inválidos para que un
+      // producto creado a medias no rompa la operación.
+      const itemsLimpios = (input.items || []).map((it) => ({
+        productName: (it.productName && String(it.productName).trim()) || "Producto sin nombre",
+        nombreFactura: it.nombreFactura ?? null,
+        quantity: Number(it.quantity) || 0,
+        unitCost: Number(it.unitCost) || 0,
+        subtotal: Number(it.subtotal) || (Number(it.quantity) || 0) * (Number(it.unitCost) || 0),
+        expiryDate: it.expiryDate ?? null,
+        nuevoPrecioVenta: it.nuevoPrecioVenta ?? null,
+      }));
       let result: any;
       try {
         result = await db.createPurchase({
@@ -331,7 +342,7 @@ INSTRUCCIONES GENERALES:
         receiptType: input.receiptType || "BOLETA",
         supplier: input.supplier,
         totalAmount: input.totalAmount,
-        items: input.items,
+        items: itemsLimpios,
         imageUrl: input.imageUrl,
         imageKey: input.imageKey,
         status,
@@ -365,7 +376,7 @@ INSTRUCCIONES GENERALES:
             tipoComprobante: input.receiptType || "BOLETA",
             numComprobante: input.receiptNumber || String(purchaseId),
             almacenNombre: input.almacenNombre || "principal",
-            items: input.items.map((item) => ({
+            items: itemsLimpios.map((item) => ({
               nombre: item.productName,
               cantidad: item.quantity,
               precio: item.unitCost,

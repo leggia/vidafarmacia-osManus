@@ -671,10 +671,15 @@ class Inventarios365Service {
    * Endpoint: GET /proveedor/selectProveedor?filtro=<nombre>
    */
   async buscarProveedor(nombre: string): Promise<ProveedorAPI | null> {
+    // Si no hay nombre de proveedor, no buscar (devolver null = sin filtro)
+    if (!nombre || String(nombre).trim() === "") {
+      console.warn("[Inventarios365] Proveedor sin nombre — se buscará sin filtro de proveedor");
+      return null;
+    }
     try {
       // Generar términos de búsqueda progresivamente más cortos
-      const terminos = this.extractSearchTerms(nombre);
-      const intentos = [nombre, ...terminos].slice(0, 5);
+      const terminos = this.extractSearchTerms(String(nombre));
+      const intentos = [String(nombre), ...terminos].slice(0, 5);
 
       for (const termino of intentos) {
         if (termino.length < 3) continue;
