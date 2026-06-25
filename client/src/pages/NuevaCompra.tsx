@@ -544,20 +544,20 @@ export default function NuevaCompra() {
       }
       setIsSubmitting(true);
       try {
-        const totalAmount = items.reduce((sum, i) => sum + i.subtotal, 0);
+        const totalAmount = items.reduce((sum, i) => sum + (Number(i.subtotal) || 0), 0);
         const result = await createPurchase.mutateAsync({
-          branchId: parseInt(branchId),
+          branchId: parseInt(branchId) || 0,
           receiptNumber,
           receiptType,
           supplier,
           almacenNombre,
-          totalAmount,
+          totalAmount: Number(totalAmount) || 0,
           items: items.map(i => ({
-            productName: i.productName,
-            nombreFactura: (i as any).nombreFacturaOriginal || productosEmparejados[i.productName] || i.productName,
-            quantity: i.quantity,
-            unitCost: i.unitCost,
-            subtotal: i.subtotal,
+            productName: i.productName || "Producto sin nombre",
+            nombreFactura: (i as any).nombreFacturaOriginal || productosEmparejados[i.productName] || i.productName || null,
+            quantity: Number(i.quantity) || 0,
+            unitCost: Number(i.unitCost) || 0,
+            subtotal: Number(i.subtotal) || (Number(i.quantity) || 0) * (Number(i.unitCost) || 0),
             expiryDate: i.expiryDate || null,
             nuevoPrecioVenta: (i.nuevoPrecioVenta != null && i.nuevoPrecioVenta !== i.precioVentaSistema) ? i.nuevoPrecioVenta : null,
           })),
@@ -633,7 +633,10 @@ export default function NuevaCompra() {
         }
         setLocation("/compras");
       } catch (err: any) {
-        toast.error(err.message || "Error al registrar la compra");
+        const detalle = err?.message || err?.data?.message || err?.shape?.message || "Error desconocido";
+        console.error("[Compra] Error al registrar:", err);
+        setModalError({ mensaje: `No se pudo registrar la compra: ${detalle}` });
+        toast.error(detalle, { duration: 8000 });
       }
       setIsSubmitting(false);
     },
