@@ -2136,8 +2136,15 @@ async function intentarHerramientaPorIntencion(pregunta: string): Promise<{ nomb
 
   const { asistenteTools } = await import("./asistente");
 
-  // Precio / cuánto cuesta un producto
-  if (q.includes("precio") || q.includes("cuesta") || q.includes("costo") || q.includes("vale")) {
+  // Historial de compra: "a cuánto compré X", "precio más bajo de compra"
+  if (q.includes("compr") || (q.includes("más bajo") && q.includes("pag"))) {
+    const limpio = q.replace(/(a\s+cu[aá]nto|cu[aá]nto|compr[eé]|compra|precio|m[aá]s\s+bajo|pagu[eé]|de|del|la|el|los|las|mi|\u00faltima|ultima|\?|¿)/g, " ").replace(/\s+/g, " ").trim();
+    if (limpio.length >= 2) {
+      return { nombre: "historialCompraProducto", resultado: await asistenteTools.historialCompraProducto(limpio) };
+    }
+  }
+  // Precio / cuánto cuesta un producto (precio de VENTA actual)
+  if (q.includes("precio") || q.includes("cuesta") || q.includes("vale")) {
     const limpio = q.replace(/(cu[aá]nto|cuesta|precio|de|del|la|el|los|las|vale|costo|es|\?|¿)/g, " ").replace(/\s+/g, " ").trim();
     if (limpio.length >= 2) {
       return { nombre: "infoProducto", resultado: await asistenteTools.infoProducto(limpio) };
