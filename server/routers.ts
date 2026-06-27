@@ -2303,7 +2303,7 @@ async function intentarHerramientaPorIntencion(pregunta: string): Promise<{ nomb
   }
   // Cuánto gané
   if (q.includes("gan")) {
-    return { nombre: "gananciaPeriodo", resultado: await asistenteTools.gananciaPeriodo(periodo) };
+    return { nombre: "gananciaPeriodo", resultado: await asistenteTools.gananciaPeriodo(periodo, sucursal) };
   }
   return null;
 }
@@ -2316,7 +2316,7 @@ async function ejecutarHerramienta(nombre: string, args: any): Promise<any> {
       case "ventasPeriodo": return await asistenteTools.ventasPeriodo(args.periodo, args.sucursal);
       case "comprasProveedor": return await asistenteTools.comprasProveedor(args.proveedor, args.periodo);
       case "productoMasVendido": return await asistenteTools.productoMasVendido(args.periodo, args.porValor);
-      case "gananciaPeriodo": return await asistenteTools.gananciaPeriodo(args.periodo);
+      case "gananciaPeriodo": return await asistenteTools.gananciaPeriodo(args.periodo, args.sucursal);
       case "infoProducto": return await asistenteTools.infoProducto(args.nombre);
       case "ventasCliente": return await asistenteTools.ventasCliente(args.cliente, args.periodo);
       case "trabajadoresSucursal": return await asistenteTools.trabajadoresSucursal(args.sucursal);
@@ -2376,7 +2376,7 @@ Para comparar sucursales usa una sola llamada. Nunca escribas funciones como tex
         { type: "function" as const, function: { name: "ventasPeriodo", description: "Ventas en un período (hoy/ayer/semana/mes/YYYY-MM), opcional por sucursal.", parameters: { type: "object", properties: { periodo: { type: "string" }, sucursal: { type: "string" } }, required: ["periodo"] } } },
         { type: "function" as const, function: { name: "comprasProveedor", description: "Compras a un proveedor en un período.", parameters: { type: "object", properties: { proveedor: { type: "string" }, periodo: { type: "string" } }, required: ["proveedor", "periodo"] } } },
         { type: "function" as const, function: { name: "productoMasVendido", description: "Productos más vendidos en un período.", parameters: { type: "object", properties: { periodo: { type: "string" }, porValor: { type: "boolean" } }, required: ["periodo"] } } },
-        { type: "function" as const, function: { name: "gananciaPeriodo", description: "Ganancia en un período.", parameters: { type: "object", properties: { periodo: { type: "string" } }, required: ["periodo"] } } },
+        { type: "function" as const, function: { name: "gananciaPeriodo", description: "Ganancia de un período: bruta y NETA (descontando gastos del mes). Opcional por sucursal.", parameters: { type: "object", properties: { periodo: { type: "string" }, sucursal: { type: "string" } }, required: ["periodo"] } } },
         { type: "function" as const, function: { name: "infoProducto", description: "Precio/costo de un producto por su nombre.", parameters: { type: "object", properties: { nombre: { type: "string" } }, required: ["nombre"] } } },
         { type: "function" as const, function: { name: "ventasCliente", description: "Productos vendidos a un cliente.", parameters: { type: "object", properties: { cliente: { type: "string" }, periodo: { type: "string" } }, required: ["cliente"] } } },
         { type: "function" as const, function: { name: "trabajadoresSucursal", description: "Trabajadores de una sucursal.", parameters: { type: "object", properties: { sucursal: { type: "string" } }, required: ["sucursal"] } } },

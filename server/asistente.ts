@@ -137,28 +137,46 @@ export const asistenteTools = {
   },
 
   // 5. Cuánto gané en un período (ingresos - costo de productos)
-  async gananciaPeriodo(periodo: string) {
+  async gananciaPeriodo(periodo: string, sucursal?: string) {
     const db = await getDb();
     if (!db) return { error: "Sin BD" };
     const { desde, hasta, etiqueta } = rangoFechas(periodo || "mes");
+    const anioMes = desde.slice(0, 7); // YYYY-MM para gastos
+    const filtroSuc = sucursal ? ` AND nombreSucursal LIKE ${esc("%" + sucursal + "%")}` : "";
+    const filtroSucD = sucursal ? ` AND d.nombreSucursal LIKE ${esc("%" + sucursal + "%")}` : "";
+
     const rIngreso = rows(await db.execute(sql.raw(
-      `SELECT COALESCE(SUM(total),0) as ingreso FROM ventas WHERE fecha >= ${esc(desde)} AND fecha <= ${esc(hasta)}`
+      `SELECT COALESCE(SUM(total),0) as ingreso FROM ventas WHERE fecha >= ${esc(desde)} AND fecha <= ${esc(hasta)}${filtroSuc}`
     )));
     const rCosto = rows(await db.execute(sql.raw(
       `SELECT COALESCE(SUM(d.cantidad * c.precioCostoUnid),0) as costo
        FROM ventas_detalle d JOIN productos_cache c ON c.nombre = d.articuloNombre
-       WHERE d.fecha >= ${esc(desde)} AND d.fecha <= ${esc(hasta)} AND c.precioCostoUnid > 0`
+       WHERE d.fecha >= ${esc(desde)} AND d.fecha <= ${esc(hasta)} AND c.precioCostoUnid > 0${filtroSucD}`
     )));
+    // Gastos del mes (NO tienen sucursal; siempre son generales)
+    const rGastos = rows(await db.execute(sql.raw(
+      `SELECT COALESCE(SUM(monto),0) as gastos FROM gastos_registro WHERE anioMes = ${esc(anioMes)}`
+    )));
+
     const ingreso = num(rIngreso[0]?.ingreso);
     const costo = num(rCosto[0]?.costo);
-    const ganancia = ingreso - costo;
-    return {
+    const gastos = num(rGastos[0]?.gastos);
+    const gananciaBruta = ingreso - costo;
+    const gananciaNeta = gananciaBruta - gastos;
+
+    const resultado: any = {
       periodo: etiqueta,
+      sucursal: sucursal || "todas las sucursales",
       ingresos: `Bs ${fmtBs(ingreso)}`,
       costoProductos: `Bs ${fmtBs(costo)}`,
-      gananciaBruta: `Bs ${fmtBs(ganancia)}`,
-      nota: "Ganancia bruta = ventas - costo de productos vendidos (con costo conocido). No descuenta sueldos ni gastos.",
+      gananciaBruta: `Bs ${fmtBs(gananciaBruta)}`,
+      gastosDelMes: `Bs ${fmtBs(gastos)}`,
+      gananciaNeta: `Bs ${fmtBs(gananciaNeta)}`,
+      nota: sucursal
+        ? "Para una sucursal: ingresos y costo son de esa sucursal, pero los gastos del mes son GENERALES (no están separados por sucursal), así que la ganancia neta resta el total de gastos."
+        : "Ganancia neta = ventas - costo de productos - gastos del mes. El costo solo cuenta productos con costo conocido.",
     };
+    return resultado;
   },
 
   // 6. Precio y stock de un producto
