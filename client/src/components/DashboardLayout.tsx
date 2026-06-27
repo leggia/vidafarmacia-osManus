@@ -34,6 +34,7 @@ import {
   ClipboardCheck,
   Users,
   Plus,
+  Sparkles,
 } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
@@ -42,6 +43,7 @@ import { Button } from "./ui/button";
 
 const menuItems = [
   { icon: LayoutDashboard, label: "Panel de Control", path: "/" },
+  { icon: Sparkles, label: "Asistente", path: "/asistente" },
   { icon: ShoppingCart, label: "Compras", path: "/compras" },
   { icon: ArrowLeftRight, label: "Transferencias", path: "/transferencias" },
   { icon: ClipboardCheck, label: "Inventario", path: "/inventario" },

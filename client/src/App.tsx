@@ -6,6 +6,7 @@ import ErrorBoundary from "./components/ErrorBoundary";
 import { ThemeProvider } from "./contexts/ThemeContext";
 import DashboardLayout from "./components/DashboardLayout";
 import Home from "./pages/Home";
+import Asistente from "./pages/Asistente";
 import Compras from "./pages/Compras";
 import NuevaCompra from "./pages/NuevaCompra";
 import Transferencias from "./pages/Transferencias";
@@ -47,6 +48,7 @@ function Router() {
         <Route path="/reportes" component={Reportes} />
         <Route path="/gastos" component={Gastos} />
         <Route path="/consulta" component={Consulta} />
+        <Route path="/asistente" component={Asistente} />
         <Route path="/404" component={NotFound} />
         <Route component={NotFound} />
       </Switch>
