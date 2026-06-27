@@ -359,4 +359,26 @@ export const asistenteTools = {
       return { error: `No pude consultar el stock en vivo: ${e?.message || "error"}` };
     }
   },
+
+  // 11. Quién tiene caja abierta AHORA (en vivo desde 365)
+  async cajasAbiertas() {
+    try {
+      const { inventarios365 } = await import("./inventarios365");
+      const cajas = await inventarios365.cajasAbiertas();
+      if (!cajas || cajas.length === 0) {
+        return { mensaje: "No hay cajas abiertas en este momento." };
+      }
+      return {
+        enVivo: true,
+        cajasAbiertas: cajas.map((c: any) => ({
+          usuario: c.nombreUsuario ?? c.nombre_usuario ?? c.usuario ?? c.nombre ?? `usuario ${c.idusuario ?? "?"}`,
+          sucursal: c.nombreSucursal ?? c.nombre_sucursal ?? c.sucursal ?? c.almacen ?? "no especificada",
+          apertura: c.fechaApertura ?? c.fecha_apertura ?? "",
+        })),
+        nota: "Cajas abiertas consultadas en tiempo real desde inventarios365.",
+      };
+    } catch (e: any) {
+      return { error: `No pude consultar las cajas abiertas: ${e?.message || "error"}` };
+    }
+  },
 };

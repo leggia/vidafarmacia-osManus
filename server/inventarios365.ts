@@ -934,6 +934,47 @@ class Inventarios365Service {
   }
 
   /**
+   * Listar las cajas ABIERTAS ahora mismo (fechaApertura sin fechaCierre).
+   * Devuelve los campos crudos para identificar usuario y sucursal.
+   */
+  async cajasAbiertas(): Promise<Array<any>> {
+    const abiertas: any[] = [];
+    let page = 1;
+    const maxPages = 10;
+    try {
+      while (page <= maxPages) {
+        const data = await this.get<any>(`/caja?page=${page}&buscar=&criterio=`);
+        const pag = data?.pagination ?? {};
+        let arr: any[] = [];
+        if (Array.isArray(data?.cajas)) arr = data.cajas;
+        else if (Array.isArray(data?.cajas?.data)) arr = data.cajas.data;
+        else if (Array.isArray(data?.data)) arr = data.data;
+        else if (Array.isArray(data?.movimientos)) arr = data.movimientos;
+        else if (Array.isArray(data)) arr = data;
+
+        if (page === 1 && arr[0]) {
+          console.log(`[Inventarios365] caja campos:`, Object.keys(arr[0]).join(","));
+          console.log(`[Inventarios365] caja ejemplo:`, JSON.stringify(arr[0]).substring(0, 500));
+        }
+
+        for (const c of arr) {
+          const cierre = c.fechaCierre ?? c.fecha_cierre ?? null;
+          // Caja abierta = tiene apertura pero NO cierre
+          if (!cierre || String(cierre).trim() === "" || String(cierre) === "null") {
+            abiertas.push(c);
+          }
+        }
+        const lastPage = pag.last_page ?? pag.lastPage ?? 1;
+        if (page >= lastPage || arr.length === 0) break;
+        page++;
+      }
+    } catch (e) {
+      console.error("[Inventarios365] Error leyendo cajas abiertas:", e);
+    }
+    return abiertas;
+  }
+
+  /**
    * Listar TODOS los proveedores del sistema (paginando).
    * Estructura: { pagination, personas:[...], idrol }
    */

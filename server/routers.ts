@@ -2323,6 +2323,7 @@ async function ejecutarHerramienta(nombre: string, args: any): Promise<any> {
       case "mejoresVendedores": return await asistenteTools.mejoresVendedores(args.periodo, args.sucursal);
       case "listarSucursales": return await asistenteTools.listarSucursales();
       case "stockProducto": return await asistenteTools.stockProducto(args.nombre, args.almacen);
+      case "cajasAbiertas": return await asistenteTools.cajasAbiertas();
       default: return { error: "Herramienta desconocida" };
     }
   } catch (e: any) {
@@ -2377,6 +2378,7 @@ const asistenteRouter = router({
         { type: "function" as const, function: { name: "mejoresVendedores", description: "Mejores vendedores en un período.", parameters: { type: "object", properties: { periodo: { type: "string" }, sucursal: { type: "string" } }, required: ["periodo"] } } },
         { type: "function" as const, function: { name: "listarSucursales", description: "Lista las sucursales.", parameters: { type: "object", properties: {} } } },
         { type: "function" as const, function: { name: "stockProducto", description: "Stock/existencias actuales de un producto en tiempo real, por almacén. Si se da un almacén (petrolera, lanza, cobol, principal/matriz) muestra solo ese; si no, muestra todos.", parameters: { type: "object", properties: { nombre: { type: "string" }, almacen: { type: "string" } }, required: ["nombre"] } } },
+        { type: "function" as const, function: { name: "cajasAbiertas", description: "Quién tiene caja abierta ahora mismo y en qué sucursal (tiempo real). Úsala para 'quién está vendiendo', 'quién abrió caja', 'quién está en cada sucursal ahora'.", parameters: { type: "object", properties: {} } } },
       ];
 
       const mensajes: any[] = [
