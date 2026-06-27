@@ -381,4 +381,46 @@ export const asistenteTools = {
       return { error: `No pude consultar las cajas abiertas: ${e?.message || "error"}` };
     }
   },
+
+  // 12. Historial de compra de un producto: precio más bajo y última compra
+  async historialCompraProducto(nombre: string) {
+    const db = await getDb();
+    if (!db) return { error: "Sin BD" };
+    const palabras = nombre.trim().split(/\s+/).filter(Boolean);
+    const cond = palabras.map(w => `i.productName LIKE ${esc("%" + w + "%")}`).join(" AND ");
+    const r = rows(await db.execute(sql.raw(
+      `SELECT i.productName, i.unitCost, p.supplier, p.createdAt
+       FROM purchase_items i JOIN purchases p ON p.id = i.purchaseId
+       WHERE ${cond} AND p.status='completed' AND i.unitCost > 0
+       ORDER BY p.createdAt DESC`
+    )));
+    if (r.length === 0) {
+      return { mensaje: `No encontré compras registradas del producto "${nombre}".` };
+    }
+    // Última compra (la más reciente, primera por el ORDER BY DESC)
+    const ultima = r[0];
+    // Precio más bajo
+    let masBaja = r[0];
+    for (const c of r) { if (num(c.unitCost) < num(masBaja.unitCost)) masBaja = c; }
+    const ultimaEsMasBaja = num(ultima.unitCost) <= num(masBaja.unitCost);
+    const fechaStr = (d: any) => { try { return new Date(d).toLocaleDateString("es-BO"); } catch { return String(d); } };
+    return {
+      producto: ultima.productName,
+      numeroCompras: r.length,
+      ultimaCompra: {
+        costo: `Bs ${fmtBs(ultima.unitCost)}`,
+        proveedor: ultima.supplier || "no especificado",
+        fecha: fechaStr(ultima.createdAt),
+      },
+      precioMasBajo: {
+        costo: `Bs ${fmtBs(masBaja.unitCost)}`,
+        proveedor: masBaja.supplier || "no especificado",
+        fecha: fechaStr(masBaja.createdAt),
+      },
+      ultimaEsLaMasBaja: ultimaEsMasBaja,
+      nota: ultimaEsMasBaja
+        ? "Tu última compra fue al precio más bajo registrado."
+        : "Tu última compra NO fue la más baja; hubo un precio menor antes.",
+    };
+  },
 };
