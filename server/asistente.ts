@@ -30,6 +30,12 @@ function rangoFechas(periodo: string): { desde: string; hasta: string; etiqueta:
     return { desde: iso(ini), hasta: iso(hoy), etiqueta: "los últimos 7 días" };
   }
   if (p.includes("mes")) {
+    // "mes anterior" / "mes pasado" → el mes calendario previo completo
+    if (p.includes("anterior") || p.includes("pasado")) {
+      const iniAnt = new Date(y, m - 1, 1);
+      const finAnt = new Date(y, m, 0);
+      return { desde: iso(iniAnt), hasta: iso(finAnt), etiqueta: "el mes anterior" };
+    }
     const ini = new Date(y, m, 1);
     return { desde: iso(ini), hasta: iso(hoy), etiqueta: "este mes" };
   }
@@ -78,7 +84,7 @@ export const asistenteTools = {
   async comprasProveedor(proveedor: string, periodo: string) {
     const db = await getDb();
     if (!db) return { error: "Sin BD" };
-    const { desde, hasta, etiqueta } = rangoFechas(periodo.includes("mes") || periodo.match(/\d{4}-\d{2}/) ? periodo : "mes");
+    const { desde, hasta, etiqueta } = rangoFechas(periodo || "mes");
     const r = rows(await db.execute(sql.raw(
       `SELECT COUNT(*) as n, COALESCE(SUM(totalAmount),0) as total FROM purchases
        WHERE status='completed' AND supplier LIKE ${esc("%" + proveedor + "%")}
@@ -96,7 +102,7 @@ export const asistenteTools = {
   async productoMasVendido(periodo: string, porValor = false) {
     const db = await getDb();
     if (!db) return { error: "Sin BD" };
-    const { desde, hasta, etiqueta } = rangoFechas(periodo.includes("mes") ? periodo : "mes");
+    const { desde, hasta, etiqueta } = rangoFechas(periodo || "mes");
     const orden = porValor ? "SUM(subtotal)" : "SUM(cantidad)";
     const r = rows(await db.execute(sql.raw(
       `SELECT articuloNombre, SUM(cantidad) as cant, SUM(subtotal) as valor
@@ -119,7 +125,7 @@ export const asistenteTools = {
   async gananciaPeriodo(periodo: string) {
     const db = await getDb();
     if (!db) return { error: "Sin BD" };
-    const { desde, hasta, etiqueta } = rangoFechas(periodo.includes("mes") ? periodo : "mes");
+    const { desde, hasta, etiqueta } = rangoFechas(periodo || "mes");
     const rIngreso = rows(await db.execute(sql.raw(
       `SELECT COALESCE(SUM(total),0) as ingreso FROM ventas WHERE fecha >= ${esc(desde)} AND fecha <= ${esc(hasta)}`
     )));
@@ -146,11 +152,47 @@ export const asistenteTools = {
     if (!db) return { error: "Sin BD" };
     const palabras = nombre.trim().split(/\s+/).filter(Boolean);
     const cond = palabras.map(w => `nombre LIKE ${esc("%" + w + "%")}`).join(" AND ");
+    // Primero contar cuántos coinciden
+    const cont = rows(await db.execute(sql.raw(
+      `SELECT COUNT(*) as n FROM productos_cache WHERE ${cond}`
+    )));
+    const total = num(cont[0]?.n);
+
+    if (total === 0) {
+      return { mensaje: `No encontré ningún producto que coincida con "${nombre}".` };
+    }
+
+    // Si hay demasiados (más de 10), pedir que afine la búsqueda
+    if (total > 10) {
+      const muestra = rows(await db.execute(sql.raw(
+        `SELECT nombre FROM productos_cache WHERE ${cond} ORDER BY nombre LIMIT 6`
+      )));
+      return {
+        demasiadosResultados: true,
+        cantidad: total,
+        mensaje: `Encontré ${total} productos que coinciden con "${nombre}". Es demasiado para listar. ¿Podrías darme el nombre más específico? Por ejemplo, algunos son: ${muestra.map((p: any) => p.nombre).join(", ")}.`,
+      };
+    }
+
     const r = rows(await db.execute(sql.raw(
       `SELECT nombre, codigo, precioUno, precioCostoUnid, nombreProveedor
-       FROM productos_cache WHERE ${cond} LIMIT 5`
+       FROM productos_cache WHERE ${cond} ORDER BY nombre LIMIT 10`
     )));
-    if (r.length === 0) return { mensaje: `No encontré un producto que coincida con "${nombre}".` };
+
+    // Si hay entre 4 y 10, mostrar lista resumida y pedir cuál si quiere detalle
+    if (total > 3) {
+      return {
+        variasPresentaciones: true,
+        cantidad: total,
+        productos: r.map((p: any) => ({
+          nombre: p.nombre,
+          precioVenta: `Bs ${fmtBs(p.precioUno)}`,
+        })),
+        mensaje: `Hay ${total} presentaciones que coinciden con "${nombre}". Aquí están con su precio. Si quieres el detalle completo (costo, proveedor) de una, dime cuál.`,
+      };
+    }
+
+    // 1-3 coincidencias: mostrar detalle completo
     return {
       productos: r.map((p: any) => ({
         nombre: p.nombre, codigo: p.codigo,

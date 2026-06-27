@@ -33,7 +33,7 @@ export default function Asistente() {
     try {
       const res = await preguntar.mutateAsync({
         pregunta: q,
-        historial: mensajes.slice(-6).map(m => ({ rol: m.rol, texto: m.texto })),
+        historial: mensajes.slice(-4).map(m => ({ rol: m.rol, texto: m.texto })),
       });
       setMensajes(prev => [...prev, { rol: "assistant", texto: res.respuesta, herramienta: res.usoHerramienta || undefined }]);
     } catch (e: any) {

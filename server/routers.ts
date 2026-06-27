@@ -2262,7 +2262,7 @@ const gastosRouter = router({
 // ─────────────────────────────────────────────────────────
 // Router del Asistente VidaFarma (Fase 1: solo consultas)
 // ─────────────────────────────────────────────────────────
-const MODELO_ASISTENTE = "llama-3.3-70b-versatile"; // modelo de texto vigente en Groq
+const MODELO_ASISTENTE = "openai/gpt-oss-20b"; // reemplazo oficial del Llama 8B (los Llama se descontinúan 17 jul 2026)
 
 const asistenteRouter = router({
   preguntar: protectedProcedure
@@ -2289,16 +2289,7 @@ const asistenteRouter = router({
         { type: "function" as const, function: { name: "listarSucursales", description: "Lista las sucursales disponibles.", parameters: { type: "object", properties: {} } } },
       ];
 
-      const systemPrompt = `Eres el asistente de VidaFarma, una farmacia en Cochabamba, Bolivia. Respondes preguntas sobre el negocio (ventas, compras, productos, ganancias, trabajadores) de forma profesional, clara y concisa, en español.
-
-Reglas:
-- Usa SIEMPRE las herramientas para obtener datos reales. Nunca inventes cifras.
-- Si la pregunta necesita un dato que una herramienta provee, llámala.
-- Los montos están en bolivianos (Bs).
-- Si no tienes una herramienta para algo, dilo con honestidad.
-- Responde de forma breve y directa, como un buen asistente de negocios.
-- Si la herramienta devuelve un mensaje de "no disponible", explícalo amablemente.
-- Esta es la fase de consultas: solo puedes LEER datos, no modificar nada todavía.`;
+      const systemPrompt = `Eres el asistente de VidaFarma, farmacia en Cochabamba, Bolivia. Respondes sobre el negocio en español, breve y profesional. Usa SIEMPRE las herramientas para datos reales (nunca inventes cifras). Montos en Bs. Solo puedes LEER datos, no modificar. Si no tienes una herramienta para algo, dilo.`;
 
       const mensajes: any[] = [
         { role: "system", content: systemPrompt },
@@ -2308,7 +2299,7 @@ Reglas:
 
       try {
         // Primera llamada: el LLM decide si usar una herramienta
-        const r1 = await invokeLLM({ model: MODELO_ASISTENTE, messages: mensajes, tools, toolChoice: "auto" });
+        const r1 = await invokeLLM({ model: MODELO_ASISTENTE, messages: mensajes, tools, toolChoice: "auto", maxTokens: 1024 });
         const msg = r1.choices?.[0]?.message;
         const toolCalls = msg?.tool_calls;
 
@@ -2346,12 +2337,17 @@ Reglas:
         }
 
         // Segunda llamada: el LLM redacta la respuesta final con los datos
-        const r2 = await invokeLLM({ model: MODELO_ASISTENTE, messages: mensajes });
+        const r2 = await invokeLLM({ model: MODELO_ASISTENTE, messages: mensajes, maxTokens: 1024 });
         const respuesta = r2.choices?.[0]?.message?.content || "Obtuve los datos pero no pude redactar la respuesta.";
         return { respuesta, usoHerramienta: herramientasUsadas.join(", ") };
       } catch (e: any) {
         console.error("[Asistente] Error:", e?.message);
-        return { respuesta: `Lo siento, hubo un problema al procesar tu pregunta: ${e?.message || "error desconocido"}`, error: true };
+        const msg = String(e?.message || "");
+        // Mensaje amable si es límite de velocidad de Groq
+        if (msg.includes("Rate limit") || msg.includes("rate_limit") || msg.includes("429") || msg.includes("TPM")) {
+          return { respuesta: "Estoy recibiendo muchas consultas muy rápido y alcancé el límite por minuto del servicio de IA. Espera unos segundos y vuelve a preguntar, por favor.", error: true };
+        }
+        return { respuesta: "Lo siento, hubo un problema al procesar tu pregunta. Intenta de nuevo en un momento.", error: true };
       }
     }),
 });
