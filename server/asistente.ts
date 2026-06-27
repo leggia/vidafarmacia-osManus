@@ -62,12 +62,27 @@ export const asistenteTools = {
        FROM ventas WHERE fecha >= ${esc(desde)} AND fecha <= ${esc(hasta)}${filtroSuc}`
     )));
     const data = r[0] || { numVentas: 0, total: 0 };
-    return {
+    const resultado: any = {
       periodo: etiqueta,
       sucursal: sucursal || "todas las sucursales",
       numeroVentas: num(data.numVentas),
       totalVendido: `Bs ${fmtBs(data.total)}`,
     };
+    // Si NO se filtró por sucursal, incluir el desglose por sucursal en la MISMA
+    // respuesta (así el modelo no necesita hacer varias llamadas).
+    if (!sucursal) {
+      const porSuc = rows(await db.execute(sql.raw(
+        `SELECT nombreSucursal, COUNT(*) as numVentas, COALESCE(SUM(total),0) as total
+         FROM ventas WHERE fecha >= ${esc(desde)} AND fecha <= ${esc(hasta)} AND nombreSucursal IS NOT NULL
+         GROUP BY nombreSucursal ORDER BY total DESC`
+      )));
+      resultado.porSucursal = porSuc.map((s: any) => ({
+        sucursal: s.nombreSucursal,
+        ventas: num(s.numVentas),
+        total: `Bs ${fmtBs(s.total)}`,
+      }));
+    }
+    return resultado;
   },
 
   // 2. Productos por agotarse (stock bajo)

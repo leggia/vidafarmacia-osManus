@@ -2270,29 +2270,39 @@ async function intentarHerramientaPorIntencion(pregunta: string): Promise<{ nomb
   const q = pregunta.toLowerCase();
   const periodo = q.includes("hoy") ? "hoy" : q.includes("ayer") ? "ayer" : q.includes("semana") ? "semana"
     : (q.includes("mes anterior") || q.includes("mes pasado")) ? "mes anterior" : "mes";
+  // Detectar sucursal mencionada en la pregunta
+  let sucursal: string | undefined;
+  if (q.includes("petrolera")) sucursal = "Petrolera";
+  else if (q.includes("lanza")) sucursal = "Lanza";
+  else if (q.includes("cobol")) sucursal = "Cobol";
+  else if (q.includes("matriz") || q.includes("casa matriz")) sucursal = "Casa Matriz";
+
+  const { asistenteTools } = await import("./asistente");
 
   // Precio / cuánto cuesta un producto
   if (q.includes("precio") || q.includes("cuesta") || q.includes("costo") || q.includes("vale")) {
-    // Extraer el nombre del producto (quitar palabras comunes)
     const limpio = q.replace(/(cu[aá]nto|cuesta|precio|de|del|la|el|los|las|vale|costo|es|\?|¿)/g, " ").replace(/\s+/g, " ").trim();
     if (limpio.length >= 2) {
-      const { asistenteTools } = await import("./asistente");
       return { nombre: "infoProducto", resultado: await asistenteTools.infoProducto(limpio) };
     }
   }
-  // Mejor vendedor
-  if (q.includes("mejor vendedor") || q.includes("mejor vendedora") || q.includes("quién vende") || q.includes("quien vende")) {
-    const { asistenteTools } = await import("./asistente");
-    return { nombre: "mejoresVendedores", resultado: await asistenteTools.mejoresVendedores(periodo) };
+  // Stock / existencias
+  if (q.includes("stock") || q.includes("unidades") || q.includes("existencia") || q.includes("cuántos tengo") || q.includes("cuantas tengo")) {
+    const limpio = q.replace(/(cu[aá]nt[oa]s?|stock|unidades|existencias?|tengo|de|del|la|el|los|las|en|hay|\?|¿|petrolera|lanza|cobol|matriz|casa)/g, " ").replace(/\s+/g, " ").trim();
+    if (limpio.length >= 2) {
+      return { nombre: "stockProducto", resultado: await asistenteTools.stockProducto(limpio) };
+    }
   }
-  // Cuánto vendí
+  // Mejor vendedor (con sucursal si se mencionó)
+  if (q.includes("mejor vendedor") || q.includes("mejor vendedora") || q.includes("quién vende") || q.includes("quien vende")) {
+    return { nombre: "mejoresVendedores", resultado: await asistenteTools.mejoresVendedores(periodo, sucursal) };
+  }
+  // Cuánto vendí (con sucursal si se mencionó)
   if (q.includes("vend") || q.includes("venta")) {
-    const { asistenteTools } = await import("./asistente");
-    return { nombre: "ventasPeriodo", resultado: await asistenteTools.ventasPeriodo(periodo) };
+    return { nombre: "ventasPeriodo", resultado: await asistenteTools.ventasPeriodo(periodo, sucursal) };
   }
   // Cuánto gané
   if (q.includes("gan")) {
-    const { asistenteTools } = await import("./asistente");
     return { nombre: "gananciaPeriodo", resultado: await asistenteTools.gananciaPeriodo(periodo) };
   }
   return null;
@@ -2354,7 +2364,7 @@ const asistenteRouter = router({
 
       // PREFIJO ESTABLE (para caché de contexto de DeepSeek): system + tools
       // SIEMPRE idénticos y al inicio. El contenido variable (pregunta) va al final.
-      const systemPrompt = `Asistente de VidaFarma (farmacia, Cochabamba, Bolivia). Responde en español, breve y profesional. NUNCA inventes datos: si no tienes una herramienta o no hay datos, di "No tengo esa información disponible". Solo lectura. Montos en Bs.`;
+      const systemPrompt = `Asistente de VidaFarma (farmacia, Cochabamba, Bolivia). Responde en español, breve y profesional. NUNCA inventes datos ni nombres de funciones: si no tienes una herramienta o no hay datos, di "No tengo esa información disponible". Para comparar sucursales usa una sola llamada (las herramientas ya devuelven el desglose por sucursal). Nunca escribas funciones como texto. Solo lectura. Montos en Bs.`;
 
       const tools = [
         { type: "function" as const, function: { name: "ventasPeriodo", description: "Ventas en un período (hoy/ayer/semana/mes/YYYY-MM), opcional por sucursal.", parameters: { type: "object", properties: { periodo: { type: "string" }, sucursal: { type: "string" } }, required: ["periodo"] } } },
@@ -2390,26 +2400,24 @@ const asistenteRouter = router({
 
         if (!toolCalls || toolCalls.length === 0) {
           const textoRaw = msg?.content || "";
-          // Red de seguridad: a veces el modelo escribe la llamada como texto
-          // (patrones tipo DSML/tool_calls o <function...>). Detectar y ejecutar.
-          const mFn = textoRaw.match(/(?:invoke\s+name=|function[=(\s])["']?(\w+)["']?/i);
-          if (mFn) {
-            const fnNombre = mFn[1];
-            // Extraer parámetros tipo name="x" string="y" o JSON
-            const args: any = {};
-            const paramRe = /name=["'](\w+)["'][^>]*?>([^<]+)</gi;
-            let pm;
-            while ((pm = paramRe.exec(textoRaw)) !== null) { args[pm[1]] = pm[2].trim(); }
-            const jsonM = textoRaw.match(/\{[^}]*\}/);
-            if (jsonM) { try { Object.assign(args, JSON.parse(jsonM[0])); } catch {} }
-            const resultado = await ejecutarHerramienta(fnNombre, args);
-            const r3 = await invokeDeepSeek({ maxTokens: 1024, messages: [
-              { role: "system", content: systemPrompt },
-              { role: "user", content: input.pregunta },
-              { role: "assistant", content: `Consulté ${fnNombre}: ${JSON.stringify(resultado)}` },
-              { role: "user", content: "Redacta la respuesta final breve en español con esos datos. No escribas funciones." },
-            ]});
-            return { respuesta: r3.choices?.[0]?.message?.content || "No pude redactar la respuesta.", usoHerramienta: fnNombre };
+          // Red de seguridad: si el modelo escribió funciones como texto (DSML/tool_calls,
+          // invoke name=..., <function...>), no intentamos parsear sus nombres (suele
+          // inventarlos). En su lugar, detectamos la INTENCIÓN de la pregunta y ejecutamos
+          // la herramienta correcta directamente.
+          const pareceFuncionTexto = /DSML|tool_calls|invoke\s+name=|<function|<\uff5c/i.test(textoRaw);
+          if (pareceFuncionTexto) {
+            const fallback = await intentarHerramientaPorIntencion(input.pregunta);
+            if (fallback) {
+              const r3 = await invokeDeepSeek({ maxTokens: 1024, messages: [
+                { role: "system", content: systemPrompt },
+                { role: "user", content: input.pregunta },
+                { role: "assistant", content: `Datos: ${JSON.stringify(fallback.resultado)}` },
+                { role: "user", content: "Redacta la respuesta final breve en español con esos datos. No escribas funciones." },
+              ]});
+              return { respuesta: r3.choices?.[0]?.message?.content || "No pude redactar la respuesta.", usoHerramienta: fallback.nombre };
+            }
+            // Si no detectamos intención, dar un mensaje útil en vez del texto crudo
+            return { respuesta: "No pude procesar bien esa consulta. ¿Puedes reformularla? Por ejemplo: \"ventas de hoy por sucursal\".", usoHerramienta: null };
           }
           return { respuesta: textoRaw || "No pude generar una respuesta.", usoHerramienta: null };
         }
