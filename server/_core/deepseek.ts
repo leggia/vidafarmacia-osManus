@@ -10,7 +10,7 @@
 import { ENV } from "./env";
 
 const DEEPSEEK_URL = "https://api.deepseek.com/chat/completions";
-const MODELO = "deepseek-chat"; // alias de v4-flash; cambiar a "deepseek-v4-flash" si el alias deja de existir
+const MODELO = "deepseek-v4-flash"; // modelo actual (deepseek-chat se deprecia 24/07/2026)
 
 export type DSMessage = {
   role: "system" | "user" | "assistant" | "tool";

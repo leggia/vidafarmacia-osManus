@@ -2372,7 +2372,7 @@ const asistenteRouter = router({
       const mensajes: any[] = [
         { role: "system", content: systemPrompt },
         ...(input.historial || []).map(h => ({ role: h.rol, content: h.texto })),
-        { role: "user", content: input.pregunta },
+        { role: "user", content: `[Fecha actual: ${new Date().toLocaleDateString("es-BO", { day: "numeric", month: "long", year: "numeric" })}] ${input.pregunta}` },
       ];
 
       try {
@@ -2389,7 +2389,29 @@ const asistenteRouter = router({
         }
 
         if (!toolCalls || toolCalls.length === 0) {
-          return { respuesta: msg?.content || "No pude generar una respuesta.", usoHerramienta: null };
+          const textoRaw = msg?.content || "";
+          // Red de seguridad: a veces el modelo escribe la llamada como texto
+          // (patrones tipo DSML/tool_calls o <function...>). Detectar y ejecutar.
+          const mFn = textoRaw.match(/(?:invoke\s+name=|function[=(\s])["']?(\w+)["']?/i);
+          if (mFn) {
+            const fnNombre = mFn[1];
+            // Extraer parámetros tipo name="x" string="y" o JSON
+            const args: any = {};
+            const paramRe = /name=["'](\w+)["'][^>]*?>([^<]+)</gi;
+            let pm;
+            while ((pm = paramRe.exec(textoRaw)) !== null) { args[pm[1]] = pm[2].trim(); }
+            const jsonM = textoRaw.match(/\{[^}]*\}/);
+            if (jsonM) { try { Object.assign(args, JSON.parse(jsonM[0])); } catch {} }
+            const resultado = await ejecutarHerramienta(fnNombre, args);
+            const r3 = await invokeDeepSeek({ maxTokens: 1024, messages: [
+              { role: "system", content: systemPrompt },
+              { role: "user", content: input.pregunta },
+              { role: "assistant", content: `Consulté ${fnNombre}: ${JSON.stringify(resultado)}` },
+              { role: "user", content: "Redacta la respuesta final breve en español con esos datos. No escribas funciones." },
+            ]});
+            return { respuesta: r3.choices?.[0]?.message?.content || "No pude redactar la respuesta.", usoHerramienta: fnNombre };
+          }
+          return { respuesta: textoRaw || "No pude generar una respuesta.", usoHerramienta: null };
         }
 
         // Ejecutar las herramientas que pidió
