@@ -18,6 +18,7 @@ export default function Asistente() {
   const [mensajes, setMensajes] = useState<Mensaje[]>([]);
   const [pregunta, setPregunta] = useState("");
   const preguntar = trpc.asistente.preguntar.useMutation();
+  const diagConfig = trpc.asistente.diagConfig.useQuery(undefined, { enabled: false });
   const finRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -48,10 +49,22 @@ export default function Asistente() {
         <div className="h-9 w-9 rounded-xl bg-gradient-to-br from-emerald-500 to-teal-600 flex items-center justify-center">
           <Sparkles className="h-5 w-5 text-white" />
         </div>
-        <div>
+        <div className="flex-1">
           <h1 className="text-lg font-bold leading-tight">Asistente VidaFarma</h1>
           <p className="text-[11px] text-muted-foreground">Pregúntame sobre ventas, compras, productos y más</p>
         </div>
+        <button
+          onClick={async () => {
+            const d = await diagConfig.refetch();
+            const r = d.data;
+            if (r) {
+              alert(`Diagnóstico DeepSeek:\n\nClave existe: ${r.existe ? "SÍ" : "NO"}\nLongitud: ${r.longitud} caracteres\nEmpieza con 'sk-': ${r.empiezaConSk ? "SÍ" : "NO"}\nTiene espacios: ${r.tieneEspacios ? "SÍ (¡problema!)" : "no"}\nPrimeros 4: ${r.primeros4}\n\nVariables similares encontradas: ${r.variablesSimilares.join(", ") || "ninguna"}`);
+            }
+          }}
+          className="text-[10px] px-2 py-1 rounded border border-muted-foreground/30 text-muted-foreground"
+        >
+          Diagnóstico
+        </button>
       </div>
 
       {/* Conversación */}

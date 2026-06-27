@@ -2320,6 +2320,21 @@ async function ejecutarHerramienta(nombre: string, args: any): Promise<any> {
 }
 
 const asistenteRouter = router({
+  // Diagnóstico temporal: verifica si la clave de DeepSeek está bien configurada
+  diagConfig: protectedProcedure.query(async () => {
+    const raw = process.env.DEEPSEEK_API_KEY;
+    // Listar nombres de variables que contengan "DEEP" o "SEEK" (por si hay typo)
+    const similares = Object.keys(process.env).filter(k => /deep|seek/i.test(k));
+    return {
+      existe: !!raw,
+      longitud: raw ? raw.length : 0,
+      empiezaConSk: raw ? raw.startsWith("sk-") : false,
+      tieneEspacios: raw ? (raw !== raw.trim()) : false,
+      primeros4: raw ? raw.substring(0, 4) : "",
+      variablesSimilares: similares,
+    };
+  }),
+
   preguntar: protectedProcedure
     .input(z.object({
       pregunta: z.string(),
