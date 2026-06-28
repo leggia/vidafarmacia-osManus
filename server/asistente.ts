@@ -569,7 +569,21 @@ export const asistenteTools = {
         )));
         if (pr[0]?.idProveedor) idProv = String(pr[0].idProveedor);
       }
-      articulos = await inventarios365.listarArticulos("", idProv);
+      // Si se filtra por sucursal, usar el stock del ALMACÉN de esa sucursal
+      // (stock por almacén). Si no, el stock total.
+      const ALMACENES: Record<string, number> = { petrolera: 2, lanza: 3, cobol: 4, matriz: 1, principal: 1 };
+      let idAlmacen: number | null = null;
+      if (sucursal) {
+        const s = sucursal.toLowerCase();
+        for (const k of Object.keys(ALMACENES)) { if (s.includes(k)) { idAlmacen = ALMACENES[k]; break; } }
+      }
+      if (idAlmacen) {
+        // Stock real del almacén de la sucursal
+        const inv = await inventarios365.listarParaInventario(idAlmacen, idProv);
+        articulos = inv.map((a: any) => ({ nombre: a.nombre, stock: a.stock, nombre_proveedor: a.proveedor }));
+      } else {
+        articulos = await inventarios365.listarArticulos("", idProv);
+      }
     } catch (e: any) {
       return { error: `No pude consultar stock en 365: ${e?.message || "error"}` };
     }
@@ -615,7 +629,7 @@ export const asistenteTools = {
       sucursal: sucursal || "todas (rotación global)",
       criterio: "Alta venta el mes pasado y stock actual bajo (≤10).",
       urgentes: urgentes.slice(0, 20),
-      nota: sucursal ? "La rotación es de la sucursal indicada, pero el stock de 365 es el total (no por almacén)." : undefined,
+      nota: sucursal ? "Rotación y stock son de la sucursal/almacén indicado." : "Rotación y stock totales (todas las sucursales).",
     };
   },
 };
