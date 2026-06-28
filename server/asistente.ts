@@ -488,4 +488,46 @@ export const asistenteTools = {
       nota: r.nota + " (Mes concluido por defecto.)",
     };
   },
+
+  // 14. Estado de pagos de gastos: qué se pagó y qué falta, por sucursal
+  async estadoPagosGastos(periodo?: string, sucursal?: string) {
+    const db = await getDb();
+    if (!db) return { error: "Sin BD" };
+    // Por defecto el mes actual (los pagos pendientes son del mes en curso)
+    const anioMes = (() => {
+      const m = (periodo || "").match(/(\d{4})-(\d{2})/);
+      if (m) return `${m[1]}-${m[2]}`;
+      if ((periodo || "").includes("anterior") || (periodo || "").includes("pasado")) {
+        const h = new Date(); const a = new Date(h.getFullYear(), h.getMonth() - 1, 1);
+        return a.toISOString().slice(0, 7);
+      }
+      return new Date().toISOString().slice(0, 7);
+    })();
+    const filtroSuc = sucursal ? ` AND sucursal LIKE ${esc("%" + sucursal + "%")}` : "";
+    const r = rows(await db.execute(sql.raw(
+      `SELECT nombre, categoria, monto, pagado, sucursal FROM gastos_registro
+       WHERE anioMes = ${esc(anioMes)}${filtroSuc}
+       ORDER BY pagado ASC, sucursal, monto DESC`
+    )));
+    if (r.length === 0) {
+      return { mensaje: `No hay gastos registrados para ${anioMes}${sucursal ? " en " + sucursal : ""}.` };
+    }
+    const pagados = r.filter((g: any) => num(g.pagado) === 1);
+    const pendientes = r.filter((g: any) => num(g.pagado) !== 1);
+    const sumar = (arr: any[]) => arr.reduce((t, g) => t + num(g.monto), 0);
+    return {
+      mes: anioMes,
+      sucursal: sucursal || "todas",
+      pendientesDePago: pendientes.map((g: any) => ({
+        nombre: g.nombre, categoria: g.categoria,
+        monto: `Bs ${fmtBs(g.monto)}`, sucursal: g.sucursal || "general",
+      })),
+      totalPendiente: `Bs ${fmtBs(sumar(pendientes))}`,
+      yaPagados: pagados.map((g: any) => ({
+        nombre: g.nombre, monto: `Bs ${fmtBs(g.monto)}`, sucursal: g.sucursal || "general",
+      })),
+      totalPagado: `Bs ${fmtBs(sumar(pagados))}`,
+      nota: "Los sueldos calculados por asistencia no están aquí; esto cubre los gastos del módulo de gastos (alquiler, luz, internet, etc.).",
+    };
+  },
 };
