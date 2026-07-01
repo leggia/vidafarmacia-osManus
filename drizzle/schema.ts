@@ -83,6 +83,7 @@ export const purchaseItems = mysqlTable("purchase_items", {
   matched: int("matched").default(0), // 1 = matched to local product
   nombreFactura: varchar("nombreFactura", { length: 500 }), // nombre original en la factura (preserva emparejamiento)
   expiryDate: varchar("expiryDate", { length: 20 }), // Fecha de vencimiento YYYY-MM-DD
+  precioVenta: decimal("precioVenta", { precision: 12, scale: 4 }), // precio de venta definido al comprar
   createdAt: timestamp("createdAt").defaultNow().notNull(),
 });
 export type PurchaseItem = typeof purchaseItems.$inferSelect;
