@@ -290,7 +290,8 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
   // Los modelos qwen razonan ("thinking") por defecto: gastan el presupuesto de
   // tokens pensando y el content llega vacío/roto (la extracción de facturas
   // fallaba por esto). Para extracción no hace falta razonar: desactivarlo.
-  if (resolvedModel.startsWith("qwen")) {
+  const esQwen = resolvedModel.startsWith("qwen");
+  if (esQwen) {
     payload.reasoning_effort = "none";
   }
 
@@ -306,7 +307,11 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     payload.tool_choice = normalizedToolChoice;
   }
 
-  payload.max_tokens = params.maxTokens || params.max_tokens || 8000;
+  // El tier gratuito de Groq para qwen limita a 8000 tokens/minuto TOTALES
+  // (prompt + imagen + reserva de respuesta). Con max_tokens=8000 la petición
+  // pedía ~12500 y Groq la rechazaba (413). 3000 alcanza para facturas de 30+
+  // productos (~2500 tokens de JSON) y deja espacio para la imagen.
+  payload.max_tokens = params.maxTokens || params.max_tokens || (esQwen ? 3000 : 8000);
 
   const normalizedResponseFormat = normalizeResponseFormat({
     responseFormat,
