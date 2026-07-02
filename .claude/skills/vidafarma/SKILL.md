@@ -57,7 +57,7 @@ Subir versión en package.json cada commit. Actual: ~v1.73.1.
 - Arquitectura segura: herramientas con SQL fijo; el modelo solo elige cuál llamar.
 - Anti-alucinación estricto. Red de seguridad función-como-texto (intentarHerramientaPorIntencion).
 - Herramientas (server/asistente.ts): ventasPeriodo, comprasProveedor, productoMasVendido, gananciaPeriodo (neta), infoProducto, ventasCliente, trabajadoresSucursal, mejoresVendedores, listarSucursales, stockProducto (por almacén), cajasAbiertas, historialCompraProducto, rentabilidadSucursales, estadoPagosGastos, productosUrgentes, pedidoSucursal (índice de cobertura).
-- Lector de facturas: Groq (server/_core/llm.ts). PENDIENTE migrar a visión vigente.
+- Lector de facturas: Groq con qwen/qwen3.6-27b (server/_core/llm.ts), migrado jul 2026 (llama-4-scout se apagó). Override: env GROQ_VISION_MODEL.
 
 ## Estructura
 

@@ -49,7 +49,7 @@ App web (Node.js/TypeScript, React, tRPC, Drizzle/MySQL) de gestión para una fa
 2. Probamos GPT-OSS 20B → rompía tool calling (formato "harmony": "Tools should have a name").
 3. Llama 3.1 8B → resolvía rate limit pero generaba funciones mal formadas.
 4. **DeepSeek v4-flash** (final): barato, estable, buen español, caché de contexto. Luis cargó $2 de saldo y funciona.
-- Pendiente: los modelos Llama de Groq se deprecian (lector de facturas usa Groq, migrar a modelo de visión vigente).
+- Lector de facturas (Groq): migrado a `qwen/qwen3.6-27b` (v1.74.1, jul 2026) porque llama-4-scout se apagaba el 17/07/2026. Es el multimodal en producción de Groq. Override con env `GROQ_VISION_MODEL`.
 
 ## Estado de la migración a Claude Code
 
@@ -57,8 +57,15 @@ Luis tiene una PC 24/7 en la sucursal Petrolera (también usada para ventas) y p
 
 ## Pendientes
 
-- Migrar lector de facturas (Groq) a modelo de visión vigente antes de que se deprecie.
+- Verificar con una factura real que la extracción funciona bien con qwen3.6-27b (migrado v1.74.1).
 - Consulta de retraso de vendedor (verificar estructura asistencia/sueldos).
 - Fase 2 del asistente: acciones (cambiar precio, corregir inventario) con confirmación + auditoría (quién/qué/cuándo). Luis confirmó querer auditoría.
 - Rotar token GitHub si se expuso.
 - Ideas: módulo Redes Sociales/Facebook, importar ventas por Excel, pedido como archivo Excel descargable.
+
+## Hoja de ruta empresarial (definida jul 2026 con Luis)
+
+Prioridades para diferenciarse de la competencia, en orden:
+1. **Fidelización de clientes crónicos**: detectar patrones de recompra mensual (hipertensión, diabetes) y generar lista diaria de clientes por recordar vía WhatsApp. La mayor oportunidad de ingresos recurrentes.
+2. **Alerta de vencimientos**: panel de productos por vencer (60/90 días) con valor en Bs, para rematar a tiempo. Ya se captura fecha de vencimiento en compras.
+3. **Alerta de quiebres de stock**: convertir productosUrgentes en aviso automático matutino por sucursal.

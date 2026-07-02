@@ -279,8 +279,10 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     response_format,
   } = params;
 
+  // Modelo de visión por defecto. llama-4-scout se apaga el 17/07/2026;
+  // qwen3.6-27b es el multimodal en PRODUCCIÓN de Groq (visión + JSON mode).
   const payload: Record<string, unknown> = {
-    model: model || "meta-llama/llama-4-scout-17b-16e-instruct",
+    model: model || process.env.GROQ_VISION_MODEL || "qwen/qwen3.6-27b",
     messages: messages.map(normalizeMessage),
   };
 
