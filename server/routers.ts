@@ -208,6 +208,7 @@ INSTRUCCIONES GENERALES:
         { role: "user" as const, content: userContent },
       ];
       let extraccionExitosa = false;
+      let ultimoError = "";
       for (let intento = 0; intento < 3; intento++) {
         try {
           if (intento > 0) {
@@ -219,20 +220,23 @@ INSTRUCCIONES GENERALES:
             response_format: { type: "json_object" },
           });
           const rawContent = resultToUse.choices[0]?.message?.content;
-          console.log(`[LLM] Respuesta raw (intento ${intento + 1}):`, String(rawContent || "").substring(0, 200));
+          const finishReason = resultToUse.choices[0]?.finish_reason;
+          console.log(`[LLM] Respuesta raw (intento ${intento + 1}, finish=${finishReason}):`, String(rawContent || "").substring(0, 200));
           if (typeof rawContent === "string" && rawContent.trim()) {
             const clean = rawContent.replace(/```json|```/g, "").trim();
             extracted = JSON.parse(clean);
             extraccionExitosa = true;
             break;
           }
+          ultimoError = `respuesta vacía del modelo (finish_reason=${finishReason})`;
         } catch (e: any) {
-          console.error(`[LLM] Error intento ${intento + 1}:`, e?.message || e);
+          ultimoError = String(e?.message || e).substring(0, 400);
+          console.error(`[LLM] Error intento ${intento + 1}:`, ultimoError);
         }
       }
 
       if (!extraccionExitosa) {
-        throw new Error("No se pudo extraer la factura. Puede tener demasiados productos o baja calidad de imagen. Intenta de nuevo o usa una foto más clara.");
+        throw new Error(`No se pudo extraer la factura. Detalle técnico: ${ultimoError || "sin detalle"}`);
       }
 
       console.log("[LLM] Extracción completada:", JSON.stringify(extracted, null, 2).substring(0, 500));
