@@ -1,16 +1,33 @@
 import "dotenv/config";
 import express from "express";
+import type { Request, Response, NextFunction } from "express";
 import { createServer } from "http";
 import net from "net";
 import { createExpressMiddleware } from "@trpc/server/adapters/express";
 import { registerOAuthRoutes } from "./oauth";
 import { appRouter } from "../routers";
 import { createContext } from "./context";
+import { sdk } from "./sdk";
 import { serveStatic, setupVite } from "./vite";
 import { inventarios365 } from "../inventarios365";
 import { getDb } from "../db";
 import { sql } from "drizzle-orm";
 import { productosCache } from "../productos-cache";
+
+// Exige sesión con rol admin. Protege /api/admin/* — antes eran accesibles
+// por cualquiera en internet sin login (borraban datos y filtraban info interna).
+async function requireAdmin(req: Request, res: Response, next: NextFunction) {
+  try {
+    const user = await sdk.authenticateRequest(req);
+    if (user.role !== "admin") {
+      res.status(403).json({ error: "Solo administradores" });
+      return;
+    }
+    next();
+  } catch {
+    res.status(401).json({ error: "No autenticado" });
+  }
+}
 
 function isPortAvailable(port: number): Promise<boolean> {
   return new Promise(resolve => {
@@ -39,6 +56,9 @@ async function startServer() {
   app.use(express.urlencoded({ limit: "50mb", extended: true }));
   // Confiar en el proxy de Railway para HTTPS
   app.set("trust proxy", 1);
+
+  // Todas las rutas /api/admin/* requieren sesión con rol admin.
+  app.use("/api/admin", requireAdmin);
 
   // Endpoint admin para limpiar cache (solo en producción)
   app.post("/api/admin/clear-cache", async (_req, res) => {

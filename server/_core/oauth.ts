@@ -9,13 +9,52 @@ import { getSessionCookieOptions } from "./cookies";
 import { sdk } from "./sdk";
 import crypto from "crypto";
 
-// Usuarios permitidos - configurable via env vars
+// Usuarios permitidos - configurable via env vars. Si falta la contraseña,
+// NUNCA caer a un valor público conocido (quedaría expuesto en GitHub): se
+// genera una aleatoria en el arranque y ese login queda deshabilitado hasta
+// que se configure la variable real en Railway.
+function passSegura(envVar: string, etiqueta: string): string {
+  const v = process.env[envVar];
+  if (v) return v;
+  console.warn(`[Auth] ${envVar} no configurado — login de ${etiqueta} deshabilitado hasta que se configure en Railway.`);
+  return crypto.randomBytes(24).toString("hex");
+}
+
 const ADMIN_USER = process.env.ADMIN_USER || "admin";
-const ADMIN_PASS = process.env.ADMIN_PASS || "vidafarma2026";
+const ADMIN_PASS = passSegura("ADMIN_PASS", "admin");
 const ADMIN_EMAIL = process.env.ADMIN_EMAIL || "admin@vidafarma.com";
 // Usuario de SOLO CONSULTA (ver precios y stock) — para contingencias (apagones, etc.)
 const VIEWER_USER = process.env.VIEWER_USER || "consulta";
-const VIEWER_PASS = process.env.VIEWER_PASS || "consulta2026";
+const VIEWER_PASS = passSegura("VIEWER_PASS", "consulta");
+
+// Rate limiting simple en memoria para /api/auth/login (sin dependencias nuevas).
+// Evita fuerza bruta: máximo 8 intentos fallidos cada 10 min por IP.
+const INTENTOS_MAX = 8;
+const VENTANA_MS = 10 * 60 * 1000;
+const intentosPorIp = new Map<string, { intentos: number; desde: number }>();
+
+function loginBloqueado(ip: string): boolean {
+  const registro = intentosPorIp.get(ip);
+  if (!registro) return false;
+  if (Date.now() - registro.desde > VENTANA_MS) {
+    intentosPorIp.delete(ip);
+    return false;
+  }
+  return registro.intentos >= INTENTOS_MAX;
+}
+
+function registrarIntentoFallido(ip: string) {
+  const registro = intentosPorIp.get(ip);
+  if (!registro || Date.now() - registro.desde > VENTANA_MS) {
+    intentosPorIp.set(ip, { intentos: 1, desde: Date.now() });
+  } else {
+    registro.intentos++;
+  }
+}
+
+function limpiarIntentos(ip: string) {
+  intentosPorIp.delete(ip);
+}
 
 export function registerOAuthRoutes(app: Express) {
   // ─── Página de login simple ───────────────────────────────────────────────
@@ -140,6 +179,12 @@ export function registerOAuthRoutes(app: Express) {
 
   // ─── API de login ─────────────────────────────────────────────────────────
   app.post("/api/auth/login", async (req: Request, res: Response) => {
+    const ip = req.ip || req.socket.remoteAddress || "desconocida";
+    if (loginBloqueado(ip)) {
+      res.status(429).json({ success: false, error: "Demasiados intentos. Espera unos minutos e intenta de nuevo." });
+      return;
+    }
+
     const { usuario, password } = req.body;
 
     // Determinar qué usuario es y su rol
@@ -153,9 +198,11 @@ export function registerOAuthRoutes(app: Express) {
     }
 
     if (!rol) {
+      registrarIntentoFallido(ip);
       res.status(401).json({ success: false, error: "Usuario o contraseña incorrectos" });
       return;
     }
+    limpiarIntentos(ip);
 
     try {
       console.log("[Auth] Login attempt for:", usuario, "rol:", rol);

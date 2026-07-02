@@ -538,14 +538,13 @@ INSTRUCCIONES GENERALES:
       const { sql } = await import("drizzle-orm");
       const dbc = await getDb();
       if (!dbc) return { duplicada: false };
-      const esc = (v: string) => `'${String(v).replace(/'/g, "''")}'`;
       try {
-        const filtroSup = input.supplier ? ` AND supplier = ${esc(input.supplier)}` : "";
-        const r: any = await dbc.execute(sql.raw(
-          `SELECT id, supplier, createdAt FROM purchases
-           WHERE receiptNumber = ${esc(input.receiptNumber)} AND status = 'completed'${filtroSup}
-           ORDER BY createdAt DESC LIMIT 1`
-        ));
+        const filtroSup = input.supplier ? sql`AND supplier = ${input.supplier}` : sql``;
+        const r: any = await dbc.execute(sql`
+          SELECT id, supplier, createdAt FROM purchases
+           WHERE receiptNumber = ${input.receiptNumber} AND status = 'completed' ${filtroSup}
+           ORDER BY createdAt DESC LIMIT 1
+        `);
         const rows = Array.isArray(r) ? r[0] : r?.rows ?? r;
         const existe = Array.isArray(rows) && rows.length > 0;
         return { duplicada: existe, compra: existe ? rows[0] : null };
@@ -743,13 +742,13 @@ const dashboardRouter = router({
 // ─── Confirmaciones Router ───────────────────────────────────────────────────
 const confirmacionesRouter = router({
   // Estadísticas del sistema de confirmaciones
-  estadisticas: publicProcedure.query(async () => {
+  estadisticas: protectedProcedure.query(async () => {
     const { confirmacionesService } = await import("./confirmaciones");
     return confirmacionesService.estadisticas();
   }),
 
   // Confirmar emparejamiento: nombre en factura → artículo en sistema
-  confirmar: publicProcedure
+  confirmar: protectedProcedure
     .input(z.object({
       proveedor: z.string(),
       nombreFactura: z.string(),
@@ -768,7 +767,7 @@ const confirmacionesRouter = router({
     }),
 
   // Invalidar una confirmación
-  invalidar: publicProcedure
+  invalidar: protectedProcedure
     .input(z.object({ proveedor: z.string(), nombreFactura: z.string() }))
     .mutation(async ({ input }) => {
       const { confirmacionesService } = await import("./confirmaciones");
@@ -777,7 +776,7 @@ const confirmacionesRouter = router({
     }),
 
   // Buscar confirmación guardada para un producto específico
-  buscarConfirmacion: publicProcedure
+  buscarConfirmacion: protectedProcedure
     .input(z.object({ proveedor: z.string(), nombreFactura: z.string() }))
     .query(async ({ input }) => {
       const { confirmacionesService } = await import("./confirmaciones");
@@ -785,7 +784,7 @@ const confirmacionesRouter = router({
     }),
 
   // Buscar artículo en sistema para confirmar manualmente
-  buscarArticulo: publicProcedure
+  buscarArticulo: protectedProcedure
     .input(z.object({ termino: z.string(), idProveedor: z.number().optional(), nombreProveedor: z.string().optional() }))
     .query(async ({ input }) => {
       const { inventarios365 } = await import("./inventarios365");
@@ -825,25 +824,25 @@ const confirmacionesRouter = router({
     }),
 
   // Verificar validez de todos los IDs guardados
-  verificar: publicProcedure.mutation(async () => {
+  verificar: protectedProcedure.mutation(async () => {
     const { confirmacionesService } = await import("./confirmaciones");
     return confirmacionesService.verificar();
   }),
 
   // Listar todas las confirmaciones
-  todos: publicProcedure.query(async () => {
+  todos: protectedProcedure.query(async () => {
     const { confirmacionesService } = await import("./confirmaciones");
     return confirmacionesService.todos();
   }),
 
   // Listar categorías del sistema
-  listarCategorias: publicProcedure.query(async () => {
+  listarCategorias: protectedProcedure.query(async () => {
     const { inventarios365 } = await import("./inventarios365");
     return inventarios365.listarCategorias();
   }),
 
   // Buscar proveedores del sistema (para selección/emparejamiento manual)
-  listarProveedores: publicProcedure
+  listarProveedores: protectedProcedure
     .input(z.object({ filtro: z.string() }))
     .query(async ({ input }) => {
       const { inventarios365 } = await import("./inventarios365");
@@ -851,7 +850,7 @@ const confirmacionesRouter = router({
     }),
 
   // Buscar el proveedor del sistema aprendido para un nombre de factura
-  buscarProveedorConfirmado: publicProcedure
+  buscarProveedorConfirmado: protectedProcedure
     .input(z.object({ nombreFactura: z.string() }))
     .query(async ({ input }) => {
       const { confirmacionesProveedoresService } = await import("./confirmaciones-proveedores");
@@ -859,7 +858,7 @@ const confirmacionesRouter = router({
     }),
 
   // Confirmar (aprender) el emparejamiento de un proveedor
-  confirmarProveedor: publicProcedure
+  confirmarProveedor: protectedProcedure
     .input(z.object({ nombreFactura: z.string(), proveedorId: z.string(), proveedorNombre: z.string() }))
     .mutation(async ({ input }) => {
       const { confirmacionesProveedoresService } = await import("./confirmaciones-proveedores");
@@ -868,7 +867,7 @@ const confirmacionesRouter = router({
     }),
 
   // Analizar el costo de un producto vs su historial de compras
-  analizarPrecio: publicProcedure
+  analizarPrecio: protectedProcedure
     .input(z.object({ articuloId: z.number(), costoActual: z.number() }))
     .query(async ({ input }) => {
       const { historialPreciosService } = await import("./historial-precios");
@@ -876,7 +875,7 @@ const confirmacionesRouter = router({
     }),
 
   // Historial completo de precios de un producto (consultas)
-  historialPrecios: publicProcedure
+  historialPrecios: protectedProcedure
     .input(z.object({ articuloId: z.number() }))
     .query(async ({ input }) => {
       const { historialPreciosService } = await import("./historial-precios");
@@ -884,7 +883,7 @@ const confirmacionesRouter = router({
     }),
 
   // Sugerir categoría para un producto usando IA
-  sugerirCategoria: publicProcedure
+  sugerirCategoria: protectedProcedure
     .input(z.object({ nombreProducto: z.string() }))
     .query(async ({ input }) => {
       const { inventarios365 } = await import("./inventarios365");
@@ -920,7 +919,7 @@ const confirmacionesRouter = router({
     }),
 
   // Crear un producto nuevo en el sistema
-  crearProducto: publicProcedure
+  crearProducto: protectedProcedure
     .input(z.object({
       nombre: z.string(),
       codigo: z.string().optional(),
@@ -959,16 +958,16 @@ const confirmacionesRouter = router({
 
 // ─── Cache Router ─────────────────────────────────────────────────────────────
 const cacheRouter = router({
-  estadisticas: publicProcedure.query(async () => {
+  estadisticas: protectedProcedure.query(async () => {
     const { productosCache } = await import("./productos-cache");
     return productosCache.estadisticas();
   }),
-  actualizar: publicProcedure.mutation(async () => {
+  actualizar: protectedProcedure.mutation(async () => {
     const { productosCache } = await import("./productos-cache");
     await productosCache.actualizar(true);
     return { success: true, message: "Cache actualizado exitosamente" };
   }),
-  listar: publicProcedure.query(async () => {
+  listar: protectedProcedure.query(async () => {
     const { productosCache } = await import("./productos-cache");
     return productosCache.obtenerTodos();
   }),
@@ -977,7 +976,7 @@ const cacheRouter = router({
 // ─── Inventario Router ───────────────────────────────────────────────────────
 const inventarioRouter = router({
   // Listar productos para conteo, por proveedor (vacío = todos)
-  listar: publicProcedure
+  listar: protectedProcedure
     .input(z.object({ idAlmacen: z.number(), idProveedor: z.string().optional() }))
     .query(async ({ input }) => {
       const { inventarios365 } = await import("./inventarios365");
@@ -1008,7 +1007,7 @@ const inventarioRouter = router({
     }),
 
   // Crear una nueva sesión de inventario
-  crearSesion: publicProcedure
+  crearSesion: protectedProcedure
     .input(z.object({
       nombre: z.string(),
       tipo: z.enum(["anual", "ciclico_abc"]),
@@ -1040,7 +1039,7 @@ const inventarioRouter = router({
     }),
 
   // Listar sesiones (en progreso y completadas)
-  listarSesiones: publicProcedure.query(async () => {
+  listarSesiones: protectedProcedure.query(async () => {
     const { getDb } = await import("./db");
     const { inventarioSesiones, inventarioProveedores } = await import("../drizzle/schema");
     const { desc } = await import("drizzle-orm");
@@ -1075,7 +1074,7 @@ const inventarioRouter = router({
   }),
 
   // Detalle de una sesión con sus proveedores y conteos
-  detalleSesion: publicProcedure
+  detalleSesion: protectedProcedure
     .input(z.object({ sesionId: z.number() }))
     .query(async ({ input }) => {
       const { getDb } = await import("./db");
@@ -1090,7 +1089,7 @@ const inventarioRouter = router({
     }),
 
   // Guardar/actualizar el conteo de un proveedor dentro de una sesión
-  guardarConteoProveedor: publicProcedure
+  guardarConteoProveedor: protectedProcedure
     .input(z.object({
       sesionId: z.number(),
       proveedorId: z.string().optional(),
@@ -1174,7 +1173,7 @@ const inventarioRouter = router({
     }),
 
   // Marcar sesión como completada
-  completarSesion: publicProcedure
+  completarSesion: protectedProcedure
     .input(z.object({ sesionId: z.number() }))
     .mutation(async ({ input }) => {
       const { getDb } = await import("./db");
@@ -1191,7 +1190,7 @@ const inventarioRouter = router({
 // ─── Asistencia del Personal ──────────────────────────────────────────────────
 const asistenciaRouter = router({
   // Listar todos los trabajadores
-  listarTrabajadores: publicProcedure.query(async () => {
+  listarTrabajadores: protectedProcedure.query(async () => {
     const { getDb } = await import("./db");
     const { trabajadores } = await import("../drizzle/schema");
     const db = await getDb();
@@ -1200,7 +1199,7 @@ const asistenciaRouter = router({
   }),
 
   // Crear o actualizar un trabajador
-  guardarTrabajador: publicProcedure
+  guardarTrabajador: protectedProcedure
     .input(z.object({
       id: z.number().optional(),
       nombre: z.string().min(1),
@@ -1262,7 +1261,7 @@ const asistenciaRouter = router({
     }),
 
   // Desactivar (no borrar, para conservar historial)
-  desactivarTrabajador: publicProcedure
+  desactivarTrabajador: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const { getDb } = await import("./db");
@@ -1275,7 +1274,7 @@ const asistenciaRouter = router({
     }),
 
   // Listar usuarios de inventarios365 (para vincular trabajador ↔ usuario del sistema)
-  listarUsuariosSistema: publicProcedure.query(async () => {
+  listarUsuariosSistema: protectedProcedure.query(async () => {
     const { inventarios365 } = await import("./inventarios365");
     return inventarios365.listarUsuarios();
   }),
@@ -1283,7 +1282,7 @@ const asistenciaRouter = router({
   // Agregar campo usuario al guardar trabajador (ya manejado por guardarTrabajador abajo)
 
   // Resumen mensual de un trabajador: lee las aperturas de caja de inventarios365
-  resumenMensual: publicProcedure
+  resumenMensual: protectedProcedure
     .input(z.object({ trabajadorId: z.number(), anioMes: z.string() })) // anioMes = "2026-06"
     .query(async ({ input }) => {
       const { getDb } = await import("./db");
@@ -1343,7 +1342,7 @@ const asistenciaRouter = router({
       };
     }),
 
-  guardarAjusteDia: publicProcedure
+  guardarAjusteDia: protectedProcedure
     .input(z.object({
       trabajadorId: z.number(), fecha: z.string(),
       justificado: z.boolean().optional(),
@@ -1373,7 +1372,7 @@ const asistenciaRouter = router({
       return { success: true };
     }),
 
-  marcarPagado: publicProcedure
+  marcarPagado: protectedProcedure
     .input(z.object({ trabajadorId: z.number(), anioMes: z.string(), montoPagado: z.number(), pagado: z.boolean() }))
     .mutation(async ({ input }) => {
       const { getDb } = await import("./db");
@@ -1395,7 +1394,7 @@ const asistenciaRouter = router({
       return { success: true };
     }),
 
-  pagosDelMes: publicProcedure
+  pagosDelMes: protectedProcedure
     .input(z.object({ anioMes: z.string() }))
     .query(async ({ input }) => {
       const { getDb } = await import("./db");
@@ -1407,7 +1406,7 @@ const asistenciaRouter = router({
     }),
 
   // Dashboard de pagos: resumen de TODOS los trabajadores activos para un mes
-  dashboardPagos: publicProcedure
+  dashboardPagos: protectedProcedure
     .input(z.object({ anioMes: z.string() }))
     .query(async ({ input }) => {
       const { getDb } = await import("./db");
@@ -1502,7 +1501,7 @@ const asistenciaRouter = router({
 
 // ─── Consulta (solo lectura: precio + stock, para contingencias) ──────────────
 const consultaRouter = router({
-  buscarProductos: publicProcedure
+  buscarProductos: protectedProcedure
     .input(z.object({ buscar: z.string() }))
     .query(async ({ input }) => {
       if (!input.buscar || input.buscar.trim().length < 2) return [];
@@ -1520,7 +1519,7 @@ const RENTABILIDAD_TTL = 10 * 60 * 1000;
 
 const ventasRouter = router({
   // Botón: sincronizar ventas ahora (incremental, conservador)
-  sincronizar: publicProcedure.mutation(async () => {
+  sincronizar: protectedProcedure.mutation(async () => {
     const { getDb } = await import("./db");
     const { sql } = await import("drizzle-orm");
     const db = await getDb();
@@ -1556,14 +1555,14 @@ const ventasRouter = router({
   }),
 
   // Botón: sincronizar clientes
-  sincronizarClientes: publicProcedure.mutation(async () => {
+  sincronizarClientes: protectedProcedure.mutation(async () => {
     const { sincronizarClientes } = await import("./sync-ventas");
     return sincronizarClientes();
   }),
 
   // Rellenar huecos: recorre las ventas recientes por FECHA y guarda las que falten
   // (sin depender del ultimoId). Rescata días que quedaron sin sincronizar.
-  rellenarHuecos: publicProcedure
+  rellenarHuecos: protectedProcedure
     .input(z.object({ dias: z.number().optional() }))
     .mutation(async ({ input }) => {
       const { getDb } = await import("./db");
@@ -1604,7 +1603,7 @@ const ventasRouter = router({
     }),
 
   // Carga histórica del mes anterior, POR LOTES (se llama repetidamente)
-  cargarHistoricoLote: publicProcedure
+  cargarHistoricoLote: protectedProcedure
     .input(z.object({ desde: z.string(), hasta: z.string() }))
     .mutation(async ({ input }) => {
       const { cargarHistoricoLote } = await import("./sync-ventas");
@@ -1612,14 +1611,14 @@ const ventasRouter = router({
     }),
 
   // Reiniciar el progreso de la carga histórica
-  reiniciarHistorico: publicProcedure.mutation(async () => {
+  reiniciarHistorico: protectedProcedure.mutation(async () => {
     const { reiniciarProgresoHistorico } = await import("./sync-ventas");
     await reiniciarProgresoHistorico();
     return { success: true };
   }),
 
   // Estado de la sincronización
-  estado: publicProcedure.query(async () => {
+  estado: protectedProcedure.query(async () => {
     const { getDb } = await import("./db");
     const { sql } = await import("drizzle-orm");
     const db = await getDb();
@@ -1638,7 +1637,7 @@ const ventasRouter = router({
   }),
 
   // ── REPORTES (SQL directo, agrupado; índices ya creados en las tablas) ──
-  reportes: publicProcedure
+  reportes: protectedProcedure
     .input(z.object({ desde: z.string(), hasta: z.string(), sucursal: z.string().optional() }))
     .query(async ({ input }) => {
       const { getDb } = await import("./db");
@@ -1646,50 +1645,49 @@ const ventasRouter = router({
       const db = await getDb();
       if (!db) return null;
       const rows = (r: any) => { const x = Array.isArray(r) ? r[0] : r?.rows ?? r; return Array.isArray(x) ? x : []; };
-      const esc = (v: string) => `'${String(v).replace(/'/g, "''")}'`;
-      const rango = `fecha >= ${esc(input.desde)} AND fecha <= ${esc(input.hasta)}`;
-      const filtroSuc = input.sucursal ? ` AND nombreSucursal = ${esc(input.sucursal)}` : "";
+      const rango = sql`fecha >= ${input.desde} AND fecha <= ${input.hasta}`;
+      const filtroSuc = input.sucursal ? sql`AND nombreSucursal = ${input.sucursal}` : sql``;
       // Excluir "ventas menores del día" de los reportes de productos: no es un
       // medicamento real, solo un registro para ventas mínimas olvidadas.
-      const excluirMenores = ` AND articuloNombre NOT LIKE '%ventas menores%' AND articuloNombre NOT LIKE '%venta menor%'`;
+      const excluirMenores = sql`AND articuloNombre NOT LIKE '%ventas menores%' AND articuloNombre NOT LIKE '%venta menor%'`;
 
       try {
         const [masVendidos, masVendidosValor, vendedores, sucursales, diasSemana, totales] = await Promise.all([
           // Productos más vendidos POR CANTIDAD
-          db.execute(sql.raw(
-            `SELECT articuloNombre, SUM(cantidad) as unidades, SUM(subtotal) as monto, COUNT(*) as veces
-             FROM ventas_detalle WHERE ${rango}${filtroSuc}${excluirMenores}
-             GROUP BY articuloNombre ORDER BY unidades DESC LIMIT 15`
-          )),
+          db.execute(sql`
+            SELECT articuloNombre, SUM(cantidad) as unidades, SUM(subtotal) as monto, COUNT(*) as veces
+             FROM ventas_detalle WHERE ${rango} ${filtroSuc} ${excluirMenores}
+             GROUP BY articuloNombre ORDER BY unidades DESC LIMIT 15
+          `),
           // Productos más vendidos POR VALOR (ingreso generado)
-          db.execute(sql.raw(
-            `SELECT articuloNombre, SUM(cantidad) as unidades, SUM(subtotal) as monto, COUNT(*) as veces
-             FROM ventas_detalle WHERE ${rango}${filtroSuc}${excluirMenores}
-             GROUP BY articuloNombre ORDER BY monto DESC LIMIT 15`
-          )),
+          db.execute(sql`
+            SELECT articuloNombre, SUM(cantidad) as unidades, SUM(subtotal) as monto, COUNT(*) as veces
+             FROM ventas_detalle WHERE ${rango} ${filtroSuc} ${excluirMenores}
+             GROUP BY articuloNombre ORDER BY monto DESC LIMIT 15
+          `),
           // Mejores vendedores
-          db.execute(sql.raw(
-            `SELECT vendedor, SUM(total) as monto, COUNT(*) as ventas
-             FROM ventas WHERE ${rango}${filtroSuc}
-             GROUP BY vendedor ORDER BY monto DESC LIMIT 10`
-          )),
+          db.execute(sql`
+            SELECT vendedor, SUM(total) as monto, COUNT(*) as ventas
+             FROM ventas WHERE ${rango} ${filtroSuc}
+             GROUP BY vendedor ORDER BY monto DESC LIMIT 10
+          `),
           // Ventas por sucursal
-          db.execute(sql.raw(
-            `SELECT nombreSucursal, SUM(total) as monto, COUNT(*) as ventas
+          db.execute(sql`
+            SELECT nombreSucursal, SUM(total) as monto, COUNT(*) as ventas
              FROM ventas WHERE ${rango}
-             GROUP BY nombreSucursal ORDER BY monto DESC`
-          )),
+             GROUP BY nombreSucursal ORDER BY monto DESC
+          `),
           // Mejores días de la semana
-          db.execute(sql.raw(
-            `SELECT diaSemana, SUM(total) as monto, COUNT(*) as ventas
-             FROM ventas WHERE ${rango}${filtroSuc}
-             GROUP BY diaSemana ORDER BY diaSemana`
-          )),
+          db.execute(sql`
+            SELECT diaSemana, SUM(total) as monto, COUNT(*) as ventas
+             FROM ventas WHERE ${rango} ${filtroSuc}
+             GROUP BY diaSemana ORDER BY diaSemana
+          `),
           // Totales del periodo
-          db.execute(sql.raw(
-            `SELECT COUNT(*) as ventas, SUM(total) as monto, AVG(total) as promedio
-             FROM ventas WHERE ${rango}${filtroSuc}`
-          )),
+          db.execute(sql`
+            SELECT COUNT(*) as ventas, SUM(total) as monto, AVG(total) as promedio
+             FROM ventas WHERE ${rango} ${filtroSuc}
+          `),
         ]);
         return {
           masVendidos: rows(masVendidos),
@@ -1706,7 +1704,7 @@ const ventasRouter = router({
 
   // Lista de sucursales disponibles (para el filtro)
   // Diagnóstico temporal: ver qué gastos y sucursales hay (para depurar el reporte)
-  sucursalesDisponibles: publicProcedure.query(async () => {
+  sucursalesDisponibles: protectedProcedure.query(async () => {
     const { getDb } = await import("./db");
     const { sql } = await import("drizzle-orm");
     const db = await getDb();
@@ -1721,7 +1719,7 @@ const ventasRouter = router({
   // Rentabilidad REAL por sucursal: ingresos − costo productos − sueldos − gastos.
   // Responde: ¿las ganancias de cada sucursal cubren sus gastos?
   // Resumen de compras realizadas en un mes (para el reporte)
-  comprasDelMes: publicProcedure
+  comprasDelMes: protectedProcedure
     .input(z.object({ anioMes: z.string() }))
     .query(async ({ input }) => {
       const { getDb } = await import("./db");
@@ -1729,19 +1727,18 @@ const ventasRouter = router({
       const db = await getDb();
       if (!db) return { compras: [], total: 0, cantidad: 0 };
       const rows = (r: any) => { const x = Array.isArray(r) ? r[0] : r?.rows ?? r; return Array.isArray(x) ? x : []; };
-      const esc = (v: string) => `'${String(v).replace(/'/g, "''")}'`;
       const [anio, mes] = input.anioMes.split("-").map(Number);
       const desde = `${input.anioMes}-01 00:00:00`;
       const ultimoDia = new Date(anio, mes, 0).getDate();
       const hasta = `${input.anioMes}-${String(ultimoDia).padStart(2, "0")} 23:59:59`;
       try {
         // Compras completadas del mes (por fecha de creación), con nombre de sucursal
-        const compras = rows(await db.execute(sql.raw(
-          `SELECT p.id, p.receiptNumber, p.supplier, p.totalAmount, p.createdAt, p.status, b.name as branchName
+        const compras = rows(await db.execute(sql`
+          SELECT p.id, p.receiptNumber, p.supplier, p.totalAmount, p.createdAt, p.status, b.name as branchName
            FROM purchases p LEFT JOIN branches b ON b.id = p.branchId
-           WHERE p.status='completed' AND p.createdAt >= ${esc(desde)} AND p.createdAt <= ${esc(hasta)}
-           ORDER BY CAST(p.totalAmount AS DECIMAL(12,2)) DESC`
-        )));
+           WHERE p.status='completed' AND p.createdAt >= ${desde} AND p.createdAt <= ${hasta}
+           ORDER BY CAST(p.totalAmount AS DECIMAL(12,2)) DESC
+        `));
         const total = compras.reduce((s: number, c: any) => s + Number(c.totalAmount || 0), 0);
         // Detectar posibles duplicados (mismo número de factura y mismo monto)
         const claveCount: Record<string, number> = {};
@@ -1768,7 +1765,7 @@ const ventasRouter = router({
       }
     }),
 
-  rentabilidadPorSucursal: publicProcedure
+  rentabilidadPorSucursal: protectedProcedure
     .input(z.object({ anioMes: z.string(), forzar: z.boolean().optional() }))
     .query(async ({ input }) => {
       // Servir desde caché si está fresco (salvo que se fuerce recálculo)
@@ -1787,7 +1784,7 @@ const ventasRouter = router({
 
   // Rentabilidad: une ventas con el costo (productos_cache por nombre).
   // Calcula ganancia = (precio - costo) * cantidad, y margen % = (precio-costo)/precio.
-  rentabilidad: publicProcedure
+  rentabilidad: protectedProcedure
     .input(z.object({ desde: z.string(), hasta: z.string(), sucursal: z.string().optional() }))
     .query(async ({ input }) => {
       const { getDb } = await import("./db");
@@ -1795,52 +1792,51 @@ const ventasRouter = router({
       const db = await getDb();
       if (!db) return null;
       const rows = (r: any) => { const x = Array.isArray(r) ? r[0] : r?.rows ?? r; return Array.isArray(x) ? x : []; };
-      const esc = (v: string) => `'${String(v).replace(/'/g, "''")}'`;
-      const rango = `d.fecha >= ${esc(input.desde)} AND d.fecha <= ${esc(input.hasta)}`;
-      const filtroSuc = input.sucursal ? ` AND d.nombreSucursal = ${esc(input.sucursal)}` : "";
+      const rango = sql`d.fecha >= ${input.desde} AND d.fecha <= ${input.hasta}`;
+      const filtroSuc = input.sucursal ? sql`AND d.nombreSucursal = ${input.sucursal}` : sql``;
       // Excluir "ventas menores del día" (no es un producto real)
-      const excluirMenores = ` AND d.articuloNombre NOT LIKE '%ventas menores%' AND d.articuloNombre NOT LIKE '%venta menor%'`;
+      const excluirMenores = sql`AND d.articuloNombre NOT LIKE '%ventas menores%' AND d.articuloNombre NOT LIKE '%venta menor%'`;
 
       try {
         // Productos que MÁS GANANCIA generaron (suma de ganancia por línea)
-        const masGanancia = await db.execute(sql.raw(
-          `SELECT d.articuloNombre,
+        const masGanancia = await db.execute(sql`
+          SELECT d.articuloNombre,
                   SUM(d.cantidad) as unidades,
                   SUM(d.subtotal) as ingreso,
                   SUM(d.cantidad * c.precioCostoUnid) as costoTotal,
                   SUM(d.subtotal - (d.cantidad * c.precioCostoUnid)) as ganancia
            FROM ventas_detalle d
            JOIN productos_cache c ON c.nombre = d.articuloNombre
-           WHERE ${rango}${filtroSuc}${excluirMenores} AND c.precioCostoUnid > 0
+           WHERE ${rango} ${filtroSuc} ${excluirMenores} AND c.precioCostoUnid > 0
            GROUP BY d.articuloNombre
            HAVING ganancia IS NOT NULL
-           ORDER BY ganancia DESC LIMIT 15`
-        ));
+           ORDER BY ganancia DESC LIMIT 15
+        `);
 
         // Productos con MAYOR MARGEN % (promedio ponderado por línea)
-        const mayorMargen = await db.execute(sql.raw(
-          `SELECT d.articuloNombre,
+        const mayorMargen = await db.execute(sql`
+          SELECT d.articuloNombre,
                   SUM(d.cantidad) as unidades,
                   AVG((d.precio - c.precioCostoUnid) / d.precio * 100) as margenPct,
                   SUM(d.subtotal - (d.cantidad * c.precioCostoUnid)) as ganancia
            FROM ventas_detalle d
            JOIN productos_cache c ON c.nombre = d.articuloNombre
-           WHERE ${rango}${filtroSuc}${excluirMenores} AND c.precioCostoUnid > 0 AND d.precio > 0
+           WHERE ${rango} ${filtroSuc} ${excluirMenores} AND c.precioCostoUnid > 0 AND d.precio > 0
            GROUP BY d.articuloNombre
            HAVING margenPct IS NOT NULL
-           ORDER BY margenPct DESC LIMIT 15`
-        ));
+           ORDER BY margenPct DESC LIMIT 15
+        `);
 
         // Resumen: ganancia total estimada del periodo (solo productos con costo conocido)
-        const resumen = await db.execute(sql.raw(
-          `SELECT SUM(d.subtotal) as ingreso,
+        const resumen = await db.execute(sql`
+          SELECT SUM(d.subtotal) as ingreso,
                   SUM(d.cantidad * c.precioCostoUnid) as costo,
                   SUM(d.subtotal - (d.cantidad * c.precioCostoUnid)) as ganancia,
                   COUNT(DISTINCT d.articuloNombre) as productosConCosto
            FROM ventas_detalle d
            JOIN productos_cache c ON c.nombre = d.articuloNombre
-           WHERE ${rango}${filtroSuc} AND c.precioCostoUnid > 0`
-        ));
+           WHERE ${rango} ${filtroSuc} AND c.precioCostoUnid > 0
+        `);
 
         return {
           masGanancia: rows(masGanancia),
@@ -1856,63 +1852,61 @@ const ventasRouter = router({
 // ─── Gastos de la farmacia (fijos recurrentes + ocasionales) ──────────────────
 const gastosRouter = router({
   // Listar plantilla de gastos fijos
-  listarFijos: publicProcedure.query(async () => {
+  listarFijos: protectedProcedure.query(async () => {
     const { getDb } = await import("./db");
     const { sql } = await import("drizzle-orm");
     const db = await getDb();
     if (!db) return [];
     try {
-      const r: any = await db.execute(sql.raw("SELECT * FROM gastos_fijos WHERE activo=1 ORDER BY categoria, nombre"));
+      const r: any = await db.execute(sql`SELECT * FROM gastos_fijos WHERE activo=1 ORDER BY categoria, nombre`);
       const rows = Array.isArray(r) ? r[0] : r?.rows ?? r;
       return Array.isArray(rows) ? rows : [];
     } catch { return []; }
   }),
 
   // Crear un gasto fijo (plantilla)
-  crearFijo: publicProcedure
+  crearFijo: protectedProcedure
     .input(z.object({ nombre: z.string(), categoria: z.string(), montoEstimado: z.number(), diaVencimiento: z.number().optional(), sucursal: z.string().optional(), esVariable: z.boolean().optional() }))
     .mutation(async ({ input }) => {
       const { getDb } = await import("./db");
       const { sql } = await import("drizzle-orm");
       const db = await getDb();
       if (!db) throw new Error("Sin BD");
-      const esc = (v: any) => v == null ? "NULL" : `'${String(v).replace(/'/g, "''")}'`;
-      await db.execute(sql.raw(
-        `INSERT INTO gastos_fijos (nombre, categoria, montoEstimado, diaVencimiento, sucursal, esVariable)
-         VALUES (${esc(input.nombre)}, ${esc(input.categoria)}, ${input.montoEstimado}, ${input.diaVencimiento ?? "NULL"}, ${esc(input.sucursal)}, ${input.esVariable ? 1 : 0})`
-      ));
+      await db.execute(sql`
+        INSERT INTO gastos_fijos (nombre, categoria, montoEstimado, diaVencimiento, sucursal, esVariable)
+         VALUES (${input.nombre}, ${input.categoria}, ${input.montoEstimado}, ${input.diaVencimiento ?? null}, ${input.sucursal ?? null}, ${input.esVariable ? 1 : 0})
+      `);
       return { success: true };
     }),
 
   // Eliminar (desactivar) un gasto fijo
-  eliminarFijo: publicProcedure
+  eliminarFijo: protectedProcedure
     .input(z.object({ id: z.number() }))
     .mutation(async ({ input }) => {
       const { getDb } = await import("./db");
       const { sql } = await import("drizzle-orm");
       const db = await getDb();
       if (!db) throw new Error("Sin BD");
-      await db.execute(sql.raw(`UPDATE gastos_fijos SET activo=0 WHERE id=${input.id}`));
+      await db.execute(sql`UPDATE gastos_fijos SET activo=0 WHERE id=${input.id}`);
       return { success: true };
     }),
 
   // Obtener los gastos de un mes (genera los fijos si no existen aún + ocasionales)
-  delMes: publicProcedure
+  delMes: protectedProcedure
     .input(z.object({ anioMes: z.string(), sucursal: z.string().optional() }))
     .query(async ({ input }) => {
       const { getDb } = await import("./db");
       const { sql } = await import("drizzle-orm");
       const db = await getDb();
       if (!db) return { gastos: [], totalPagado: 0, totalPendiente: 0 };
-      const esc = (v: any) => v == null ? "NULL" : `'${String(v).replace(/'/g, "''")}'`;
       const rows = (r: any) => { const x = Array.isArray(r) ? r[0] : r?.rows ?? r; return Array.isArray(x) ? x : []; };
 
       try {
         // Generar registros de gastos fijos para el mes si aún no existen.
         // Verificamos por gastoFijoId Y por nombre, para no duplicar gastos que
         // fueron movidos a este mes (y quedaron desvinculados de la plantilla).
-        const fijos = rows(await db.execute(sql.raw("SELECT * FROM gastos_fijos WHERE activo=1")));
-        const existentes = rows(await db.execute(sql.raw(`SELECT gastoFijoId, nombre FROM gastos_registro WHERE anioMes=${esc(input.anioMes)}`)));
+        const fijos = rows(await db.execute(sql`SELECT * FROM gastos_fijos WHERE activo=1`));
+        const existentes = rows(await db.execute(sql`SELECT gastoFijoId, nombre FROM gastos_registro WHERE anioMes=${input.anioMes}`));
         const idsExistentes = new Set(existentes.filter((e: any) => e.gastoFijoId != null).map((e: any) => e.gastoFijoId));
         const nombresExistentes = new Set(existentes.map((e: any) => String(e.nombre || "").trim().toLowerCase()));
         for (const f of fijos) {
@@ -1921,16 +1915,16 @@ const gastosRouter = router({
           if (!yaExistePorId && !yaExistePorNombre) {
             // Para gastos variables (luz, agua), el monto inicial es 0 (se ingresa al llegar la factura)
             const montoInicial = f.esVariable ? 0 : (Number(f.montoEstimado) || 0);
-            await db.execute(sql.raw(
-              `INSERT INTO gastos_registro (anioMes, gastoFijoId, nombre, categoria, monto, pagado, esOcasional, sucursal, esVariable)
-               VALUES (${esc(input.anioMes)}, ${f.id}, ${esc(f.nombre)}, ${esc(f.categoria)}, ${montoInicial}, 0, 0, ${esc(f.sucursal)}, ${f.esVariable ? 1 : 0})`
-            ));
+            await db.execute(sql`
+              INSERT INTO gastos_registro (anioMes, gastoFijoId, nombre, categoria, monto, pagado, esOcasional, sucursal, esVariable)
+               VALUES (${input.anioMes}, ${f.id}, ${f.nombre}, ${f.categoria}, ${montoInicial}, 0, 0, ${f.sucursal}, ${f.esVariable ? 1 : 0})
+            `);
           }
         }
 
         // Devolver gastos del mes (filtrados por sucursal si se indicó)
-        const filtroSuc = input.sucursal ? ` AND sucursal=${esc(input.sucursal)}` : "";
-        const gastos = rows(await db.execute(sql.raw(`SELECT * FROM gastos_registro WHERE anioMes=${esc(input.anioMes)}${filtroSuc} ORDER BY esOcasional, categoria, nombre`)));
+        const filtroSuc = input.sucursal ? sql`AND sucursal=${input.sucursal}` : sql``;
+        const gastos = rows(await db.execute(sql`SELECT * FROM gastos_registro WHERE anioMes=${input.anioMes} ${filtroSuc} ORDER BY esOcasional, categoria, nombre`));
         const totalPagado = gastos.filter((g: any) => g.pagado).reduce((s: number, g: any) => s + Number(g.monto), 0);
         const totalPendiente = gastos.filter((g: any) => !g.pagado).reduce((s: number, g: any) => s + Number(g.monto), 0);
         return { gastos, totalPagado, totalPendiente };
@@ -1940,7 +1934,7 @@ const gastosRouter = router({
     }),
 
   // Marcar pagado/no pagado un gasto + ajustar monto y fecha de pago
-  marcarPago: publicProcedure
+  marcarPago: protectedProcedure
     .input(z.object({ id: z.number(), pagado: z.boolean(), monto: z.number().optional(), fechaPago: z.string().optional() }))
     .mutation(async ({ input }) => {
       const { getDb } = await import("./db");
@@ -1948,47 +1942,46 @@ const gastosRouter = router({
       const db = await getDb();
       if (!db) throw new Error("Sin BD");
       const hoy = new Date().toISOString().slice(0, 10);
-      const fecha = input.fechaPago || hoy;
-      const setMonto = input.monto != null ? `, monto=${input.monto}` : "";
-      await db.execute(sql.raw(
-        `UPDATE gastos_registro SET pagado=${input.pagado ? 1 : 0}, fechaPago=${input.pagado ? `'${fecha}'` : "NULL"}${setMonto} WHERE id=${input.id}`
-      ));
+      const fecha = input.pagado ? (input.fechaPago || hoy) : null;
+      const setMonto = input.monto != null ? sql`, monto=${input.monto}` : sql``;
+      await db.execute(sql`
+        UPDATE gastos_registro SET pagado=${input.pagado ? 1 : 0}, fechaPago=${input.pagado ? fecha : null} ${setMonto} WHERE id=${input.id}
+      `);
       return { success: true };
     }),
 
   // Cambiar solo la fecha de pago de un gasto
-  cambiarFechaPago: publicProcedure
+  cambiarFechaPago: protectedProcedure
     .input(z.object({ id: z.number(), fechaPago: z.string() }))
     .mutation(async ({ input }) => {
       const { getDb } = await import("./db");
       const { sql } = await import("drizzle-orm");
       const db = await getDb();
       if (!db) throw new Error("Sin BD");
-      await db.execute(sql.raw(`UPDATE gastos_registro SET fechaPago='${input.fechaPago}' WHERE id=${input.id}`));
+      await db.execute(sql`UPDATE gastos_registro SET fechaPago=${input.fechaPago} WHERE id=${input.id}`);
       return { success: true };
     }),
 
   // Registrar un gasto ocasional
-  registrarOcasional: publicProcedure
+  registrarOcasional: protectedProcedure
     .input(z.object({ anioMes: z.string(), nombre: z.string(), categoria: z.string(), monto: z.number(), pagado: z.boolean(), sucursal: z.string().optional(), fechaPago: z.string().optional() }))
     .mutation(async ({ input }) => {
       const { getDb } = await import("./db");
       const { sql } = await import("drizzle-orm");
       const db = await getDb();
       if (!db) throw new Error("Sin BD");
-      const esc = (v: any) => v == null ? "NULL" : `'${String(v).replace(/'/g, "''")}'`;
       const hoy = new Date().toISOString().slice(0, 10);
       const fecha = input.pagado ? (input.fechaPago || hoy) : null;
-      await db.execute(sql.raw(
-        `INSERT INTO gastos_registro (anioMes, nombre, categoria, monto, pagado, fechaPago, esOcasional, sucursal)
-         VALUES (${esc(input.anioMes)}, ${esc(input.nombre)}, ${esc(input.categoria)}, ${input.monto}, ${input.pagado ? 1 : 0}, ${esc(fecha)}, 1, ${esc(input.sucursal)})`
-      ));
+      await db.execute(sql`
+        INSERT INTO gastos_registro (anioMes, nombre, categoria, monto, pagado, fechaPago, esOcasional, sucursal)
+         VALUES (${input.anioMes}, ${input.nombre}, ${input.categoria}, ${input.monto}, ${input.pagado ? 1 : 0}, ${fecha}, 1, ${input.sucursal ?? null})
+      `);
       return { success: true };
     }),
 
   // Eliminar un gasto del registro. Si es un fijo, opcionalmente elimina también
   // la plantilla (para que no se regenere el próximo mes).
-  eliminar: publicProcedure
+  eliminar: protectedProcedure
     .input(z.object({ id: z.number(), eliminarPlantilla: z.boolean().optional() }))
     .mutation(async ({ input }) => {
       const { getDb } = await import("./db");
@@ -1998,21 +1991,21 @@ const gastosRouter = router({
       const rows = (r: any) => { const x = Array.isArray(r) ? r[0] : r?.rows ?? r; return Array.isArray(x) ? x : []; };
 
       // Ver si el gasto viene de una plantilla fija
-      const g = rows(await db.execute(sql.raw(`SELECT gastoFijoId FROM gastos_registro WHERE id=${input.id} LIMIT 1`)));
+      const g = rows(await db.execute(sql`SELECT gastoFijoId FROM gastos_registro WHERE id=${input.id} LIMIT 1`));
       const gastoFijoId = g[0]?.gastoFijoId;
 
       // Borrar el registro de este mes
-      await db.execute(sql.raw(`DELETE FROM gastos_registro WHERE id=${input.id}`));
+      await db.execute(sql`DELETE FROM gastos_registro WHERE id=${input.id}`);
 
       // Si es fijo y se pide eliminar la plantilla, desactivarla (no se regenera más)
       if (gastoFijoId && input.eliminarPlantilla) {
-        await db.execute(sql.raw(`UPDATE gastos_fijos SET activo=0 WHERE id=${gastoFijoId}`));
+        await db.execute(sql`UPDATE gastos_fijos SET activo=0 WHERE id=${gastoFijoId}`);
       }
       return { success: true, eraFijo: !!gastoFijoId };
     }),
 
   // Total de sueldos del mes (opcionalmente por sucursal, infiriendo del vendedor).
-  sueldosDelMes: publicProcedure
+  sueldosDelMes: protectedProcedure
     .input(z.object({ anioMes: z.string(), sucursal: z.string().optional() }))
     .query(async ({ input }) => {
       const { getDb } = await import("./db");
@@ -2028,10 +2021,9 @@ const gastosRouter = router({
 
         let usuariosDeSucursal: Set<string> | null = null;
         if (input.sucursal) {
-          const esc = (v: string) => `'${String(v).replace(/'/g, "''")}'`;
-          const r: any = await db.execute(sql.raw(
-            `SELECT DISTINCT vendedor FROM ventas WHERE nombreSucursal=${esc(input.sucursal)} AND vendedor IS NOT NULL`
-          ));
+          const r: any = await db.execute(sql`
+            SELECT DISTINCT vendedor FROM ventas WHERE nombreSucursal=${input.sucursal} AND vendedor IS NOT NULL
+          `);
           const rows = Array.isArray(r) ? r[0] : r?.rows ?? r;
           usuariosDeSucursal = new Set((Array.isArray(rows) ? rows : []).map((x: any) => String(x.vendedor)));
         }
@@ -2082,40 +2074,39 @@ const gastosRouter = router({
     }),
 
   // Editar un gasto del registro (nombre, categoría, monto, sucursal)
-  editar: publicProcedure
+  editar: protectedProcedure
     .input(z.object({ id: z.number(), nombre: z.string(), categoria: z.string(), monto: z.number(), sucursal: z.string().optional(), anioMes: z.string().optional() }))
     .mutation(async ({ input }) => {
       const { getDb } = await import("./db");
       const { sql } = await import("drizzle-orm");
       const db = await getDb();
       if (!db) throw new Error("Sin BD");
-      const esc = (v: any) => v == null ? "NULL" : `'${String(v).replace(/'/g, "''")}'`;
       const rows = (r: any) => { const x = Array.isArray(r) ? r[0] : r?.rows ?? r; return Array.isArray(x) ? x : []; };
 
       // Ver el mes actual y si viene de una plantilla fija
-      const actual = rows(await db.execute(sql.raw(`SELECT anioMes, gastoFijoId, nombre FROM gastos_registro WHERE id=${input.id} LIMIT 1`)));
+      const actual = rows(await db.execute(sql`SELECT anioMes, gastoFijoId, nombre FROM gastos_registro WHERE id=${input.id} LIMIT 1`));
       const mesActual = actual[0]?.anioMes;
       const esFijo = actual[0]?.gastoFijoId != null;
 
-      let setMes = "";
+      let setMes = sql``;
       if (input.anioMes && input.anioMes !== mesActual) {
-        setMes = `, anioMes=${esc(input.anioMes)}`;
+        setMes = sql`, anioMes=${input.anioMes}`;
         // Si es un gasto fijo y se MUEVE a otro mes, eliminar en el mes destino
         // cualquier registro de la MISMA plantilla o mismo nombre (regenerado con
         // monto 0), para no duplicar. NO desvinculamos: delMes deduplica por nombre.
         if (esFijo) {
           const fijoId = actual[0].gastoFijoId;
           const nombreActual = String(actual[0].nombre || "").trim().toLowerCase();
-          await db.execute(sql.raw(
-            `DELETE FROM gastos_registro WHERE anioMes=${esc(input.anioMes)} AND id<>${input.id}
-             AND (gastoFijoId=${fijoId} OR LOWER(TRIM(nombre))=${esc(nombreActual)})`
-          ));
+          await db.execute(sql`
+            DELETE FROM gastos_registro WHERE anioMes=${input.anioMes} AND id<>${input.id}
+             AND (gastoFijoId=${fijoId} OR LOWER(TRIM(nombre))=${nombreActual})
+          `);
         }
       }
 
-      await db.execute(sql.raw(
-        `UPDATE gastos_registro SET nombre=${esc(input.nombre)}, categoria=${esc(input.categoria)}, monto=${input.monto}, sucursal=${esc(input.sucursal)}${setMes} WHERE id=${input.id}`
-      ));
+      await db.execute(sql`
+        UPDATE gastos_registro SET nombre=${input.nombre}, categoria=${input.categoria}, monto=${input.monto}, sucursal=${input.sucursal ?? null} ${setMes} WHERE id=${input.id}
+      `);
       return { success: true };
     }),
 });

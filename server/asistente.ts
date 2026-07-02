@@ -7,8 +7,21 @@ const rows = (r: any): any[] => {
   const x = Array.isArray(r) ? r[0] : r?.rows ?? r;
   return Array.isArray(x) ? x : [];
 };
-const esc = (v: string) => `'${String(v ?? "").replace(/'/g, "''")}'`;
 const num = (v: any) => { const n = Number(v); return isNaN(n) ? 0 : n; };
+// Fragmento SQL " AND <col> LIKE %valor%" (o vacío) — el valor va parametrizado
+// (nunca concatenado como texto), así que es seguro ante inyección SQL.
+// `col` SIEMPRE debe ser un nombre de columna fijo escrito en el código, nunca input de usuario.
+const filtroLike = (col: string, valor: string | undefined) =>
+  valor ? sql`AND ${sql.raw(col)} LIKE ${"%" + valor + "%"}` : sql``;
+// Condición AND de varias palabras sobre la misma columna (búsqueda por nombre)
+const condPalabras = (col: string, texto: string) => {
+  const palabras = texto.trim().split(/\s+/).filter(Boolean);
+  let cond = sql`${sql.raw(col)} LIKE ${"%" + palabras[0] + "%"}`;
+  for (let i = 1; i < palabras.length; i++) {
+    cond = sql`${cond} AND ${sql.raw(col)} LIKE ${"%" + palabras[i] + "%"}`;
+  }
+  return cond;
+};
 const fmtBs = (n: any) => num(n).toLocaleString("es-BO", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 // Rango de fechas según un período de texto
@@ -56,11 +69,11 @@ export const asistenteTools = {
     const db = await getDb();
     if (!db) return { error: "Sin BD" };
     const { desde, hasta, etiqueta } = rangoFechas(periodo);
-    const filtroSuc = sucursal ? ` AND nombreSucursal LIKE ${esc("%" + sucursal + "%")}` : "";
-    const r = rows(await db.execute(sql.raw(
-      `SELECT COUNT(*) as numVentas, COALESCE(SUM(total),0) as total
-       FROM ventas WHERE fecha >= ${esc(desde)} AND fecha <= ${esc(hasta)}${filtroSuc}`
-    )));
+    const filtroSuc = filtroLike("nombreSucursal", sucursal);
+    const r = rows(await db.execute(sql`
+      SELECT COUNT(*) as numVentas, COALESCE(SUM(total),0) as total
+       FROM ventas WHERE fecha >= ${desde} AND fecha <= ${hasta} ${filtroSuc}
+    `));
     const data = r[0] || { numVentas: 0, total: 0 };
     const resultado: any = {
       periodo: etiqueta,
@@ -71,11 +84,11 @@ export const asistenteTools = {
     // Si NO se filtró por sucursal, incluir el desglose por sucursal en la MISMA
     // respuesta (así el modelo no necesita hacer varias llamadas).
     if (!sucursal) {
-      const porSuc = rows(await db.execute(sql.raw(
-        `SELECT nombreSucursal, COUNT(*) as numVentas, COALESCE(SUM(total),0) as total
-         FROM ventas WHERE fecha >= ${esc(desde)} AND fecha <= ${esc(hasta)} AND nombreSucursal IS NOT NULL
-         GROUP BY nombreSucursal ORDER BY total DESC`
-      )));
+      const porSuc = rows(await db.execute(sql`
+        SELECT nombreSucursal, COUNT(*) as numVentas, COALESCE(SUM(total),0) as total
+         FROM ventas WHERE fecha >= ${desde} AND fecha <= ${hasta} AND nombreSucursal IS NOT NULL
+         GROUP BY nombreSucursal ORDER BY total DESC
+      `));
       resultado.porSucursal = porSuc.map((s: any) => ({
         sucursal: s.nombreSucursal,
         ventas: num(s.numVentas),
@@ -100,11 +113,11 @@ export const asistenteTools = {
     const db = await getDb();
     if (!db) return { error: "Sin BD" };
     const { desde, hasta, etiqueta } = rangoFechas(periodo || "mes");
-    const r = rows(await db.execute(sql.raw(
-      `SELECT COUNT(*) as n, COALESCE(SUM(totalAmount),0) as total FROM purchases
-       WHERE status='completed' AND supplier LIKE ${esc("%" + proveedor + "%")}
-       AND createdAt >= ${esc(desde + " 00:00:00")} AND createdAt <= ${esc(hasta + " 23:59:59")}`
-    )));
+    const r = rows(await db.execute(sql`
+      SELECT COUNT(*) as n, COALESCE(SUM(totalAmount),0) as total FROM purchases
+       WHERE status='completed' AND supplier LIKE ${"%" + proveedor + "%"}
+       AND createdAt >= ${desde + " 00:00:00"} AND createdAt <= ${hasta + " 23:59:59"}
+    `));
     const data = r[0] || { n: 0, total: 0 };
     return {
       proveedor, periodo: etiqueta,
@@ -118,13 +131,13 @@ export const asistenteTools = {
     const db = await getDb();
     if (!db) return { error: "Sin BD" };
     const { desde, hasta, etiqueta } = rangoFechas(periodo || "mes");
-    const orden = porValor ? "SUM(subtotal)" : "SUM(cantidad)";
-    const r = rows(await db.execute(sql.raw(
-      `SELECT articuloNombre, SUM(cantidad) as cant, SUM(subtotal) as valor
-       FROM ventas_detalle WHERE fecha >= ${esc(desde)} AND fecha <= ${esc(hasta)}
+    const orden = sql.raw(porValor ? "SUM(subtotal)" : "SUM(cantidad)");
+    const r = rows(await db.execute(sql`
+      SELECT articuloNombre, SUM(cantidad) as cant, SUM(subtotal) as valor
+       FROM ventas_detalle WHERE fecha >= ${desde} AND fecha <= ${hasta}
        AND articuloNombre NOT LIKE '%venta menor%'
-       GROUP BY articuloNombre ORDER BY ${orden} DESC LIMIT 5`
-    )));
+       GROUP BY articuloNombre ORDER BY ${orden} DESC LIMIT 5
+    `));
     if (r.length === 0) return { mensaje: `No hay ventas registradas en ${etiqueta}.` };
     return {
       periodo: etiqueta,
@@ -142,26 +155,24 @@ export const asistenteTools = {
     if (!db) return { error: "Sin BD" };
     const { desde, hasta, etiqueta } = rangoFechas(periodo || "mes");
     const anioMes = desde.slice(0, 7); // YYYY-MM para gastos
-    const filtroSuc = sucursal ? ` AND nombreSucursal LIKE ${esc("%" + sucursal + "%")}` : "";
-    const filtroSucD = sucursal ? ` AND d.nombreSucursal LIKE ${esc("%" + sucursal + "%")}` : "";
+    const filtroSuc = filtroLike("nombreSucursal", sucursal);
+    const filtroSucD = filtroLike("d.nombreSucursal", sucursal);
 
-    const rIngreso = rows(await db.execute(sql.raw(
-      `SELECT COALESCE(SUM(total),0) as ingreso FROM ventas WHERE fecha >= ${esc(desde)} AND fecha <= ${esc(hasta)}${filtroSuc}`
-    )));
-    const rCosto = rows(await db.execute(sql.raw(
-      `SELECT COALESCE(SUM(d.cantidad * c.precioCostoUnid),0) as costo
+    const rIngreso = rows(await db.execute(sql`
+      SELECT COALESCE(SUM(total),0) as ingreso FROM ventas WHERE fecha >= ${desde} AND fecha <= ${hasta} ${filtroSuc}
+    `));
+    const rCosto = rows(await db.execute(sql`
+      SELECT COALESCE(SUM(d.cantidad * c.precioCostoUnid),0) as costo
        FROM ventas_detalle d JOIN productos_cache c ON c.nombre = d.articuloNombre
-       WHERE d.fecha >= ${esc(desde)} AND d.fecha <= ${esc(hasta)} AND c.precioCostoUnid > 0${filtroSucD}`
-    )));
+       WHERE d.fecha >= ${desde} AND d.fecha <= ${hasta} AND c.precioCostoUnid > 0 ${filtroSucD}
+    `));
     // Gastos del mes. Si se filtra por sucursal, sumar SOLO los gastos de esa
     // sucursal (alquiler, sueldos, etc. que se registraron con sucursal). Si no,
     // sumar todos.
-    const filtroGasto = sucursal
-      ? ` AND sucursal LIKE ${esc("%" + sucursal + "%")}`
-      : "";
-    const rGastos = rows(await db.execute(sql.raw(
-      `SELECT COALESCE(SUM(monto),0) as gastos FROM gastos_registro WHERE anioMes = ${esc(anioMes)}${filtroGasto}`
-    )));
+    const filtroGasto = filtroLike("sucursal", sucursal);
+    const rGastos = rows(await db.execute(sql`
+      SELECT COALESCE(SUM(monto),0) as gastos FROM gastos_registro WHERE anioMes = ${anioMes} ${filtroGasto}
+    `));
 
     const ingreso = num(rIngreso[0]?.ingreso);
     const costo = num(rCosto[0]?.costo);
@@ -188,12 +199,11 @@ export const asistenteTools = {
   async infoProducto(nombre: string) {
     const db = await getDb();
     if (!db) return { error: "Sin BD" };
-    const palabras = nombre.trim().split(/\s+/).filter(Boolean);
-    const cond = palabras.map(w => `nombre LIKE ${esc("%" + w + "%")}`).join(" AND ");
+    const cond = condPalabras("nombre", nombre);
     // Primero contar cuántos coinciden
-    const cont = rows(await db.execute(sql.raw(
-      `SELECT COUNT(*) as n FROM productos_cache WHERE ${cond}`
-    )));
+    const cont = rows(await db.execute(sql`
+      SELECT COUNT(*) as n FROM productos_cache WHERE ${cond}
+    `));
     const total = num(cont[0]?.n);
 
     if (total === 0) {
@@ -202,9 +212,9 @@ export const asistenteTools = {
 
     // Si hay demasiados (más de 10), pedir que afine la búsqueda
     if (total > 10) {
-      const muestra = rows(await db.execute(sql.raw(
-        `SELECT nombre FROM productos_cache WHERE ${cond} ORDER BY nombre LIMIT 6`
-      )));
+      const muestra = rows(await db.execute(sql`
+        SELECT nombre FROM productos_cache WHERE ${cond} ORDER BY nombre LIMIT 6
+      `));
       return {
         demasiadosResultados: true,
         cantidad: total,
@@ -212,10 +222,10 @@ export const asistenteTools = {
       };
     }
 
-    const r = rows(await db.execute(sql.raw(
-      `SELECT nombre, codigo, precioUno, precioCostoUnid, nombreProveedor
-       FROM productos_cache WHERE ${cond} ORDER BY nombre LIMIT 10`
-    )));
+    const r = rows(await db.execute(sql`
+      SELECT nombre, codigo, precioUno, precioCostoUnid, nombreProveedor
+       FROM productos_cache WHERE ${cond} ORDER BY nombre LIMIT 10
+    `));
 
     // Si hay entre 4 y 10, mostrar lista resumida y pedir cuál si quiere detalle
     if (total > 3) {
@@ -247,13 +257,13 @@ export const asistenteTools = {
     const db = await getDb();
     if (!db) return { error: "Sin BD" };
     const { desde, hasta, etiqueta } = periodo ? rangoFechas(periodo) : { desde: "2000-01-01", hasta: "2099-12-31", etiqueta: "todo el historial" };
-    const r = rows(await db.execute(sql.raw(
-      `SELECT d.articuloNombre, SUM(d.cantidad) as cant, SUM(d.subtotal) as valor
+    const r = rows(await db.execute(sql`
+      SELECT d.articuloNombre, SUM(d.cantidad) as cant, SUM(d.subtotal) as valor
        FROM ventas_detalle d JOIN ventas v ON v.id = d.ventaId
-       WHERE v.razonSocialCliente LIKE ${esc("%" + cliente + "%")}
-       AND d.fecha >= ${esc(desde)} AND d.fecha <= ${esc(hasta)}
-       GROUP BY d.articuloNombre ORDER BY cant DESC LIMIT 20`
-    )));
+       WHERE v.razonSocialCliente LIKE ${"%" + cliente + "%"}
+       AND d.fecha >= ${desde} AND d.fecha <= ${hasta}
+       GROUP BY d.articuloNombre ORDER BY cant DESC LIMIT 20
+    `));
     if (r.length === 0) return { mensaje: `No encontré ventas al cliente "${cliente}" en ${etiqueta}.` };
     return {
       cliente, periodo: etiqueta,
@@ -266,13 +276,13 @@ export const asistenteTools = {
     const db = await getDb();
     if (!db) return { error: "Sin BD" };
     const { desde, hasta, etiqueta } = rangoFechas(periodo || "mes");
-    const filtroSuc = sucursal ? ` AND nombreSucursal LIKE ${esc("%" + sucursal + "%")}` : "";
-    const r = rows(await db.execute(sql.raw(
-      `SELECT vendedor, COUNT(*) as numVentas, COALESCE(SUM(total),0) as total
-       FROM ventas WHERE fecha >= ${esc(desde)} AND fecha <= ${esc(hasta)}${filtroSuc}
+    const filtroSuc = filtroLike("nombreSucursal", sucursal);
+    const r = rows(await db.execute(sql`
+      SELECT vendedor, COUNT(*) as numVentas, COALESCE(SUM(total),0) as total
+       FROM ventas WHERE fecha >= ${desde} AND fecha <= ${hasta} ${filtroSuc}
        AND vendedor IS NOT NULL AND vendedor <> ''
-       GROUP BY vendedor ORDER BY total DESC LIMIT 5`
-    )));
+       GROUP BY vendedor ORDER BY total DESC LIMIT 5
+    `));
     if (r.length === 0) return { mensaje: `No hay ventas con vendedor registrado en ${etiqueta}.` };
     return {
       periodo: etiqueta,
@@ -290,19 +300,19 @@ export const asistenteTools = {
     if (!db) return { error: "Sin BD" };
     const s = sucursal.toLowerCase();
     // 1) Buscar por sucursalFija (case-insensitive)
-    const r = rows(await db.execute(sql.raw(
-      `SELECT nombre, sucursalFija, tipoTrabajador FROM trabajadores
-       WHERE activo=1 AND LOWER(sucursalFija) LIKE ${esc("%" + s + "%")}`
-    )));
+    const r = rows(await db.execute(sql`
+      SELECT nombre, sucursalFija, tipoTrabajador FROM trabajadores
+       WHERE activo=1 AND LOWER(sucursalFija) LIKE ${"%" + s + "%"}
+    `));
     if (r.length > 0) {
       return { sucursal, trabajadores: r.map((t: any) => ({ nombre: t.nombre, tipo: t.tipoTrabajador })) };
     }
     // 2) Respaldo: inferir por las ventas (qué vendedores vendieron en esa sucursal últimamente)
-    const vend = rows(await db.execute(sql.raw(
-      `SELECT DISTINCT vendedor FROM ventas
-       WHERE LOWER(nombreSucursal) LIKE ${esc("%" + s + "%")} AND vendedor IS NOT NULL AND vendedor <> ''
-       ORDER BY vendedor LIMIT 20`
-    )));
+    const vend = rows(await db.execute(sql`
+      SELECT DISTINCT vendedor FROM ventas
+       WHERE LOWER(nombreSucursal) LIKE ${"%" + s + "%"} AND vendedor IS NOT NULL AND vendedor <> ''
+       ORDER BY vendedor LIMIT 20
+    `));
     if (vend.length > 0) {
       return {
         sucursal,
@@ -317,9 +327,7 @@ export const asistenteTools = {
   async listarSucursales() {
     const db = await getDb();
     if (!db) return { error: "Sin BD" };
-    const r = rows(await db.execute(sql.raw(
-      `SELECT DISTINCT nombreSucursal FROM ventas WHERE nombreSucursal IS NOT NULL`
-    )));
+    const r = rows(await db.execute(sql`SELECT DISTINCT nombreSucursal FROM ventas WHERE nombreSucursal IS NOT NULL`));
     return { sucursales: r.map((s: any) => s.nombreSucursal) };
   },
 
@@ -409,14 +417,13 @@ export const asistenteTools = {
   async historialCompraProducto(nombre: string) {
     const db = await getDb();
     if (!db) return { error: "Sin BD" };
-    const palabras = nombre.trim().split(/\s+/).filter(Boolean);
-    const cond = palabras.map(w => `i.productName LIKE ${esc("%" + w + "%")}`).join(" AND ");
-    const r = rows(await db.execute(sql.raw(
-      `SELECT i.productName, i.unitCost, p.supplier, p.createdAt
+    const cond = condPalabras("i.productName", nombre);
+    const r = rows(await db.execute(sql`
+      SELECT i.productName, i.unitCost, p.supplier, p.createdAt
        FROM purchase_items i JOIN purchases p ON p.id = i.purchaseId
        WHERE ${cond} AND p.status='completed' AND i.unitCost > 0
-       ORDER BY p.createdAt DESC`
-    )));
+       ORDER BY p.createdAt DESC
+    `));
     if (r.length === 0) {
       return { mensaje: `No encontré compras registradas del producto "${nombre}".` };
     }
@@ -503,12 +510,12 @@ export const asistenteTools = {
       }
       return new Date().toISOString().slice(0, 7);
     })();
-    const filtroSuc = sucursal ? ` AND sucursal LIKE ${esc("%" + sucursal + "%")}` : "";
-    const r = rows(await db.execute(sql.raw(
-      `SELECT nombre, categoria, monto, pagado, sucursal FROM gastos_registro
-       WHERE anioMes = ${esc(anioMes)}${filtroSuc}
-       ORDER BY pagado ASC, sucursal, monto DESC`
-    )));
+    const filtroSuc = filtroLike("sucursal", sucursal);
+    const r = rows(await db.execute(sql`
+      SELECT nombre, categoria, monto, pagado, sucursal FROM gastos_registro
+       WHERE anioMes = ${anioMes} ${filtroSuc}
+       ORDER BY pagado ASC, sucursal, monto DESC
+    `));
     if (r.length === 0) {
       return { mensaje: `No hay gastos registrados para ${anioMes}${sucursal ? " en " + sucursal : ""}.` };
     }
@@ -544,14 +551,14 @@ export const asistenteTools = {
     const desde = iso(ini), hasta = iso(fin);
     const etiquetaMes = `${ini.getFullYear()}-${String(ini.getMonth() + 1).padStart(2, "0")}`;
 
-    const filtroSuc = sucursal ? ` AND nombreSucursal LIKE ${esc("%" + sucursal + "%")}` : "";
+    const filtroSuc = filtroLike("nombreSucursal", sucursal);
     // Top productos por cantidad vendida en el mes
-    const ventas = rows(await db.execute(sql.raw(
-      `SELECT articuloNombre, SUM(cantidad) as vendido
-       FROM ventas_detalle WHERE fecha >= ${esc(desde)} AND fecha <= ${esc(hasta)}${filtroSuc}
+    const ventas = rows(await db.execute(sql`
+      SELECT articuloNombre, SUM(cantidad) as vendido
+       FROM ventas_detalle WHERE fecha >= ${desde} AND fecha <= ${hasta} ${filtroSuc}
        AND articuloNombre NOT LIKE '%venta menor%' AND articuloNombre NOT LIKE '%ventas menores%'
-       GROUP BY articuloNombre HAVING vendido > 0 ORDER BY vendido DESC LIMIT 40`
-    )));
+       GROUP BY articuloNombre HAVING vendido > 0 ORDER BY vendido DESC LIMIT 40
+    `));
     if (ventas.length === 0) {
       return { mensaje: `No hay ventas en el mes ${etiquetaMes}${sucursal ? " en " + sucursal : ""}.` };
     }
@@ -563,10 +570,10 @@ export const asistenteTools = {
       let idProv = "";
       if (proveedor) {
         // Buscar idProveedor por nombre en el cache
-        const pr = rows(await db.execute(sql.raw(
-          `SELECT DISTINCT idProveedor, nombreProveedor FROM productos_cache
-           WHERE nombreProveedor LIKE ${esc("%" + proveedor + "%")} AND idProveedor IS NOT NULL LIMIT 1`
-        )));
+        const pr = rows(await db.execute(sql`
+          SELECT DISTINCT idProveedor, nombreProveedor FROM productos_cache
+           WHERE nombreProveedor LIKE ${"%" + proveedor + "%"} AND idProveedor IS NOT NULL LIMIT 1
+        `));
         if (pr[0]?.idProveedor) idProv = String(pr[0].idProveedor);
       }
       // Si se filtra por sucursal, usar el stock del ALMACÉN de esa sucursal
@@ -647,14 +654,14 @@ export const asistenteTools = {
     const iso = (d: Date) => d.toISOString().slice(0, 10);
     const desde = iso(ini3Meses), hasta = iso(finMesAnterior);
 
-    const filtroSuc = sucursal ? ` AND nombreSucursal LIKE ${esc("%" + sucursal + "%")}` : "";
+    const filtroSuc = filtroLike("nombreSucursal", sucursal);
     // Venta total en 3 meses → promedio mensual = total / 3
-    const ventas = rows(await db.execute(sql.raw(
-      `SELECT articuloNombre, SUM(cantidad) as total3m
-       FROM ventas_detalle WHERE fecha >= ${esc(desde)} AND fecha <= ${esc(hasta)}${filtroSuc}
+    const ventas = rows(await db.execute(sql`
+      SELECT articuloNombre, SUM(cantidad) as total3m
+       FROM ventas_detalle WHERE fecha >= ${desde} AND fecha <= ${hasta} ${filtroSuc}
        AND articuloNombre NOT LIKE '%venta menor%' AND articuloNombre NOT LIKE '%ventas menores%'
-       GROUP BY articuloNombre HAVING total3m > 0`
-    )));
+       GROUP BY articuloNombre HAVING total3m > 0
+    `));
     if (ventas.length === 0) {
       return { mensaje: `No hay ventas en los últimos 3 meses${sucursal ? " en " + sucursal : ""} para calcular el pedido.` };
     }
@@ -668,10 +675,10 @@ export const asistenteTools = {
       const { inventarios365 } = await import("./inventarios365");
       let idProv = "";
       if (proveedor) {
-        const pr = rows(await db.execute(sql.raw(
-          `SELECT DISTINCT idProveedor FROM productos_cache
-           WHERE nombreProveedor LIKE ${esc("%" + proveedor + "%")} AND idProveedor IS NOT NULL LIMIT 1`
-        )));
+        const pr = rows(await db.execute(sql`
+          SELECT DISTINCT idProveedor FROM productos_cache
+           WHERE nombreProveedor LIKE ${"%" + proveedor + "%"} AND idProveedor IS NOT NULL LIMIT 1
+        `));
         if (pr[0]?.idProveedor) idProv = String(pr[0].idProveedor);
       }
       const ALMACENES: Record<string, number> = { petrolera: 2, lanza: 3, cobol: 4, matriz: 1, principal: 1 };

@@ -29,43 +29,41 @@ export async function calcularRentabilidadPorSucursal(anioMes: string): Promise<
   const db = await getDb();
   if (!db) return { sucursales: [], gastosGenerales: 0, nota: "Sin BD" };
   const rows = (r: any) => { const x = Array.isArray(r) ? r[0] : r?.rows ?? r; return Array.isArray(x) ? x : []; };
-  const esc = (v: string) => `'${String(v).replace(/'/g, "''")}'`;
   const [anio, mes] = anioMes.split("-").map(Number);
   const desde = `${anioMes}-01`;
   const ultimoDia = new Date(anio, mes, 0).getDate();
   const hasta = `${anioMes}-${String(ultimoDia).padStart(2, "0")}`;
-  const rango = `fecha >= ${esc(desde)} AND fecha <= ${esc(hasta)}`;
-  const rangoD = `d.fecha >= ${esc(desde)} AND d.fecha <= ${esc(hasta)}`;
-  const excl = ` AND d.articuloNombre NOT LIKE '%ventas menores%' AND d.articuloNombre NOT LIKE '%venta menor%'`;
 
   try {
-    const ingresos = rows(await db.execute(sql.raw(
-      `SELECT nombreSucursal, SUM(total) as ingreso, COUNT(*) as ventas
-       FROM ventas WHERE ${rango} AND nombreSucursal IS NOT NULL
-       GROUP BY nombreSucursal`
-    )));
-    const costos = rows(await db.execute(sql.raw(
-      `SELECT d.nombreSucursal, SUM(d.cantidad * c.precioCostoUnid) as costo
+    const ingresos = rows(await db.execute(sql`
+      SELECT nombreSucursal, SUM(total) as ingreso, COUNT(*) as ventas
+       FROM ventas WHERE fecha >= ${desde} AND fecha <= ${hasta} AND nombreSucursal IS NOT NULL
+       GROUP BY nombreSucursal
+    `));
+    const costos = rows(await db.execute(sql`
+      SELECT d.nombreSucursal, SUM(d.cantidad * c.precioCostoUnid) as costo
        FROM ventas_detalle d JOIN productos_cache c ON c.nombre = d.articuloNombre
-       WHERE ${rangoD}${excl} AND c.precioCostoUnid > 0 AND d.nombreSucursal IS NOT NULL
-       GROUP BY d.nombreSucursal`
-    )));
-    const gastos = rows(await db.execute(sql.raw(
-      `SELECT sucursal, SUM(monto) as gastos FROM gastos_registro
-       WHERE anioMes=${esc(anioMes)} AND sucursal IS NOT NULL
-       GROUP BY sucursal`
-    )));
-    const gastosGenerales = rows(await db.execute(sql.raw(
-      `SELECT SUM(monto) as total FROM gastos_registro
-       WHERE anioMes=${esc(anioMes)} AND (sucursal IS NULL OR sucursal='')`
-    )))[0]?.total || 0;
+       WHERE d.fecha >= ${desde} AND d.fecha <= ${hasta}
+       AND d.articuloNombre NOT LIKE '%ventas menores%' AND d.articuloNombre NOT LIKE '%venta menor%'
+       AND c.precioCostoUnid > 0 AND d.nombreSucursal IS NOT NULL
+       GROUP BY d.nombreSucursal
+    `));
+    const gastos = rows(await db.execute(sql`
+      SELECT sucursal, SUM(monto) as gastos FROM gastos_registro
+       WHERE anioMes=${anioMes} AND sucursal IS NOT NULL
+       GROUP BY sucursal
+    `));
+    const gastosGenerales = rows(await db.execute(sql`
+      SELECT SUM(monto) as total FROM gastos_registro
+       WHERE anioMes=${anioMes} AND (sucursal IS NULL OR sucursal='')
+    `))[0]?.total || 0;
 
     // Gastos NO cancelados (pagado=0) del mes, con su sucursal (o general)
-    const noCancelados = rows(await db.execute(sql.raw(
-      `SELECT nombre, categoria, monto, sucursal FROM gastos_registro
-       WHERE anioMes=${esc(anioMes)} AND pagado=0
-       ORDER BY sucursal, monto DESC`
-    )));
+    const noCancelados = rows(await db.execute(sql`
+      SELECT nombre, categoria, monto, sucursal FROM gastos_registro
+       WHERE anioMes=${anioMes} AND pagado=0
+       ORDER BY sucursal, monto DESC
+    `));
     const gastosNoCancelados = noCancelados.map((g: any) => ({
       nombre: g.nombre,
       categoria: g.categoria,
@@ -131,9 +129,9 @@ export async function calcularRentabilidadPorSucursal(anioMes: string): Promise<
     }
 
     for (const s of Object.keys(mapa)) {
-      const vend = rows(await db.execute(sql.raw(
-        `SELECT DISTINCT vendedor FROM ventas WHERE nombreSucursal=${esc(s)} AND vendedor IS NOT NULL`
-      )));
+      const vend = rows(await db.execute(sql`
+        SELECT DISTINCT vendedor FROM ventas WHERE nombreSucursal=${s} AND vendedor IS NOT NULL
+      `));
       const usuarios = new Set(vend.map((v: any) => String(v.vendedor)));
       let sueldos = 0;
       for (const item of sueldoPorTrabajador) {

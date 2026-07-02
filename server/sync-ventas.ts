@@ -14,15 +14,9 @@ const diaSemanaDe = (fecha: string): number => {
   return new Date(Date.UTC(a, m - 1, d)).getUTCDay();
 };
 
-const esc = (v: any): string => {
-  if (v === null || v === undefined) return "NULL";
-  if (typeof v === "number") return String(v);
-  return `'${String(v).replace(/'/g, "''")}'`;
-};
-
 async function leerUltimoId(db: any, sql: any): Promise<number> {
   try {
-    const r: any = await db.execute(sql.raw("SELECT ultimoId FROM sync_estado WHERE clave='ventas' LIMIT 1"));
+    const r: any = await db.execute(sql`SELECT ultimoId FROM sync_estado WHERE clave='ventas' LIMIT 1`);
     const rows = Array.isArray(r) ? r[0] : r?.rows ?? r;
     const val = Array.isArray(rows) ? rows[0]?.ultimoId : rows?.ultimoId;
     return Number(val ?? 0);
@@ -31,16 +25,16 @@ async function leerUltimoId(db: any, sql: any): Promise<number> {
 
 async function guardarUltimoId(db: any, sql: any, ultimoId: number, notas: string): Promise<void> {
   try {
-    await db.execute(sql.raw(
-      `INSERT INTO sync_estado (clave, ultimoId, notas) VALUES ('ventas', ${ultimoId}, ${esc(notas)})
-       ON DUPLICATE KEY UPDATE ultimoId=${ultimoId}, notas=${esc(notas)}, ultimaSync=CURRENT_TIMESTAMP`
-    ));
+    await db.execute(sql`
+      INSERT INTO sync_estado (clave, ultimoId, notas) VALUES ('ventas', ${ultimoId}, ${notas})
+       ON DUPLICATE KEY UPDATE ultimoId=${ultimoId}, notas=${notas}, ultimaSync=CURRENT_TIMESTAMP
+    `);
   } catch (e) { console.warn("[SyncVentas] Error guardando ultimoId:", e); }
 }
 
 async function ventaExiste(db: any, sql: any, id: number): Promise<boolean> {
   try {
-    const r: any = await db.execute(sql.raw(`SELECT id FROM ventas WHERE id=${id} LIMIT 1`));
+    const r: any = await db.execute(sql`SELECT id FROM ventas WHERE id=${id} LIMIT 1`);
     const rows = Array.isArray(r) ? r[0] : r?.rows ?? r;
     return Array.isArray(rows) ? rows.length > 0 : !!rows?.id;
   } catch { return false; }
@@ -57,10 +51,10 @@ async function guardarVenta(db: any, sql: any, venta: any): Promise<boolean> {
   if (!fecha) return false;
 
   try {
-    await db.execute(sql.raw(
-      `INSERT INTO ventas (id, numComprobante, tipoComprobante, fechaHora, fecha, diaSemana, total, descuentoTotal, vendedor, nombreSucursal, idCliente, razonSocialCliente, estado)
-       VALUES (${ventaId}, ${esc(venta.num_comprobante)}, ${esc(venta.tipo_comprobante)}, ${esc(fechaHora)}, ${esc(fecha)}, ${diaSemanaDe(fecha)}, ${Number(venta.total) || 0}, ${Number(venta.descuento_total) || 0}, ${esc(venta.usuario)}, ${esc(venta.nombre_sucursal)}, ${venta.idcliente ? Number(venta.idcliente) : "NULL"}, ${esc(venta.razonSocial)}, ${esc(String(venta.estado ?? ""))})`
-    ));
+    await db.execute(sql`
+      INSERT INTO ventas (id, numComprobante, tipoComprobante, fechaHora, fecha, diaSemana, total, descuentoTotal, vendedor, nombreSucursal, idCliente, razonSocialCliente, estado)
+       VALUES (${ventaId}, ${venta.num_comprobante ?? null}, ${venta.tipo_comprobante ?? null}, ${fechaHora}, ${fecha}, ${diaSemanaDe(fecha)}, ${Number(venta.total) || 0}, ${Number(venta.descuento_total) || 0}, ${venta.usuario ?? null}, ${venta.nombre_sucursal ?? null}, ${venta.idcliente ? Number(venta.idcliente) : null}, ${venta.razonSocial ?? null}, ${String(venta.estado ?? "")})
+    `);
   } catch (e) {
     console.warn(`[SyncVentas] Error insertando venta ${ventaId}:`, e);
     return false;
@@ -69,10 +63,10 @@ async function guardarVenta(db: any, sql: any, venta: any): Promise<boolean> {
   try {
     const detalles = await inventarios365.obtenerDetallesVenta(ventaId);
     for (const d of detalles) {
-      await db.execute(sql.raw(
-        `INSERT INTO ventas_detalle (ventaId, articuloNombre, cantidad, precio, descuento, subtotal, fecha, nombreSucursal)
-         VALUES (${ventaId}, ${esc(d.articulo || "—")}, ${Number(d.cantidad) || 0}, ${Number(d.precio) || 0}, ${Number(d.descuento) || 0}, ${Number(d.subtotal) || 0}, ${esc(fecha)}, ${esc(venta.nombre_sucursal)})`
-      ));
+      await db.execute(sql`
+        INSERT INTO ventas_detalle (ventaId, articuloNombre, cantidad, precio, descuento, subtotal, fecha, nombreSucursal)
+         VALUES (${ventaId}, ${d.articulo || "—"}, ${Number(d.cantidad) || 0}, ${Number(d.precio) || 0}, ${Number(d.descuento) || 0}, ${Number(d.subtotal) || 0}, ${fecha}, ${venta.nombre_sucursal ?? null})
+      `);
     }
   } catch (e) {
     console.warn(`[SyncVentas] Error en detalle de venta ${ventaId}:`, e);
@@ -147,11 +141,11 @@ export async function sincronizarClientes(maxPaginas = 60): Promise<{ total: num
       for (const c of lista) {
         const id = Number(c.id);
         if (!id) continue;
-        await db.execute(sql.raw(
-          `INSERT INTO clientes (id, nombre, tipoDocumento, numDocumento, complementoId, telefono, email, direccion, creadoEnSistema)
-           VALUES (${id}, ${esc(c.nombre)}, ${esc(c.tipo_documento != null ? String(c.tipo_documento) : null)}, ${esc(c.num_documento)}, ${esc(c.complemento_id)}, ${esc(c.telefono)}, ${esc(c.email)}, ${esc(c.direccion)}, ${esc(c.created_at)})
-           ON DUPLICATE KEY UPDATE nombre=${esc(c.nombre)}, numDocumento=${esc(c.num_documento)}, telefono=${esc(c.telefono)}, email=${esc(c.email)}, direccion=${esc(c.direccion)}`
-        ));
+        await db.execute(sql`
+          INSERT INTO clientes (id, nombre, tipoDocumento, numDocumento, complementoId, telefono, email, direccion, creadoEnSistema)
+           VALUES (${id}, ${c.nombre ?? null}, ${c.tipo_documento != null ? String(c.tipo_documento) : null}, ${c.num_documento ?? null}, ${c.complemento_id ?? null}, ${c.telefono ?? null}, ${c.email ?? null}, ${c.direccion ?? null}, ${c.created_at ?? null})
+           ON DUPLICATE KEY UPDATE nombre=${c.nombre ?? null}, numDocumento=${c.num_documento ?? null}, telefono=${c.telefono ?? null}, email=${c.email ?? null}, direccion=${c.direccion ?? null}
+        `);
         total++;
       }
       if (lista.length < 10) break;
@@ -186,7 +180,7 @@ export async function cargarHistoricoLote(
   // Leer desde qué página continuar (progreso guardado)
   let paginaInicio = 1;
   try {
-    const r: any = await db.execute(sql.raw("SELECT ultimoId FROM sync_estado WHERE clave='historico' LIMIT 1"));
+    const r: any = await db.execute(sql`SELECT ultimoId FROM sync_estado WHERE clave='historico' LIMIT 1`);
     const rows = Array.isArray(r) ? r[0] : r?.rows ?? r;
     const val = Array.isArray(rows) ? rows[0]?.ultimoId : rows?.ultimoId;
     paginaInicio = Number(val ?? 0) + 1;
@@ -237,10 +231,11 @@ export async function cargarHistoricoLote(
     }
 
     const ultimaPagina = pagina;
-    await db.execute(sql.raw(
-      `INSERT INTO sync_estado (clave, ultimoId, notas) VALUES ('historico', ${ultimaPagina}, ${esc(`${desde}..${hasta}`)})
-       ON DUPLICATE KEY UPDATE ultimoId=${ultimaPagina}, notas=${esc(`${desde}..${hasta}`)}, ultimaSync=CURRENT_TIMESTAMP`
-    ));
+    const notasRango = `${desde}..${hasta}`;
+    await db.execute(sql`
+      INSERT INTO sync_estado (clave, ultimoId, notas) VALUES ('historico', ${ultimaPagina}, ${notasRango})
+       ON DUPLICATE KEY UPDATE ultimoId=${ultimaPagina}, notas=${notasRango}, ultimaSync=CURRENT_TIMESTAMP
+    `);
     if (!mensaje) {
       mensaje = llegoAlRango
         ? `Procesado hasta pág. ${ultimaPagina} · +${guardadas} ventas de mayo`
@@ -260,7 +255,7 @@ export async function reiniciarProgresoHistorico(): Promise<void> {
   const db = await getDb();
   if (!db) return;
   try {
-    await db.execute(sql.raw("DELETE FROM sync_estado WHERE clave='historico'"));
+    await db.execute(sql`DELETE FROM sync_estado WHERE clave='historico'`);
   } catch (e) { console.warn("[Historico] Error reiniciando:", e); }
 }
 

@@ -42,7 +42,9 @@ export function getSessionCookieOptions(
   return {
     httpOnly: true,
     path: "/",
-    sameSite: "none",
+    // "lax" alcanza para esta app de un solo origen y da protección CSRF real
+    // (con "none" el navegador manda la cookie de sesión en requests de otros sitios).
+    sameSite: "lax",
     secure: isSecureRequest(req),
   };
 }

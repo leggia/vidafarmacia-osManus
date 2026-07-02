@@ -159,38 +159,22 @@ export async function createPurchase(data: {
   const purchaseId = purchaseResult.insertId;
 
   if (data.items.length > 0) {
-    const { sql } = await import("drizzle-orm");
-    // Detectar si la columna nombreFactura existe realmente en la tabla
-    let tieneNombreFactura = true;
-    try {
-      const r: any = await db.execute(sql.raw(
-        "SELECT COUNT(*) as n FROM INFORMATION_SCHEMA.COLUMNS WHERE TABLE_NAME='purchase_items' AND COLUMN_NAME='nombreFactura'"
-      ));
-      const rows = Array.isArray(r) ? r[0] : r?.rows ?? r;
-      const n = Number((Array.isArray(rows) ? rows[0]?.n : rows?.n) ?? 0);
-      tieneNombreFactura = n > 0;
-    } catch { tieneNombreFactura = false; }
-
-    const esc = (v: any) => v == null ? "NULL" : `'${String(v).replace(/'/g, "''")}'`;
     const num = (v: any) => { const n = Number(v); return isNaN(n) ? 0 : n; };
     for (const item of data.items) {
-      const nombreFactura = item.nombreFactura || item.productName;
       const cant = num(item.quantity);
       const costo = num(item.unitCost);
       const subt = num(item.subtotal);
       const pv = item.precioVenta != null && Number(item.precioVenta) > 0 ? num(item.precioVenta) : null;
-      const pvSql = pv == null ? "NULL" : esc(String(pv));
-      if (tieneNombreFactura) {
-        await db.execute(sql.raw(
-          `INSERT INTO purchase_items (purchaseId, productName, nombreFactura, quantity, unitCost, subtotal, expiryDate, precioVenta)
-           VALUES (${purchaseId}, ${esc(item.productName)}, ${esc(nombreFactura)}, ${cant}, ${esc(String(costo))}, ${esc(String(subt))}, ${esc(item.expiryDate || null)}, ${pvSql})`
-        ));
-      } else {
-        await db.execute(sql.raw(
-          `INSERT INTO purchase_items (purchaseId, productName, quantity, unitCost, subtotal, expiryDate, precioVenta)
-           VALUES (${purchaseId}, ${esc(item.productName)}, ${cant}, ${esc(String(costo))}, ${esc(String(subt))}, ${esc(item.expiryDate || null)}, ${pvSql})`
-        ));
-      }
+      await db.insert(purchaseItems).values({
+        purchaseId,
+        productName: item.productName,
+        nombreFactura: item.nombreFactura || item.productName,
+        quantity: cant,
+        unitCost: String(costo),
+        subtotal: String(subt),
+        expiryDate: item.expiryDate || null,
+        precioVenta: pv == null ? null : String(pv),
+      });
     }
   }
 

@@ -22,9 +22,11 @@
 import axios, { AxiosInstance } from "axios";
 
 const BASE_URL = "https://vidafarmacia.inventarios365.com";
+// Credenciales de inventarios365 — NUNCA hardcodear aquí (quedan expuestas en el
+// repo de GitHub para siempre). Se configuran en Railway como variables de entorno.
 const CREDENTIALS = {
-  usuario: "superadmin",
-  password: "superadmin",
+  usuario: process.env.INVENTARIOS365_USER || "",
+  password: process.env.INVENTARIOS365_PASS || "",
 };
 
 // Estructura de un artículo en el detalle de compra
