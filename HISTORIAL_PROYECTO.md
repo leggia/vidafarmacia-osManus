@@ -57,7 +57,8 @@ Luis tiene una PC 24/7 en la sucursal Petrolera (también usada para ventas) y p
 
 ## Pendientes
 
-- Verificar con una factura real que la extracción funciona bien con qwen3.6-27b (migrado v1.74.1).
+- Verificar con una factura real que la extracción funciona bien con qwen3.6-27b (migrado v1.74.1; v1.74.4 ajustó max_tokens=3000 por límite TPM 8000 del tier gratuito de Groq).
+- **Migrar lector de facturas a DeepSeek cuando su API soporte visión** (jul 2026: V4-Flash ya tiene visión en el chat pero NO en la API; en pruebas desde abril 2026). Luis quiere la opción más económica y ya paga DeepSeek. Revisar api-docs.deepseek.com periódicamente.
 - Consulta de retraso de vendedor (verificar estructura asistencia/sueldos).
 - Fase 2 del asistente: acciones (cambiar precio, corregir inventario) con confirmación + auditoría (quién/qué/cuándo). Luis confirmó querer auditoría.
 - Rotar token GitHub si se expuso.
