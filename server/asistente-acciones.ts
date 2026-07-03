@@ -225,6 +225,19 @@ export const accionesTools = {
     }
   },
 
+  // ¿Hay alguna propuesta pendiente (y no caducada)? Para resolver "sí"/"no" sin pasar por el modelo.
+  async hayPendiente(): Promise<boolean> {
+    await asegurarTablas();
+    const db = await getDb();
+    if (!db) return false;
+    const pend = rows(await db.execute(sql`
+      SELECT creadoEn FROM asistente_acciones_pendientes WHERE estado = 'pendiente' ORDER BY id DESC LIMIT 1
+    `));
+    if (pend.length === 0) return false;
+    const antiguedadMin = (Date.now() - new Date(pend[0].creadoEn).getTime()) / 60000;
+    return antiguedadMin <= EXPIRA_MIN;
+  },
+
   // Cancelar la propuesta pendiente
   async cancelarAccion() {
     await asegurarTablas();

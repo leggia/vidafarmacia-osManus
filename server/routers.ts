@@ -2335,6 +2335,26 @@ const asistenteRouter = router({
         return { respuesta: "El asistente aún no está configurado (falta la clave de DeepSeek). Avisa al administrador para activarlo.", error: true };
       }
 
+      // Atajo determinístico para confirmar/cancelar una acción pendiente: NO se
+      // delega al modelo (a veces falla al elegir la herramienta o filtra texto
+      // crudo de function-calling). Si hay una propuesta pendiente y el mensaje
+      // es un sí/no simple, se resuelve directo.
+      const qNorm = input.pregunta.trim().toLowerCase().replace(/[.!¡¿?]/g, "");
+      const esConfirmacion = /^(s[ií]|si|confirmo|confirmar|dale|hazlo|proceda|correcto|ok|okay|de acuerdo)$/.test(qNorm);
+      const esCancelacion = /^(no|cancela|cancelar|mejor no|olv[ií]dalo)$/.test(qNorm);
+      if (esConfirmacion || esCancelacion) {
+        const { accionesTools } = await import("./asistente-acciones");
+        if (await accionesTools.hayPendiente()) {
+          if (esConfirmacion) {
+            const r = await accionesTools.confirmarAccion(usuarioActual);
+            return { respuesta: r.error || `✅ ${r.resultado}`, usoHerramienta: "confirmarAccion" };
+          } else {
+            const r = await accionesTools.cancelarAccion();
+            return { respuesta: r.error || r.mensaje, usoHerramienta: "cancelarAccion" };
+          }
+        }
+      }
+
       // PREFIJO ESTABLE (para caché de contexto de DeepSeek): system + tools
       // SIEMPRE idénticos y al inicio. El contenido variable (pregunta) va al final.
       const systemPrompt = `Asistente de VidaFarma (farmacia, Cochabamba, Bolivia). Responde en español, breve y profesional.
@@ -2431,7 +2451,12 @@ Para comparar sucursales usa una sola llamada. Nunca escribas funciones como tex
         // Segunda llamada: el modelo redacta la respuesta final con los datos
         mensajes.push({ role: "system", content: "Redacta usando ÚNICAMENTE los datos de las herramientas anteriores. No agregues nombres, filas ni cifras que no estén en esos datos. Si los datos están vacíos, dilo." });
         const r2 = await invokeDeepSeek({ messages: mensajes, maxTokens: 1024 });
-        const respuesta = r2.choices?.[0]?.message?.content || "Obtuve los datos pero no pude redactar la respuesta.";
+        const respuestaCruda = r2.choices?.[0]?.message?.content || "Obtuve los datos pero no pude redactar la respuesta.";
+        // Defensa: si el modelo filtró una invocación de función como texto crudo
+        // en vez de redactar, no se lo mostramos al usuario tal cual.
+        const respuesta = /DSML|tool_calls|invoke\s+name=|<function|<｜/i.test(respuestaCruda)
+          ? "La acción se procesó, pero no pude redactar el mensaje final. Escribe \"muéstrame la auditoría\" para confirmar qué se hizo."
+          : respuestaCruda;
         return { respuesta, usoHerramienta: herramientasUsadas.join(", ") };
       } catch (e: any) {
         const msg = String(e?.message || "");
