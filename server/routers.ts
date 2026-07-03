@@ -2251,6 +2251,12 @@ async function ejecutarHerramienta(nombre: string, args: any): Promise<any> {
       case "vencimientosProximos": return await asistenteTools.vencimientosProximos(args.meses);
       case "margenProductos": return await asistenteTools.margenProductos(args.orden, args.sucursal);
       case "resumenEjecutivo": return await asistenteTools.resumenEjecutivo();
+      case "cambiarPrecioVenta": { const { accionesTools } = await import("./asistente-acciones"); return await accionesTools.cambiarPrecioVenta(args.nombreProducto, args.nuevoPrecio); }
+      case "marcarGastoPagado": { const { accionesTools } = await import("./asistente-acciones"); return await accionesTools.marcarGastoPagado(args.nombreGasto, args.sucursal); }
+      case "registrarGasto": { const { accionesTools } = await import("./asistente-acciones"); return await accionesTools.registrarGasto(args.nombre, args.monto, args.sucursal, args.categoria, args.yaPagado); }
+      case "confirmarAccion": { const { accionesTools } = await import("./asistente-acciones"); return await accionesTools.confirmarAccion(); }
+      case "cancelarAccion": { const { accionesTools } = await import("./asistente-acciones"); return await accionesTools.cancelarAccion(); }
+      case "verAuditoria": { const { accionesTools } = await import("./asistente-acciones"); return await accionesTools.verAuditoria(args.limite); }
       default: return { error: "Herramienta desconocida" };
     }
   } catch (e: any) {
@@ -2320,6 +2326,12 @@ Para comparar sucursales usa una sola llamada. Nunca escribas funciones como tex
         { type: "function" as const, function: { name: "vencimientosProximos", description: "Productos comprados que vencen en los próximos N meses (default 4), según fechas registradas en compras. Úsala para 'qué vence pronto', 'vencimientos', 'productos por vencer'.", parameters: { type: "object", properties: { meses: { type: "number" } } } } },
         { type: "function" as const, function: { name: "margenProductos", description: "Margen de ganancia por producto (vendidos el mes pasado): con orden 'bajo' muestra los que casi no dejan ganancia (revisar precios), con 'alto' los más rentables. Úsala para 'qué productos me dejan poco margen', 'dónde gano más', 'productos poco rentables'.", parameters: { type: "object", properties: { orden: { type: "string", description: "'bajo' o 'alto'" }, sucursal: { type: "string" } } } } },
         { type: "function" as const, function: { name: "resumenEjecutivo", description: "Parte ejecutivo del negocio en una sola consulta: ventas de HOY por sucursal, ritmo del mes (acumulado vs mes anterior al mismo día), pagos pendientes, vencimientos a 30 días y cajas abiertas. Úsala para 'cómo está el negocio', 'resumen del día', 'cómo vamos', 'dame el parte'.", parameters: { type: "object", properties: {} } } },
+        { type: "function" as const, function: { name: "cambiarPrecioVenta", description: "ACCIÓN (requiere confirmación): propone cambiar el precio de venta de un producto. NO se ejecuta hasta que el usuario confirme. Úsala cuando pidan 'cambia el precio de X a Y'.", parameters: { type: "object", properties: { nombreProducto: { type: "string" }, nuevoPrecio: { type: "number" } }, required: ["nombreProducto", "nuevoPrecio"] } } },
+        { type: "function" as const, function: { name: "marcarGastoPagado", description: "ACCIÓN (requiere confirmación): propone marcar como pagado un gasto pendiente del mes (alquiler, luz, etc.). Úsala cuando digan 'ya pagué X', 'marca como pagado X'.", parameters: { type: "object", properties: { nombreGasto: { type: "string" }, sucursal: { type: "string" } }, required: ["nombreGasto"] } } },
+        { type: "function" as const, function: { name: "registrarGasto", description: "ACCIÓN (requiere confirmación): propone registrar un gasto ocasional del mes. Úsala cuando digan 'registra un gasto de X por Y Bs'.", parameters: { type: "object", properties: { nombre: { type: "string" }, monto: { type: "number" }, sucursal: { type: "string" }, categoria: { type: "string" }, yaPagado: { type: "boolean" } }, required: ["nombre", "monto"] } } },
+        { type: "function" as const, function: { name: "confirmarAccion", description: "Ejecuta la acción pendiente de confirmación. Úsala SOLO cuando el usuario confirme explícitamente ('sí', 'confirmo', 'dale', 'hazlo').", parameters: { type: "object", properties: {} } } },
+        { type: "function" as const, function: { name: "cancelarAccion", description: "Cancela la acción pendiente. Úsala cuando el usuario diga 'no', 'cancela', 'mejor no'.", parameters: { type: "object", properties: {} } } },
+        { type: "function" as const, function: { name: "verAuditoria", description: "Muestra las últimas acciones ejecutadas por el asistente (auditoría: qué se cambió, cuándo, valores antes/después). Úsala para 'qué acciones hiciste', 'auditoría', 'historial de cambios'.", parameters: { type: "object", properties: { limite: { type: "number" } } } } },
       ];
 
       const mensajes: any[] = [

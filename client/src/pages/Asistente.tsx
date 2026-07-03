@@ -121,7 +121,7 @@ export default function Asistente() {
         </Button>
       </div>
       <p className="text-[10px] text-muted-foreground text-center mt-2">
-        El asistente solo consulta datos (no modifica nada). Verifica cifras importantes en sus reportes.
+        Las acciones (precios, gastos) siempre piden tu confirmación y quedan auditadas. Verifica cifras importantes en sus reportes.
       </p>
     </div>
   );
