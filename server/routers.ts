@@ -2337,11 +2337,13 @@ const asistenteRouter = router({
 
       // Atajo determinístico para confirmar/cancelar una acción pendiente: NO se
       // delega al modelo (a veces falla al elegir la herramienta o filtra texto
-      // crudo de function-calling). Si hay una propuesta pendiente y el mensaje
-      // es un sí/no simple, se resuelve directo.
-      const qNorm = input.pregunta.trim().toLowerCase().replace(/[.!¡¿?]/g, "");
-      const esConfirmacion = /^(s[ií]|si|confirmo|confirmar|dale|hazlo|proceda|correcto|ok|okay|de acuerdo)$/.test(qNorm);
-      const esCancelacion = /^(no|cancela|cancelar|mejor no|olv[ií]dalo)$/.test(qNorm);
+      // crudo de function-calling). Si hay una propuesta pendiente, se juzga por
+      // la PRIMERA PALABRA del mensaje (no el mensaje exacto), para cubrir
+      // respuestas naturales como "sí, hazlo" o "sí dale nomás".
+      const qNorm = input.pregunta.trim().toLowerCase().replace(/[.!¡¿?,]/g, "");
+      const primeraPalabra = qNorm.split(/\s+/)[0] || "";
+      const esConfirmacion = /^(s[ií]|confirmo|confirmar|dale|hazlo|adelante|procede|correcto|ok|okay|claro|afirmativo)$/.test(primeraPalabra);
+      const esCancelacion = /^(no|cancela|cancelar|olv[ií]dalo|detente|espera)$/.test(primeraPalabra);
       if (esConfirmacion || esCancelacion) {
         const { accionesTools } = await import("./asistente-acciones");
         if (await accionesTools.hayPendiente()) {
