@@ -376,6 +376,12 @@ export default function Reportes() {
                             {s.netaAntesGenerales >= 0 ? "+" : ""}{fmtBs(s.netaAntesGenerales)} Bs
                           </span>
                         </div>
+                        {/* Confiabilidad: % de lo vendido con costo conocido */}
+                        {s.coberturaCosto != null && s.coberturaCosto < 90 && (
+                          <p className="mt-1 text-[10px] text-amber-700 dark:text-amber-400">
+                            ⚠ Solo {s.coberturaCosto}% de lo vendido tiene costo conocido; la ganancia real es menor.
+                          </p>
+                        )}
                         {/* Barra visual: ganancia vs ingreso */}
                         <div className="mt-2 h-1.5 rounded-full bg-muted overflow-hidden">
                           <div className={`h-full rounded-full ${s.netaAntesGenerales >= 0 ? "bg-emerald-500" : "bg-red-500"}`}

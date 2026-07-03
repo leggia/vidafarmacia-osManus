@@ -1,6 +1,5 @@
 {
   "name": "vidafarmacia-os",
-  "version": "1.74.5",
   "type": "module",
   "license": "MIT",
   "scripts": {
@@ -121,5 +120,6 @@
   "engines": {
     "node": ">=20.0.0",
     "pnpm": ">=10.0.0"
-  }
+  },
+  "version": "1.74.6"
 }

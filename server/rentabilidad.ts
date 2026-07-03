@@ -14,6 +14,7 @@ export type RentabilidadSucursal = {
   gananciaProductos: number;
   netaAntesGenerales: number;
   cubreGastos: boolean;
+  coberturaCosto?: number | null;
 };
 
 export type RentabilidadResultado = {
@@ -48,6 +49,24 @@ export async function calcularRentabilidadPorSucursal(anioMes: string): Promise<
        AND c.precioCostoUnid > 0 AND d.nombreSucursal IS NOT NULL
        GROUP BY d.nombreSucursal
     `));
+    // Cobertura de costo por sucursal: % de lo vendido con costo conocido.
+    // Si es baja, el costo está subestimado y la ganancia inflada — hay que avisarlo.
+    const coberturas = rows(await db.execute(sql`
+      SELECT d.nombreSucursal,
+         SUM(d.subtotal) as ventaTotal,
+         SUM(CASE WHEN c.precioCostoUnid > 0 THEN d.subtotal ELSE 0 END) as ventaConCosto
+       FROM ventas_detalle d LEFT JOIN productos_cache c ON c.nombre = d.articuloNombre
+       WHERE d.fecha >= ${desde} AND d.fecha <= ${hasta}
+       AND d.articuloNombre NOT LIKE '%ventas menores%' AND d.articuloNombre NOT LIKE '%venta menor%'
+       AND d.nombreSucursal IS NOT NULL
+       GROUP BY d.nombreSucursal
+    `));
+    const coberturaPorSuc: Record<string, number> = {};
+    for (const cb of coberturas) {
+      const vt = Number(cb.ventaTotal) || 0;
+      const vc = Number(cb.ventaConCosto) || 0;
+      coberturaPorSuc[cb.nombreSucursal] = vt > 0 ? Math.round((vc / vt) * 100) : 0;
+    }
     const gastos = rows(await db.execute(sql`
       SELECT sucursal, SUM(monto) as gastos FROM gastos_registro
        WHERE anioMes=${anioMes} AND sucursal IS NOT NULL
@@ -149,14 +168,14 @@ export async function calcularRentabilidadPorSucursal(anioMes: string): Promise<
     const resultado = Object.values(mapa).map((m: any) => {
       const gananciaProductos = m.ingreso - m.costo;
       const netaAntesGenerales = gananciaProductos - m.sueldos - m.gastos;
-      return { ...m, gananciaProductos, netaAntesGenerales, cubreGastos: netaAntesGenerales >= 0 };
+      return { ...m, gananciaProductos, netaAntesGenerales, cubreGastos: netaAntesGenerales >= 0, coberturaCosto: coberturaPorSuc[m.sucursal] ?? null };
     }).sort((a: any, b: any) => b.netaAntesGenerales - a.netaAntesGenerales);
 
     return {
       sucursales: resultado,
       gastosGenerales: Number(gastosGenerales) || 0,
       gastosNoCancelados,
-      nota: "Ganancia neta por sucursal = ingresos - costo de productos - sueldos (por asistencia) - gastos de la sucursal. Los gastos generales sin sucursal se muestran aparte.",
+      nota: "Ganancia neta por sucursal = ingresos - costo - sueldos (asistencia) - gastos de la sucursal. coberturaCosto = % de lo vendido con costo conocido: si es <90%, el costo real es mayor y la ganancia real es MENOR a la mostrada.",
     };
   } catch (err: any) {
     return { sucursales: [], gastosGenerales: 0, nota: "Error", error: err.message };

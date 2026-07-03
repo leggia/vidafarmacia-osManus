@@ -25,38 +25,47 @@ const condPalabras = (col: string, texto: string) => {
 const fmtBs = (n: any) => num(n).toLocaleString("es-BO", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 
 // Rango de fechas según un período de texto
+// Hora actual de BOLIVIA (UTC-4). El servidor corre en UTC: sin este ajuste,
+// entre las 20:00 y medianoche de Bolivia "hoy" sería el día siguiente y las
+// consultas de "hoy/ayer/este mes" darían datos incompletos o vacíos.
+function ahoraBolivia(): Date {
+  const utc = new Date();
+  return new Date(utc.getTime() - 4 * 60 * 60 * 1000);
+}
+
 function rangoFechas(periodo: string): { desde: string; hasta: string; etiqueta: string } {
-  const hoy = new Date();
-  const y = hoy.getFullYear(), m = hoy.getMonth(), d = hoy.getDate();
+  const hoy = ahoraBolivia();
+  const y = hoy.getUTCFullYear(), m = hoy.getUTCMonth(), d = hoy.getUTCDate();
   const iso = (dt: Date) => dt.toISOString().slice(0, 10);
+  const mk = (yy: number, mm: number, dd: number) => new Date(Date.UTC(yy, mm, dd));
   const p = (periodo || "hoy").toLowerCase();
   if (p.includes("hoy")) {
     const t = iso(hoy);
     return { desde: t, hasta: t, etiqueta: "hoy" };
   }
   if (p.includes("ayer")) {
-    const a = new Date(y, m, d - 1);
+    const a = mk(y, m, d - 1);
     return { desde: iso(a), hasta: iso(a), etiqueta: "ayer" };
   }
   if (p.includes("semana")) {
-    const ini = new Date(y, m, d - 6);
+    const ini = mk(y, m, d - 6);
     return { desde: iso(ini), hasta: iso(hoy), etiqueta: "los últimos 7 días" };
   }
   if (p.includes("mes")) {
     // "mes anterior" / "mes pasado" → el mes calendario previo completo
     if (p.includes("anterior") || p.includes("pasado")) {
-      const iniAnt = new Date(y, m - 1, 1);
-      const finAnt = new Date(y, m, 0);
+      const iniAnt = mk(y, m - 1, 1);
+      const finAnt = mk(y, m, 0);
       return { desde: iso(iniAnt), hasta: iso(finAnt), etiqueta: "el mes anterior" };
     }
-    const ini = new Date(y, m, 1);
+    const ini = mk(y, m, 1);
     return { desde: iso(ini), hasta: iso(hoy), etiqueta: "este mes" };
   }
   // Si viene formato YYYY-MM
   const match = p.match(/(\d{4})-(\d{2})/);
   if (match) {
     const anio = Number(match[1]), mes = Number(match[2]);
-    const ultimo = new Date(anio, mes, 0).getDate();
+    const ultimo = new Date(Date.UTC(anio, mes, 0)).getUTCDate();
     return { desde: `${match[1]}-${match[2]}-01`, hasta: `${match[1]}-${match[2]}-${String(ultimo).padStart(2, "0")}`, etiqueta: `${match[1]}-${match[2]}` };
   }
   const t = iso(hoy);
@@ -166,6 +175,18 @@ export const asistenteTools = {
        FROM ventas_detalle d JOIN productos_cache c ON c.nombre = d.articuloNombre
        WHERE d.fecha >= ${desde} AND d.fecha <= ${hasta} AND c.precioCostoUnid > 0 ${filtroSucD}
     `));
+    // COBERTURA de costo: qué parte de lo vendido tiene costo conocido. Si es baja,
+    // la ganancia bruta está sobreestimada y hay que avisarlo (confiabilidad).
+    const rCobertura = rows(await db.execute(sql`
+      SELECT
+         COALESCE(SUM(d.subtotal),0) as ventaTotal,
+         COALESCE(SUM(CASE WHEN c.precioCostoUnid > 0 THEN d.subtotal ELSE 0 END),0) as ventaConCosto
+       FROM ventas_detalle d LEFT JOIN productos_cache c ON c.nombre = d.articuloNombre
+       WHERE d.fecha >= ${desde} AND d.fecha <= ${hasta} ${filtroSucD}
+    `));
+    const ventaTotal = num(rCobertura[0]?.ventaTotal);
+    const ventaConCosto = num(rCobertura[0]?.ventaConCosto);
+    const cobertura = ventaTotal > 0 ? Math.round((ventaConCosto / ventaTotal) * 100) : 0;
     // Gastos del mes. Si se filtra por sucursal, sumar SOLO los gastos de esa
     // sucursal (alquiler, sueldos, etc. que se registraron con sucursal). Si no,
     // sumar todos.
@@ -188,6 +209,10 @@ export const asistenteTools = {
       gananciaBruta: `Bs ${fmtBs(gananciaBruta)}`,
       gastosDelMes: `Bs ${fmtBs(gastos)}`,
       gananciaNeta: `Bs ${fmtBs(gananciaNeta)}`,
+      coberturaCosto: `${cobertura}%`,
+      advertenciaConfiabilidad: cobertura < 90
+        ? `ATENCIÓN: solo el ${cobertura}% de lo vendido tiene costo conocido. El costo real es mayor y la ganancia real es MENOR a la mostrada. Actualiza los costos de los productos faltantes para cifras confiables.`
+        : null,
       nota: sucursal
         ? "Ganancia neta de la sucursal = ingresos - costo - gastos asignados a esta sucursal (alquiler, sueldos, etc.). Los gastos generales sin sucursal no se incluyen aquí."
         : "Ganancia neta = ventas - costo de productos - todos los gastos del mes. El costo solo cuenta productos con costo conocido.",
@@ -466,11 +491,11 @@ export const asistenteTools = {
       anioMes = `${matchMes[1]}-${matchMes[2]}`;
     } else if (p.includes("este mes") || p.includes("mes actual") || p.includes("actual")) {
       // Si explícitamente pide el mes en curso, se lo damos (parcial)
-      anioMes = new Date().toISOString().slice(0, 7);
+      anioMes = ahoraBolivia().toISOString().slice(0, 7);
     } else {
       // Default y "mes pasado/anterior": último mes concluido
-      const hoy = new Date();
-      const ant = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
+      const hoy = ahoraBolivia();
+      const ant = new Date(Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth() - 1, 1));
       anioMes = ant.toISOString().slice(0, 7);
     }
     const { calcularRentabilidadPorSucursal } = await import("./rentabilidad");
@@ -489,6 +514,7 @@ export const asistenteTools = {
         gastos: `Bs ${fmtBs(s.gastos)}`,
         gananciaNeta: `Bs ${fmtBs(s.netaAntesGenerales)}`,
         cubreGastos: s.cubreGastos,
+        coberturaCosto: s.coberturaCosto != null ? `${s.coberturaCosto}%` : undefined,
       })),
       gastosGenerales: `Bs ${fmtBs(r.gastosGenerales)}`,
       gastosNoCancelados: r.gastosNoCancelados,
@@ -505,10 +531,10 @@ export const asistenteTools = {
       const m = (periodo || "").match(/(\d{4})-(\d{2})/);
       if (m) return `${m[1]}-${m[2]}`;
       if ((periodo || "").includes("anterior") || (periodo || "").includes("pasado")) {
-        const h = new Date(); const a = new Date(h.getFullYear(), h.getMonth() - 1, 1);
+        const h = ahoraBolivia(); const a = new Date(Date.UTC(h.getUTCFullYear(), h.getUTCMonth() - 1, 1));
         return a.toISOString().slice(0, 7);
       }
-      return new Date().toISOString().slice(0, 7);
+      return ahoraBolivia().toISOString().slice(0, 7);
     })();
     const filtroSuc = filtroLike("sucursal", sucursal);
     const r = rows(await db.execute(sql`
@@ -544,9 +570,9 @@ export const asistenteTools = {
     const db = await getDb();
     if (!db) return { error: "Sin BD" };
     // Rotación del último mes CONCLUIDO
-    const hoy = new Date();
-    const ini = new Date(hoy.getFullYear(), hoy.getMonth() - 1, 1);
-    const fin = new Date(hoy.getFullYear(), hoy.getMonth(), 0);
+    const hoy = ahoraBolivia();
+    const ini = new Date(Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth() - 1, 1));
+    const fin = new Date(Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth(), 0));
     const iso = (d: Date) => d.toISOString().slice(0, 10);
     const desde = iso(ini), hasta = iso(fin);
     const etiquetaMes = `${ini.getFullYear()}-${String(ini.getMonth() + 1).padStart(2, "0")}`;
@@ -648,16 +674,16 @@ export const asistenteTools = {
     if (!db) return { error: "Sin BD" };
 
     // Rango: últimos 3 meses CONCLUIDOS (no el mes actual)
-    const hoy = new Date();
-    const finMesAnterior = new Date(hoy.getFullYear(), hoy.getMonth(), 0); // último día del mes pasado
-    const ini3Meses = new Date(hoy.getFullYear(), hoy.getMonth() - 3, 1);
+    const hoy = ahoraBolivia();
+    const finMesAnterior = new Date(Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth(), 0)); // último día del mes pasado
+    const ini3Meses = new Date(Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth() - 3, 1));
     const iso = (d: Date) => d.toISOString().slice(0, 10);
     const desde = iso(ini3Meses), hasta = iso(finMesAnterior);
 
     const filtroSuc = filtroLike("nombreSucursal", sucursal);
     // Venta total en 3 meses → promedio mensual = total / 3
     const ventas = rows(await db.execute(sql`
-      SELECT articuloNombre, SUM(cantidad) as total3m
+      SELECT articuloNombre, SUM(cantidad) as total3m, COUNT(DISTINCT DATE_FORMAT(fecha, '%Y-%m')) as mesesConVenta
        FROM ventas_detalle WHERE fecha >= ${desde} AND fecha <= ${hasta} ${filtroSuc}
        AND articuloNombre NOT LIKE '%venta menor%' AND articuloNombre NOT LIKE '%ventas menores%'
        GROUP BY articuloNombre HAVING total3m > 0
@@ -667,7 +693,12 @@ export const asistenteTools = {
     }
     const rotMensual: Record<string, number> = {};
     const norm = (s: string) => String(s || "").trim().toLowerCase();
-    for (const v of ventas) rotMensual[norm(v.articuloNombre)] = num(v.total3m) / 3;
+    // Dividir entre los meses con ventas reales (mín 1, máx 3): un producto nuevo
+    // con 1 mes de historia no debe quedar subestimado a un tercio de su rotación.
+    for (const v of ventas) {
+      const meses = Math.min(3, Math.max(1, num(v.mesesConVenta)));
+      rotMensual[norm(v.articuloNombre)] = num(v.total3m) / meses;
+    }
 
     // Stock por almacén de la sucursal (o total si no hay sucursal), filtrado por proveedor
     let articulos: any[] = [];
@@ -705,7 +736,10 @@ export const asistenteTools = {
     for (const a of articulos) {
       const rot = rotMensual[norm(a.nombre)];
       if (!rot || rot <= 0) continue; // solo productos que rotan
-      const stock = num(a.stock);
+      const stockReal = num(a.stock);
+      // Stock negativo = descuadre de inventario en 365. Para calcular cuánto pedir
+      // lo tratamos como 0 (no inflar el pedido con un dato dudoso), pero avisamos.
+      const stock = Math.max(0, stockReal);
       const objetivo = rot * COBERTURA_OBJETIVO;
       if (stock < objetivo) {
         const aPedir = Math.ceil(objetivo - stock);
@@ -713,7 +747,8 @@ export const asistenteTools = {
         pedido.push({
           producto: a.nombre,
           ventaMensualProm: Math.round(rot * 10) / 10,
-          stockActual: stock,
+          stockActual: stockReal,
+          descuadreInventario: stockReal < 0 ? "Stock negativo en 365: revisar inventario de este producto" : undefined,
           coberturaMeses: Math.round(cobertura * 100) / 100,
           cantidadSugerida: aPedir,
           proveedor: a.proveedor || undefined,
