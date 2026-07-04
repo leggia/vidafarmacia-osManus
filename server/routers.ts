@@ -2318,9 +2318,27 @@ const asistenteRouter = router({
     };
   }),
 
+  // Transcribe audio grabado en el navegador (voz → texto) con Groq Whisper.
+  // Más confiable que el reconocimiento de voz del navegador: funciona igual
+  // en cualquier navegador/dispositivo y entiende mejor nombres de productos.
+  transcribir: protectedProcedure
+    .input(z.object({ audioBase64: z.string(), mimeType: z.string() }))
+    .mutation(async ({ input }) => {
+      try {
+        const { transcribirAudio } = await import("./_core/llm");
+        const buffer = Buffer.from(input.audioBase64, "base64");
+        const texto = await transcribirAudio(buffer, input.mimeType);
+        if (!texto.trim()) return { texto: "", error: "No se entendió el audio. Intenta de nuevo." };
+        return { texto: texto.trim() };
+      } catch (e: any) {
+        return { texto: "", error: e?.message || "No se pudo transcribir el audio." };
+      }
+    }),
+
   preguntar: protectedProcedure
     .input(z.object({
       pregunta: z.string(),
+      modoVoz: z.boolean().optional(),
       historial: z.array(z.object({
         rol: z.enum(["user", "assistant"]),
         texto: z.string(),
@@ -2395,10 +2413,16 @@ Para comparar sucursales usa una sola llamada. Nunca escribas funciones como tex
         { type: "function" as const, function: { name: "verAuditoria", description: "Muestra las últimas acciones ejecutadas por el asistente (auditoría: qué se cambió, cuándo, valores antes/después). Úsala para 'qué acciones hiciste', 'auditoría', 'historial de cambios'.", parameters: { type: "object", properties: { limite: { type: "number" } } } } },
       ];
 
+      // Directiva de modo voz: va en el mensaje VARIABLE (no en el prefijo estable
+      // de systemPrompt/tools) para no romper el caché de contexto de DeepSeek.
+      const directivaVoz = input.modoVoz
+        ? " [MODO VOZ: esta pregunta llegó hablada y la respuesta se leerá en voz alta. Responde en 1-2 frases cortas y directas, sin markdown (nada de ** ni listas), como si hablaras.]"
+        : "";
+
       const mensajes: any[] = [
         { role: "system", content: systemPrompt },
         ...(input.historial || []).slice(-10).map(h => ({ role: h.rol, content: h.texto })),
-        { role: "user", content: `[Fecha actual: ${new Date().toLocaleDateString("es-BO", { day: "numeric", month: "long", year: "numeric" })}] ${input.pregunta}` },
+        { role: "user", content: `[Fecha actual: ${new Date().toLocaleDateString("es-BO", { day: "numeric", month: "long", year: "numeric" })}]${directivaVoz} ${input.pregunta}` },
       ];
 
       try {
@@ -2451,7 +2475,9 @@ Para comparar sucursales usa una sola llamada. Nunca escribas funciones como tex
         }
 
         // Segunda llamada: el modelo redacta la respuesta final con los datos
-        mensajes.push({ role: "system", content: "Redacta usando ÚNICAMENTE los datos de las herramientas anteriores. No agregues nombres, filas ni cifras que no estén en esos datos. Si los datos están vacíos, dilo." });
+        const instruccionRedaccion = "Redacta usando ÚNICAMENTE los datos de las herramientas anteriores. No agregues nombres, filas ni cifras que no estén en esos datos. Si los datos están vacíos, dilo."
+          + (input.modoVoz ? " MODO VOZ: 1-2 frases cortas y directas, sin markdown ni listas, como si hablaras en voz alta." : "");
+        mensajes.push({ role: "system", content: instruccionRedaccion });
         const r2 = await invokeDeepSeek({ messages: mensajes, maxTokens: 1024 });
         const respuestaCruda = r2.choices?.[0]?.message?.content || "Obtuve los datos pero no pude redactar la respuesta.";
         // Defensa: si el modelo filtró una invocación de función como texto crudo

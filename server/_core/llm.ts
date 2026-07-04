@@ -342,3 +342,26 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
 
   return (await response.json()) as InvokeResult;
 }
+
+// Transcripción de audio (Whisper, multilingüe) para el modo de voz del asistente.
+export async function transcribirAudio(buffer: Buffer, mimeType: string, nombreArchivo = "audio.webm"): Promise<string> {
+  assertApiKey();
+  const form = new FormData();
+  form.append("file", new Blob([buffer], { type: mimeType }), nombreArchivo);
+  form.append("model", "whisper-large-v3-turbo");
+  form.append("language", "es");
+  form.append("response_format", "json");
+
+  const response = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+    method: "POST",
+    headers: { authorization: `Bearer ${ENV.groqApiKey}` },
+    body: form,
+  });
+
+  if (!response.ok) {
+    const errorText = await response.text();
+    throw new Error(`Whisper transcription failed: ${response.status} - ${errorText}`);
+  }
+  const data = await response.json();
+  return (data as any).text || "";
+}
