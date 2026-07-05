@@ -326,6 +326,9 @@ async function startServer() {
 
   // OAuth callback under /api/oauth/callback
   registerOAuthRoutes(app);
+  // Login con Google (lista blanca de correos autorizados)
+  const { registerGoogleOAuth } = await import("./google-oauth");
+  registerGoogleOAuth(app);
   // tRPC API
   app.use(
     "/api/trpc",

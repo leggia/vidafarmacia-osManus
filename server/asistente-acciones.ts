@@ -109,6 +109,16 @@ async function ejecutarRegistrarGasto(params: any) {
   return `Gasto ocasional "${params.nombre}" de Bs ${params.monto} registrado en ${anioMes}${params.sucursal ? " (" + params.sucursal + ")" : ""}`;
 }
 
+async function ejecutarAutorizarCorreo(params: any) {
+  const { correosAutorizados } = await import("./_core/google-oauth");
+  return await correosAutorizados.autorizar(String(params.email), String(params.rol || "viewer"));
+}
+
+async function ejecutarRevocarCorreo(params: any) {
+  const { correosAutorizados } = await import("./_core/google-oauth");
+  return await correosAutorizados.revocar(String(params.email));
+}
+
 // ─── API pública (las herramientas del asistente) ───
 export const accionesTools = {
   // Proponer: cambiar precio de venta
@@ -182,6 +192,36 @@ export const accionesTools = {
       `Registrar gasto ocasional "${nombre.trim()}" de Bs ${m}${sucursal ? " en " + sucursal : " (general)"}${yaPagado ? ", ya pagado" : ", pendiente de pago"}.`);
   },
 
+  // Proponer: autorizar un correo de Google (acceso al sistema)
+  async autorizarCorreo(email: string, rol?: string) {
+    const e = String(email || "").trim().toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) return { error: "Correo inválido." };
+    const r = rol === "admin" ? "admin" : "viewer";
+    return proponer("autorizarCorreo", { email: e, rol: r },
+      `Autorizar el correo ${e} para entrar con Google como ${r === "admin" ? "ADMINISTRADOR (acceso total)" : "vendedor (solo consultas operativas)"}.`);
+  },
+
+  // Proponer: revocar el acceso de un correo
+  async revocarCorreo(email: string) {
+    const e = String(email || "").trim().toLowerCase();
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(e)) return { error: "Correo inválido." };
+    return proponer("revocarCorreo", { email: e },
+      `REVOCAR el acceso de ${e} (no podrá entrar más con Google).`);
+  },
+
+  // Consulta: ver la lista blanca (solo admin, filtrado en el router)
+  async verCorreosAutorizados() {
+    const { correosAutorizados } = await import("./_core/google-oauth");
+    const lista = await correosAutorizados.listar();
+    if (lista.length === 0) return { mensaje: "No hay correos autorizados aún. Autoriza el primero con: 'autoriza el correo X como admin/vendedor'." };
+    return {
+      correosAutorizados: lista.map((c: any) => ({
+        email: c.email, rol: c.rol, activo: c.activo === 1 ? "sí" : "revocado",
+      })),
+      instruccionEstricta: "Muestra SOLO estos correos. NO inventes.",
+    };
+  },
+
   // Confirmar la propuesta pendiente → EJECUTA de verdad
   async confirmarAccion(usuario?: { id?: string; name?: string; email?: string }) {
     await asegurarTablas();
@@ -213,6 +253,12 @@ export const accionesTools = {
       } else if (a.tipo === "registrarGasto") {
         resultado = await ejecutarRegistrarGasto(params);
         await auditar("registrarGasto", a.resumen, "-", `Bs ${params.monto}`, "OK", quien);
+      } else if (a.tipo === "autorizarCorreo") {
+        resultado = await ejecutarAutorizarCorreo(params);
+        await auditar("autorizarCorreo", a.resumen, "-", `${params.email} (${params.rol})`, "OK", quien);
+      } else if (a.tipo === "revocarCorreo") {
+        resultado = await ejecutarRevocarCorreo(params);
+        await auditar("revocarCorreo", a.resumen, "activo", "revocado", "OK", quien);
       } else {
         throw new Error(`Tipo de acción desconocido: ${a.tipo}`);
       }
