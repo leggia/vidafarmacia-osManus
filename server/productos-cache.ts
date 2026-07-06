@@ -76,12 +76,14 @@ class ProductosCacheService {
             precioCostoPaq: String(art.precio_costo_paq || 0),
             precioUno: String(art.precio_uno || 0),
             unidadEnvase: art.unidad_envase || 1,
+            imagenUrl: (art as any).imagen ?? (art as any).foto ?? (art as any).url_imagen ?? (art as any).imagen_url ?? null,
           }).onDuplicateKeyUpdate({
             set: {
               nombre: art.nombre,
               codigo: art.codigo || "",
               idProveedor: (art as any).idproveedor || null,
               precioCostoUnid: String(art.precio_costo_unid || 0),
+              imagenUrl: (art as any).imagen ?? (art as any).foto ?? (art as any).url_imagen ?? (art as any).imagen_url ?? null,
             }
           });
         }

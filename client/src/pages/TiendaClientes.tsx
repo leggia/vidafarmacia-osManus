@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 
 /**
@@ -14,6 +14,16 @@ export default function TiendaClientes() {
   const [telefono, setTelefono] = useState("");
   const [exito, setExito] = useState<{ codigo: string; mensaje: string } | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
+
+  // Búsqueda DINÁMICA: busca solo mientras escribes (debounce 400ms)
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const limpio = termino.trim();
+      if (limpio.length >= 3) { setBuscado(limpio); setExito(null); }
+      else if (limpio.length === 0) setBuscado("");
+    }, 400);
+    return () => clearTimeout(t);
+  }, [termino]);
 
   const { data, isFetching } = trpc.tienda.buscar.useQuery(
     { termino: buscado },
@@ -48,6 +58,21 @@ export default function TiendaClientes() {
     }
   };
 
+  const colores = ["bg-emerald-500", "bg-teal-500", "bg-cyan-600", "bg-sky-600", "bg-indigo-500", "bg-violet-500"];
+  const Avatar = ({ nombre, imagen }: { nombre: string; imagen?: string | null }) => {
+    if (imagen) {
+      return <img src={imagen} alt={nombre} loading="lazy"
+        className="w-14 h-14 rounded-xl object-cover bg-gray-50 border border-gray-100 shrink-0"
+        onError={(e) => { (e.target as HTMLImageElement).style.display = "none"; }} />;
+    }
+    let h = 0; for (const c of nombre) h = (h * 31 + c.charCodeAt(0)) % colores.length;
+    return (
+      <div className={`w-14 h-14 rounded-xl ${colores[h]} text-white flex items-center justify-center text-xl font-black shrink-0`}>
+        {nombre.trim().charAt(0).toUpperCase()}
+      </div>
+    );
+  };
+
   const Estado = ({ estado }: { estado: string }) => {
     const cfg: Record<string, { txt: string; cls: string }> = {
       disponible: { txt: "Disponible", cls: "bg-emerald-100 text-emerald-800" },
@@ -75,7 +100,7 @@ export default function TiendaClientes() {
             value={termino}
             onChange={e => setTermino(e.target.value)}
             onKeyDown={e => e.key === "Enter" && buscar()}
-            placeholder="¿Qué producto buscas?"
+            placeholder="Escribe el producto… (busca solo)"
             className="flex-1 h-14 px-5 rounded-2xl border-2 border-emerald-200 focus:border-emerald-500 outline-none text-base shadow-sm"
           />
           <button onClick={buscar} className="h-14 px-6 rounded-2xl bg-emerald-600 text-white font-bold text-base shadow-sm active:scale-95">
@@ -108,9 +133,12 @@ export default function TiendaClientes() {
         <div className="space-y-3">
           {data?.productos?.map((p: any, i: number) => (
             <div key={i} className="p-4 rounded-2xl bg-white border border-emerald-100 shadow-sm">
-              <div className="flex items-start justify-between gap-3 mb-2">
-                <p className="font-bold text-gray-900 text-sm leading-tight">{p.nombre}</p>
-                <p className="text-xl font-black text-emerald-700 whitespace-nowrap">Bs {p.precio.toFixed(2)}</p>
+              <div className="flex items-start gap-3 mb-2">
+                <Avatar nombre={p.nombre} imagen={p.imagen} />
+                <div className="flex-1 min-w-0">
+                  <p className="font-bold text-gray-900 text-sm leading-tight">{p.nombre}</p>
+                  <p className="text-xl font-black text-emerald-700">Bs {p.precio.toFixed(2)}</p>
+                </div>
               </div>
               <div className="flex flex-wrap gap-1.5 mb-3">
                 {p.disponibilidad.map((d: any, j: number) => (

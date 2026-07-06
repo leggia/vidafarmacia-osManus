@@ -1,4 +1,4 @@
-import { useState, useMemo } from "react";
+import { useState, useMemo, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { Input } from "@/components/ui/input";
 import { Search, Package, Loader2 } from "lucide-react";
@@ -10,7 +10,13 @@ import { Search, Package, Loader2 } from "lucide-react";
  */
 export default function Consulta() {
   const [busqueda, setBusqueda] = useState("");
-  const termino = busqueda.trim();
+  const [termino, setTermino] = useState("");
+
+  // Debounce 350ms: busca mientras escribes sin disparar una consulta por tecla
+  useEffect(() => {
+    const t = setTimeout(() => setTermino(busqueda.trim()), 350);
+    return () => clearTimeout(t);
+  }, [busqueda]);
 
   const { data: resultados, isFetching } = trpc.consulta.buscarProductos.useQuery(
     { buscar: termino },

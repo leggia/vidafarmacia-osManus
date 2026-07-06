@@ -47,6 +47,9 @@ async function asegurarTablas() {
     await db.execute(sql.raw("ALTER TABLE productos_cache ADD COLUMN ocultoTienda INT NOT NULL DEFAULT 0"));
   } catch { /* ya existe */ }
   try {
+    await db.execute(sql.raw("ALTER TABLE productos_cache ADD COLUMN imagenUrl VARCHAR(600)"));
+  } catch { /* ya existe */ }
+  try {
     await db.execute(sql.raw("ALTER TABLE branches ADD COLUMN whatsapp VARCHAR(30)"));
   } catch { /* ya existe */ }
   tablasListas = true;
@@ -55,7 +58,7 @@ async function asegurarTablas() {
 // ─── Rate limit simple por IP (en memoria) ───
 const hits: Record<string, { n: number; hasta: number }> = {};
 export function rateLimitOk(ip: string, tipo: "buscar" | "reservar"): boolean {
-  const lim = tipo === "buscar" ? 30 : 5; // por minuto
+  const lim = tipo === "buscar" ? 60 : 5; // por minuto (60 para búsqueda dinámica)
   const key = `${tipo}:${ip}`;
   const ahora = Date.now();
   const h = hits[key];
@@ -110,7 +113,7 @@ export const tienda = {
     let cond = sql`nombre LIKE ${"%" + palabras[0] + "%"}`;
     for (let i = 1; i < palabras.length; i++) cond = sql`${cond} AND nombre LIKE ${"%" + palabras[i] + "%"}`;
     const prods = rows(await db.execute(sql`
-      SELECT nombre, precioUno FROM productos_cache
+      SELECT nombre, precioUno, imagenUrl FROM productos_cache
       WHERE ${cond} AND ocultoTienda = 0 AND precioUno > 0
       ORDER BY nombre LIMIT 12
     `));
@@ -122,6 +125,7 @@ export const tienda = {
       productos: visibles.map((p: any) => ({
         nombre: p.nombre,
         precio: num(p.precioUno),
+        imagen: p.imagenUrl || null,
         disponibilidad: ALMACENES.map(a => ({
           sucursal: a.sucursal,
           estado: estadoDe(stocks[norm(p.nombre)]?.[a.sucursal]),

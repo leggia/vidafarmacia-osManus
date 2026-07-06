@@ -252,6 +252,7 @@ export const productosCache = mysqlTable("productos_cache", {
   precioCostoPaq: decimal("precioCostoPaq", { precision: 12, scale: 4 }).default("0"),
   precioUno: decimal("precioUno", { precision: 12, scale: 4 }).default("0"),
   unidadEnvase: int("unidadEnvase").default(1),
+  imagenUrl: varchar("imagenUrl", { length: 600 }),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
 
