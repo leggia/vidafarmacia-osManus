@@ -19,10 +19,18 @@ import Reportes from "./pages/Reportes";
 import Gastos from "./pages/Gastos";
 import Fidelizacion from "./pages/Fidelizacion";
 import Consulta from "./pages/Consulta";
+import TiendaClientes from "./pages/TiendaClientes";
 import { useAuth } from "./_core/hooks/useAuth";
+import { useLocation } from "wouter";
 
 function Router() {
   const { user } = useAuth();
+  const [location] = useLocation();
+
+  // TIENDA PÚBLICA para clientes: accesible SIN login, antes de cualquier control de rol.
+  if (location.startsWith("/tienda")) {
+    return <TiendaClientes />;
+  }
 
   // Rol "viewer" (consulta): solo ve la página de consulta de precios/stock.
   if (user?.role === "viewer") {
