@@ -17,6 +17,40 @@ const clientId = () => process.env.GOOGLE_CLIENT_ID || "";
 const clientSecret = () => process.env.GOOGLE_CLIENT_SECRET || "";
 export const googleDisponible = () => !!(clientId() && clientSecret());
 
+// ─── States anti-CSRF de un solo uso (en BD: los navegadores móviles a veces
+// no conservan cookies durante las redirecciones a Google y de vuelta) ───
+async function crearState(): Promise<string> {
+  const { getDb } = await import("../db");
+  const d = await getDb();
+  const { sql } = await import("drizzle-orm");
+  const state = crypto.randomBytes(24).toString("hex");
+  if (d) {
+    try {
+      await d.execute(sql.raw(`CREATE TABLE IF NOT EXISTS oauth_states (
+        state VARCHAR(64) PRIMARY KEY,
+        creadoEn DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+      )`));
+      await d.execute(sql`INSERT INTO oauth_states (state) VALUES (${state})`);
+      // Limpieza de states viejos (más de 15 min)
+      await d.execute(sql.raw(`DELETE FROM oauth_states WHERE creadoEn < NOW() - INTERVAL 15 MINUTE`));
+    } catch (e: any) { console.warn("[GoogleOAuth] state en BD falló:", e?.message); }
+  }
+  return state;
+}
+
+async function consumirState(state: string): Promise<boolean> {
+  if (!state || state.length > 64) return false;
+  const { getDb } = await import("../db");
+  const d = await getDb();
+  if (!d) return false;
+  const { sql } = await import("drizzle-orm");
+  try {
+    const r: any = await d.execute(sql`DELETE FROM oauth_states WHERE state = ${state} AND creadoEn >= NOW() - INTERVAL 10 MINUTE`);
+    const afectadas = Array.isArray(r) ? (r[0]?.affectedRows ?? 0) : (r?.affectedRows ?? 0);
+    return afectadas > 0; // single-use: si no estaba (o ya se usó), inválido
+  } catch { return false; }
+}
+
 // ─── Tabla de correos autorizados (lista blanca) ───
 let tablaLista = false;
 export async function asegurarTablaCorreos() {
@@ -64,14 +98,12 @@ export async function rolDeCorreo(email: string): Promise<string | null> {
 // ─── Rutas ───
 export function registerGoogleOAuth(app: Express) {
   // Paso 1: redirigir a Google
-  app.get("/api/oauth/google", (req: Request, res: Response) => {
+  app.get("/api/oauth/google", async (req: Request, res: Response) => {
     if (!googleDisponible()) {
       res.status(503).send("Login con Google no configurado (faltan GOOGLE_CLIENT_ID / GOOGLE_CLIENT_SECRET).");
       return;
     }
-    const state = crypto.randomBytes(16).toString("hex");
-    const cookieOptions = getSessionCookieOptions(req);
-    res.cookie("g_oauth_state", state, { ...cookieOptions, maxAge: 10 * 60 * 1000 });
+    const state = await crearState();
     const redirectUri = `${req.protocol}://${req.get("host")}/api/oauth/google/callback`;
     const url = `${GOOGLE_AUTH_URL}?${new URLSearchParams({
       client_id: clientId(),
@@ -88,12 +120,11 @@ export function registerGoogleOAuth(app: Express) {
   app.get("/api/oauth/google/callback", async (req: Request, res: Response) => {
     try {
       const { code, state } = req.query as { code?: string; state?: string };
-      const stateCookie = req.cookies?.g_oauth_state;
-      if (!code || !state || !stateCookie || state !== stateCookie) {
-        res.status(400).send("Solicitud inválida (state). Vuelve a intentar desde /login.");
+      const stateValido = state ? await consumirState(state) : false;
+      if (!code || !stateValido) {
+        res.status(400).send("La sesión de login caducó o el enlace ya se usó. Vuelve a intentar desde /login.");
         return;
       }
-      res.clearCookie("g_oauth_state");
       const redirectUri = `${req.protocol}://${req.get("host")}/api/oauth/google/callback`;
 
       // Intercambiar el código por tokens
