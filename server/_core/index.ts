@@ -329,6 +329,9 @@ async function startServer() {
   // Login con Google (lista blanca de correos autorizados)
   const { registerGoogleOAuth } = await import("./google-oauth");
   registerGoogleOAuth(app);
+  // Fotos de productos (servidas desde MySQL con caché)
+  const { registerFotoProductoRoute } = await import("../fotos-productos");
+  registerFotoProductoRoute(app);
   // tRPC API
   app.use(
     "/api/trpc",

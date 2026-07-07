@@ -20,6 +20,7 @@ import Gastos from "./pages/Gastos";
 import Fidelizacion from "./pages/Fidelizacion";
 import Consulta from "./pages/Consulta";
 import TiendaClientes from "./pages/TiendaClientes";
+import FotosProductos from "./pages/FotosProductos";
 import { useAuth } from "./_core/hooks/useAuth";
 import { useLocation } from "wouter";
 
@@ -30,6 +31,23 @@ function Router() {
   // TIENDA PÚBLICA para clientes: accesible SIN login, antes de cualquier control de rol.
   if (location.startsWith("/tienda")) {
     return <TiendaClientes />;
+  }
+
+  // Rol "regente": asistente + consulta + inventario + asistencia + fotos.
+  if (user?.role === "regente") {
+    return (
+      <DashboardLayout>
+        <Switch>
+          <Route path="/" component={Consulta} />
+          <Route path="/asistente" component={Asistente} />
+          <Route path="/inventario" component={Inventario} />
+        <Route path="/fotos" component={FotosProductos} />
+          <Route path="/asistencia" component={Asistencia} />
+          <Route path="/fotos" component={FotosProductos} />
+          <Route component={Consulta} />
+        </Switch>
+      </DashboardLayout>
+    );
   }
 
   // Rol "viewer" (consulta): solo ve la página de consulta de precios/stock.
@@ -53,6 +71,7 @@ function Router() {
         <Route path="/tareas" component={Tareas} />
         <Route path="/historial" component={Historial} />
         <Route path="/inventario" component={Inventario} />
+        <Route path="/fotos" component={FotosProductos} />
         <Route path="/asistencia" component={Asistencia} />
         <Route path="/reportes" component={Reportes} />
         <Route path="/gastos" component={Gastos} />

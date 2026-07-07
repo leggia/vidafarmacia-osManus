@@ -2604,6 +2604,25 @@ const tiendaRouter = router({
     }),
 });
 
+const fotosRouter = router({
+  subir: protectedProcedure
+    .input(z.object({ articuloId: z.number(), base64: z.string().max(450000), mime: z.string().max(40) }))
+    .mutation(async ({ input, ctx }) => {
+      const rol = (ctx as any)?.user?.role;
+      if (rol !== "admin" && rol !== "regente") throw new Error("Solo admin o regente pueden subir fotos");
+      const { fotosProductos } = await import("./fotos-productos");
+      return fotosProductos.subir(input.articuloId, input.base64, input.mime);
+    }),
+  quitar: protectedProcedure
+    .input(z.object({ articuloId: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      const rol = (ctx as any)?.user?.role;
+      if (rol !== "admin" && rol !== "regente") throw new Error("Solo admin o regente pueden quitar fotos");
+      const { fotosProductos } = await import("./fotos-productos");
+      return fotosProductos.quitar(input.articuloId);
+    }),
+});
+
 export const appRouter = router({
   system: systemRouter,
   auth: router({
@@ -2628,6 +2647,7 @@ export const appRouter = router({
   consulta: consultaRouter,
   asistente: asistenteRouter,
   tienda: tiendaRouter,
+  fotos: fotosRouter,
   ventas: ventasRouter,
   gastos: gastosRouter,
   fidelizacion: fidelizacionRouter,
