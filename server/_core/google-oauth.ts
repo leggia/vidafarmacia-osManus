@@ -19,7 +19,7 @@ export const googleDisponible = () => !!(clientId() && clientSecret());
 
 // ─── States anti-CSRF de un solo uso (en BD: los navegadores móviles a veces
 // no conservan cookies durante las redirecciones a Google y de vuelta) ───
-async function crearState(): Promise<string> {
+async function crearState(tipo: "staff" | "cliente" = "staff"): Promise<string> {
   const { getDb } = await import("../db");
   const d = await getDb();
   const { sql } = await import("drizzle-orm");
@@ -28,9 +28,11 @@ async function crearState(): Promise<string> {
     try {
       await d.execute(sql.raw(`CREATE TABLE IF NOT EXISTS oauth_states (
         state VARCHAR(64) PRIMARY KEY,
+        tipo VARCHAR(12) NOT NULL DEFAULT 'staff',
         creadoEn DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
       )`));
-      await d.execute(sql`INSERT INTO oauth_states (state) VALUES (${state})`);
+      try { await d.execute(sql.raw("ALTER TABLE oauth_states ADD COLUMN tipo VARCHAR(12) NOT NULL DEFAULT 'staff'")); } catch { /* ya existe */ }
+      await d.execute(sql`INSERT INTO oauth_states (state, tipo) VALUES (${state}, ${tipo})`);
       // Limpieza de states viejos (más de 15 min)
       await d.execute(sql.raw(`DELETE FROM oauth_states WHERE creadoEn < NOW() - INTERVAL 15 MINUTE`));
     } catch (e: any) { console.warn("[GoogleOAuth] state en BD falló:", e?.message); }
@@ -38,17 +40,20 @@ async function crearState(): Promise<string> {
   return state;
 }
 
-async function consumirState(state: string): Promise<boolean> {
-  if (!state || state.length > 64) return false;
+async function consumirState(state: string): Promise<"staff" | "cliente" | null> {
+  if (!state || state.length > 64) return null;
   const { getDb } = await import("../db");
   const d = await getDb();
-  if (!d) return false;
+  if (!d) return null;
   const { sql } = await import("drizzle-orm");
   try {
-    const r: any = await d.execute(sql`DELETE FROM oauth_states WHERE state = ${state} AND creadoEn >= NOW() - INTERVAL 10 MINUTE`);
-    const afectadas = Array.isArray(r) ? (r[0]?.affectedRows ?? 0) : (r?.affectedRows ?? 0);
-    return afectadas > 0; // single-use: si no estaba (o ya se usó), inválido
-  } catch { return false; }
+    const rSel: any = await d.execute(sql`SELECT tipo FROM oauth_states WHERE state = ${state} AND creadoEn >= NOW() - INTERVAL 10 MINUTE LIMIT 1`);
+    const filas = Array.isArray(rSel) ? rSel[0] : rSel?.rows ?? rSel;
+    const fila = Array.isArray(filas) ? filas[0] : null;
+    if (!fila) return null;
+    await d.execute(sql`DELETE FROM oauth_states WHERE state = ${state}`); // single-use
+    return fila.tipo === "cliente" ? "cliente" : "staff";
+  } catch { return null; }
 }
 
 // ─── Tabla de correos autorizados (lista blanca) ───
@@ -120,12 +125,24 @@ export function registerGoogleOAuth(app: Express) {
     res.redirect(url);
   });
 
+  // Paso 1b: login de CLIENTES de la tienda (sin lista blanca; rol "cliente")
+  app.get("/api/oauth/google/cliente", async (req: Request, res: Response) => {
+    if (!googleDisponible()) { res.status(503).send("Login con Google no configurado."); return; }
+    const state = await crearState("cliente");
+    const redirectUri = `${req.protocol}://${req.get("host")}/api/oauth/google/callback`;
+    const url = `${GOOGLE_AUTH_URL}?${new URLSearchParams({
+      client_id: clientId(), redirect_uri: redirectUri, response_type: "code",
+      scope: "openid email profile", state, prompt: "select_account",
+    }).toString()}`;
+    res.redirect(url);
+  });
+
   // Paso 2: callback de Google
   app.get("/api/oauth/google/callback", async (req: Request, res: Response) => {
     try {
       const { code, state } = req.query as { code?: string; state?: string };
-      const stateValido = state ? await consumirState(state) : false;
-      if (!code || !stateValido) {
+      const tipoLogin = state ? await consumirState(state) : null;
+      if (!code || !tipoLogin) {
         res.status(400).send("La sesión de login caducó o el enlace ya se usó. Vuelve a intentar desde /login.");
         return;
       }
@@ -166,7 +183,22 @@ export function registerGoogleOAuth(app: Express) {
         return;
       }
 
-      // LISTA BLANCA: solo correos autorizados por el administrador
+      // CLIENTES de la tienda: cualquier Google entra con rol "cliente" (solo tienda)
+      if (tipoLogin === "cliente") {
+        const openIdC = `google-${perfil.sub}`;
+        try {
+          await db.upsertUser({ openId: openIdC, name: perfil.name || email, email, loginMethod: "google", role: "cliente" as any, lastSignedIn: new Date() });
+        } catch {
+          await db.upsertUser({ openId: openIdC, name: perfil.name || email, email, loginMethod: "google", lastSignedIn: new Date() });
+        }
+        const st = await sdk.createSessionToken(openIdC, { name: perfil.name || email });
+        res.cookie(COOKIE_NAME, st, { ...getSessionCookieOptions(req), maxAge: ONE_YEAR_MS });
+        console.log(`[GoogleOAuth] Cliente OK: ${email}`);
+        res.redirect("/tienda");
+        return;
+      }
+
+      // STAFF — LISTA BLANCA: solo correos autorizados por el administrador
       const rol = await rolDeCorreo(email);
       if (!rol) {
         console.warn(`[GoogleOAuth] Correo NO autorizado intentó entrar: ${email}`);

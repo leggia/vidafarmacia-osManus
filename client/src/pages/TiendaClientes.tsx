@@ -37,12 +37,19 @@ export default function TiendaClientes() {
     return () => clearTimeout(t);
   }, [termino]);
 
+  useEffect(() => { if (yo?.name && !nombre) setNombre(yo.name); }, [yo]);
+
   const { data, isFetching } = trpc.tienda.buscar.useQuery(
     { termino: buscado },
     { enabled: buscado.length >= 3, staleTime: 60000 }
   );
   const { data: config } = trpc.tienda.config.useQuery(undefined, { staleTime: 300000 });
   const { data: ofertasData } = trpc.tienda.ofertas.useQuery(undefined, { staleTime: 120000 });
+  const { data: yo } = trpc.auth.me.useQuery(undefined, { staleTime: 300000 });
+  const esCliente = !!yo?.email;
+  const { data: misReservas } = trpc.tienda.misReservas.useQuery(undefined, { enabled: esCliente, staleTime: 60000 });
+  const { data: recompra } = trpc.tienda.recompra.useQuery(undefined, { enabled: esCliente, staleTime: 60000 });
+  const [verMisReservas, setVerMisReservas] = useState(false);
   const reservar = trpc.tienda.reservar.useMutation();
 
   const totalItems = carrito.reduce((t, i) => t + i.cantidad, 0);
@@ -113,6 +120,17 @@ export default function TiendaClientes() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-white pb-28">
       <div className="max-w-lg mx-auto px-4 py-6">
+        {/* Barra de cuenta */}
+        <div className="flex justify-end mb-2">
+          {esCliente ? (
+            <button onClick={() => setVerMisReservas(true)} className="text-xs font-bold text-emerald-700 flex items-center gap-1">
+              🧾 Mis reservas{(misReservas?.reservas?.length || 0) > 0 ? ` (${misReservas!.reservas.length})` : ""}
+            </button>
+          ) : (
+            <a href="/api/oauth/google/cliente" className="text-xs font-bold text-emerald-700">Iniciar sesión</a>
+          )}
+        </div>
+
         {/* Encabezado */}
         <div className="text-center mb-6">
           <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-emerald-600 text-white text-2xl font-black mb-2 shadow-lg">V</div>
@@ -159,6 +177,19 @@ export default function TiendaClientes() {
                         Agregar
                       </button>
                     </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            {esCliente && (recompra?.productos?.length || 0) > 0 && (
+              <div className="mb-5">
+                <h2 className="font-black text-emerald-900 mb-2">🔁 Pedir de nuevo</h2>
+                <div className="flex gap-2 overflow-x-auto pb-1">
+                  {recompra!.productos.map((n: string, i: number) => (
+                    <button key={i} onClick={() => setTermino(n)}
+                      className="shrink-0 h-10 px-3 rounded-xl bg-white border border-emerald-100 text-xs font-bold text-emerald-900 active:scale-95">
+                      {n.length > 22 ? n.slice(0, 22) + "…" : n}
+                    </button>
                   ))}
                 </div>
               </div>
@@ -226,6 +257,27 @@ export default function TiendaClientes() {
           <span>🛒 {totalItems} producto{totalItems > 1 ? "s" : ""}</span>
           <span>Bs {totalBs.toFixed(2)} · Ver carrito →</span>
         </button>
+      )}
+
+      {/* Mis reservas */}
+      {verMisReservas && (
+        <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50" onClick={() => setVerMisReservas(false)}>
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-md p-6 max-h-[85vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
+            <h3 className="font-black text-lg text-gray-900 mb-3">Mis reservas</h3>
+            {(misReservas?.reservas?.length || 0) === 0 && <p className="text-sm text-gray-500 py-6 text-center">Aún no tienes reservas.</p>}
+            {misReservas?.reservas?.map((r: any, i: number) => (
+              <div key={i} className="py-3 border-b border-gray-100">
+                <div className="flex justify-between items-center">
+                  <span className="font-black text-emerald-700">{r.codigo}</span>
+                  <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-gray-100 text-gray-600">{r.estado}</span>
+                </div>
+                <p className="text-sm text-gray-700 mt-1">{r.resumen}</p>
+                <p className="text-xs text-gray-400">{r.sucursal?.replace("Sucursal ", "")} · Bs {r.total.toFixed(2)} · {r.fecha}</p>
+              </div>
+            ))}
+            <button onClick={() => setVerMisReservas(false)} className="w-full h-11 mt-4 rounded-xl bg-emerald-600 text-white font-bold">Cerrar</button>
+          </div>
+        </div>
       )}
 
       {/* Carrito + checkout */}

@@ -34,6 +34,11 @@ function Router() {
     return <TiendaClientes />;
   }
 
+  // Clientes logueados (rol "cliente") solo acceden a la tienda, no al sistema interno.
+  if (user?.role === "cliente") {
+    return <TiendaClientes />;
+  }
+
   // Rol "regente": asistente + consulta + inventario + asistencia + fotos.
   if (user?.role === "regente") {
     return (

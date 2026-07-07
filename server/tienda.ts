@@ -53,6 +53,9 @@ async function asegurarTablas() {
     await db.execute(sql.raw("ALTER TABLE reservas_tienda ADD COLUMN items JSON"));
   } catch { /* ya existe */ }
   try {
+    await db.execute(sql.raw("ALTER TABLE reservas_tienda ADD COLUMN emailCliente VARCHAR(320)"));
+  } catch { /* ya existe */ }
+  try {
     await db.execute(sql.raw(`CREATE TABLE IF NOT EXISTS ofertas_tienda (
       id INT AUTO_INCREMENT PRIMARY KEY,
       nombreProducto VARCHAR(500) NOT NULL,
@@ -149,7 +152,7 @@ export const tienda = {
   },
 
   // Crear una reserva (sin registro: nombre + teléfono). Acepta carrito (items[]).
-  async reservar(producto: string, precio: number, sucursal: string, nombreCliente: string, telefono: string, items?: Array<{ nombre: string; precio: number; cantidad: number }>) {
+  async reservar(producto: string, precio: number, sucursal: string, nombreCliente: string, telefono: string, items?: Array<{ nombre: string; precio: number; cantidad: number }>, emailCliente?: string) {
     await asegurarTablas();
     const db = await getDb();
     if (!db) return { error: "Servicio no disponible, intenta más tarde." };
@@ -184,9 +187,10 @@ export const tienda = {
     const total = itemsLimpios.length > 0
       ? itemsLimpios.reduce((t, i) => t + i.precio * i.cantidad, 0)
       : num(precio);
+    const em = emailCliente ? String(emailCliente).trim().toLowerCase().slice(0, 320) : null;
     await db.execute(sql`
-      INSERT INTO reservas_tienda (codigo, producto, precio, sucursal, nombreCliente, telefono, items)
-      VALUES (${codigo}, ${resumen}, ${total}, ${suc}, ${nom}, ${tel}, ${itemsLimpios.length > 0 ? JSON.stringify(itemsLimpios) : null})
+      INSERT INTO reservas_tienda (codigo, producto, precio, sucursal, nombreCliente, telefono, items, emailCliente)
+      VALUES (${codigo}, ${resumen}, ${total}, ${suc}, ${nom}, ${tel}, ${itemsLimpios.length > 0 ? JSON.stringify(itemsLimpios) : null}, ${em})
     `);
     return {
       ok: true, codigo,
@@ -277,6 +281,54 @@ export const tienda = {
     if (!["pendiente", "lista", "entregada", "cancelada"].includes(estado)) throw new Error("Estado inválido");
     await db.execute(sql`UPDATE reservas_tienda SET estado = ${estado} WHERE id = ${num(id)}`);
     return { ok: true };
+  },
+
+  // Historial de reservas de un cliente (por su email de sesión)
+  async misReservas(email: string) {
+    await asegurarTablas();
+    const db = await getDb();
+    if (!db || !email) return { reservas: [] };
+    const e = String(email).trim().toLowerCase();
+    const lista = rows(await db.execute(sql`
+      SELECT codigo, producto, precio, sucursal, estado, items, creadoEn
+      FROM reservas_tienda WHERE emailCliente = ${e} ORDER BY creadoEn DESC LIMIT 30
+    `));
+    return {
+      reservas: lista.map((r: any) => {
+        let items: any[] = [];
+        try { items = typeof r.items === "string" ? JSON.parse(r.items) : (r.items || []); } catch { items = []; }
+        return {
+          codigo: r.codigo, resumen: r.producto, total: num(r.precio),
+          sucursal: r.sucursal, estado: r.estado, items,
+          fecha: String(r.creadoEn).slice(0, 10),
+        };
+      }),
+    };
+  },
+
+  // Recompra rápida: productos que el cliente ya reservó antes (para "pedir de nuevo")
+  async recompra(email: string) {
+    await asegurarTablas();
+    const db = await getDb();
+    if (!db || !email) return { productos: [] };
+    const e = String(email).trim().toLowerCase();
+    const lista = rows(await db.execute(sql`
+      SELECT items, producto FROM reservas_tienda
+      WHERE emailCliente = ${e} AND estado IN ('entregada','lista','pendiente')
+      ORDER BY creadoEn DESC LIMIT 20
+    `));
+    const vistos = new Set<string>();
+    const productos: string[] = [];
+    for (const r of lista) {
+      let items: any[] = [];
+      try { items = typeof r.items === "string" ? JSON.parse(r.items) : (r.items || []); } catch { items = []; }
+      const nombres = items.length ? items.map((i: any) => i.nombre) : [r.producto];
+      for (const n of nombres) {
+        const k = String(n || "").trim().toLowerCase();
+        if (k && !vistos.has(k)) { vistos.add(k); productos.push(n); }
+      }
+    }
+    return { productos: productos.slice(0, 12) };
   },
 
   // Herramienta del asistente

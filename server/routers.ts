@@ -2588,8 +2588,21 @@ const tiendaRouter = router({
       const { tienda, rateLimitOk } = await import("./tienda");
       const ip = (ctx as any)?.req?.ip || "?";
       if (!rateLimitOk(ip, "reservar")) return { error: "Demasiadas reservas seguidas, espera un momento." };
-      return tienda.reservar(input.producto || "", input.precio || 0, input.sucursal, input.nombreCliente, input.telefono, input.items);
+      const email = (ctx as any)?.user?.email;
+      return tienda.reservar(input.producto || "", input.precio || 0, input.sucursal, input.nombreCliente, input.telefono, input.items, email);
     }),
+  misReservas: publicProcedure.query(async ({ ctx }) => {
+    const email = (ctx as any)?.user?.email;
+    if (!email) return { reservas: [] };
+    const { tienda } = await import("./tienda");
+    return tienda.misReservas(email);
+  }),
+  recompra: publicProcedure.query(async ({ ctx }) => {
+    const email = (ctx as any)?.user?.email;
+    if (!email) return { productos: [] };
+    const { tienda } = await import("./tienda");
+    return tienda.recompra(email);
+  }),
   ofertas: publicProcedure.query(async () => {
     const { tienda } = await import("./tienda");
     return tienda.ofertas();
