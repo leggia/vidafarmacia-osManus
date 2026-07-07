@@ -223,6 +223,35 @@ export const accionesTools = {
     };
   },
 
+  // Proponer: poner un producto en oferta en la tienda
+  async ponerOferta(nombreProducto: string, precioOferta: number, hastaFecha?: string) {
+    const n = String(nombreProducto || "").trim();
+    const precio = num(precioOferta);
+    if (n.length < 3) return { error: "Falta el nombre del producto." };
+    if (precio <= 0) return { error: "El precio de oferta debe ser mayor a 0." };
+    const db = await getDb();
+    if (!db) return { error: "Sin BD" };
+    const palabras = n.split(/\s+/).filter(Boolean);
+    let cond = sql`nombre LIKE ${"%" + palabras[0] + "%"}`;
+    for (let i = 1; i < palabras.length; i++) cond = sql`${cond} AND nombre LIKE ${"%" + palabras[i] + "%"}`;
+    const prods = rows(await db.execute(sql`SELECT nombre, precioUno FROM productos_cache WHERE ${cond} LIMIT 5`));
+    if (prods.length === 0) return { error: `No encontré "${n}" en el catálogo.` };
+    if (prods.length > 1) return { mensaje: "Hay varios productos. Pide al usuario precisar cuál:", opciones: prods.map((p: any) => ({ nombre: p.nombre, precioActual: `Bs ${p.precioUno}` })) };
+    const p0 = prods[0];
+    if (precio >= num(p0.precioUno) && num(p0.precioUno) > 0) {
+      return { error: `El precio de oferta (Bs ${precio}) no es menor al normal (Bs ${p0.precioUno}).` };
+    }
+    return proponer("ponerOferta", { nombreProducto: p0.nombre, precioOferta: precio, hastaFecha },
+      `Poner en OFERTA "${p0.nombre}": de Bs ${p0.precioUno} a Bs ${precio}${hastaFecha ? " hasta " + hastaFecha : ""} (visible en la tienda de clientes).`);
+  },
+
+  // Proponer: quitar una oferta
+  async quitarOferta(nombreProducto: string) {
+    const n = String(nombreProducto || "").trim();
+    if (n.length < 3) return { error: "Falta el nombre del producto." };
+    return proponer("quitarOferta", { nombreProducto: n }, `Quitar la oferta de "${n}" de la tienda.`);
+  },
+
   // Confirmar la propuesta pendiente → EJECUTA de verdad
   async confirmarAccion(usuario?: { id?: string; name?: string; email?: string }) {
     await asegurarTablas();
@@ -260,6 +289,14 @@ export const accionesTools = {
       } else if (a.tipo === "revocarCorreo") {
         resultado = await ejecutarRevocarCorreo(params);
         await auditar("revocarCorreo", a.resumen, "activo", "revocado", "OK", quien);
+      } else if (a.tipo === "ponerOferta") {
+        const { tienda } = await import("./tienda");
+        resultado = await tienda.ponerOferta(params.nombreProducto, num(params.precioOferta), params.hastaFecha);
+        await auditar("ponerOferta", a.resumen, "-", `Bs ${params.precioOferta}`, "OK", quien);
+      } else if (a.tipo === "quitarOferta") {
+        const { tienda } = await import("./tienda");
+        resultado = await tienda.quitarOferta(params.nombreProducto);
+        await auditar("quitarOferta", a.resumen, "activa", "inactiva", "OK", quien);
       } else {
         throw new Error(`Tipo de acción desconocido: ${a.tipo}`);
       }

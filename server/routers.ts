@@ -2287,7 +2287,7 @@ const HERRAMIENTAS_SOLO_ADMIN = new Set([
 
 async function ejecutarHerramienta(nombre: string, args: any, usuario?: { id?: string; name?: string; email?: string; role?: string }): Promise<any> {
   // SEGURIDAD: las ACCIONES (modifican datos) son solo para administradores.
-  const esAccion = ["cambiarPrecioVenta", "marcarGastoPagado", "registrarGasto", "confirmarAccion", "cancelarAccion", "autorizarCorreo", "revocarCorreo", "verCorreosAutorizados"].includes(nombre);
+  const esAccion = ["cambiarPrecioVenta", "marcarGastoPagado", "registrarGasto", "confirmarAccion", "cancelarAccion", "autorizarCorreo", "revocarCorreo", "verCorreosAutorizados", "ponerOferta", "quitarOferta"].includes(nombre);
   if (esAccion && usuario?.role !== "admin") {
     return { error: "Solo el administrador puede ejecutar acciones. Tu usuario es de consulta." };
   }
@@ -2332,6 +2332,8 @@ async function ejecutarHerramienta(nombre: string, args: any, usuario?: { id?: s
       case "revocarCorreo": { const { accionesTools } = await import("./asistente-acciones"); return await accionesTools.revocarCorreo(args.email); }
       case "verCorreosAutorizados": { const { accionesTools } = await import("./asistente-acciones"); return await accionesTools.verCorreosAutorizados(); }
       case "reservasPendientes": { const { tienda } = await import("./tienda"); return await tienda.reservasPendientes(); }
+      case "ponerOferta": { const { accionesTools } = await import("./asistente-acciones"); return await accionesTools.ponerOferta(args.nombreProducto, args.precioOferta, args.hastaFecha); }
+      case "quitarOferta": { const { accionesTools } = await import("./asistente-acciones"); return await accionesTools.quitarOferta(args.nombreProducto); }
       default: return { error: "Herramienta desconocida" };
     }
   } catch (e: any) {
@@ -2452,6 +2454,8 @@ Para comparar sucursales usa una sola llamada. Nunca escribas funciones como tex
         { type: "function" as const, function: { name: "revocarCorreo", description: "ACCIÓN (requiere confirmación): revoca el acceso de un correo (ya no podrá entrar con Google). Úsala para 'quita el acceso a X', 'revoca el correo X'.", parameters: { type: "object", properties: { email: { type: "string" } }, required: ["email"] } } },
         { type: "function" as const, function: { name: "verCorreosAutorizados", description: "Lista los correos autorizados a entrar con Google y su rol. Úsala para 'qué correos tienen acceso', 'lista de usuarios autorizados'.", parameters: { type: "object", properties: {} } } },
         { type: "function" as const, function: { name: "reservasPendientes", description: "Reservas de CLIENTES de la tienda pública pendientes de recoger (código, producto, sucursal, cliente, teléfono). Úsala para 'hay reservas?', 'reservas pendientes', 'qué reservaron los clientes'.", parameters: { type: "object", properties: {} } } },
+        { type: "function" as const, function: { name: "ponerOferta", description: "ACCIÓN (requiere confirmación): pone un producto en OFERTA en la tienda de clientes, con precio rebajado y fecha límite opcional (YYYY-MM-DD). Úsala para 'pon en oferta X a Y Bs', 'oferta de la semana'.", parameters: { type: "object", properties: { nombreProducto: { type: "string" }, precioOferta: { type: "number" }, hastaFecha: { type: "string" } }, required: ["nombreProducto", "precioOferta"] } } },
+        { type: "function" as const, function: { name: "quitarOferta", description: "ACCIÓN (requiere confirmación): quita una oferta de la tienda. Úsala para 'quita la oferta de X'.", parameters: { type: "object", properties: { nombreProducto: { type: "string" } }, required: ["nombreProducto"] } } },
       ];
 
       // Directiva de modo voz: va en el mensaje VARIABLE (no en el prefijo estable
@@ -2576,15 +2580,20 @@ const tiendaRouter = router({
     }),
   reservar: publicProcedure
     .input(z.object({
-      producto: z.string().max(500), precio: z.number().optional(),
+      producto: z.string().max(500).optional(), precio: z.number().optional(),
+      items: z.array(z.object({ nombre: z.string().max(500), precio: z.number(), cantidad: z.number() })).max(15).optional(),
       sucursal: z.string().max(150), nombreCliente: z.string().max(150), telefono: z.string().max(30),
     }))
     .mutation(async ({ input, ctx }) => {
       const { tienda, rateLimitOk } = await import("./tienda");
       const ip = (ctx as any)?.req?.ip || "?";
       if (!rateLimitOk(ip, "reservar")) return { error: "Demasiadas reservas seguidas, espera un momento." };
-      return tienda.reservar(input.producto, input.precio || 0, input.sucursal, input.nombreCliente, input.telefono);
+      return tienda.reservar(input.producto || "", input.precio || 0, input.sucursal, input.nombreCliente, input.telefono, input.items);
     }),
+  ofertas: publicProcedure.query(async () => {
+    const { tienda } = await import("./tienda");
+    return tienda.ofertas();
+  }),
   config: publicProcedure.query(async () => {
     const { tienda } = await import("./tienda");
     return tienda.config();

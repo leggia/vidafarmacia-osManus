@@ -50,6 +50,20 @@ async function asegurarTablas() {
     await db.execute(sql.raw("ALTER TABLE productos_cache ADD COLUMN imagenUrl VARCHAR(600)"));
   } catch { /* ya existe */ }
   try {
+    await db.execute(sql.raw("ALTER TABLE reservas_tienda ADD COLUMN items JSON"));
+  } catch { /* ya existe */ }
+  try {
+    await db.execute(sql.raw(`CREATE TABLE IF NOT EXISTS ofertas_tienda (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      nombreProducto VARCHAR(500) NOT NULL,
+      precioNormal DECIMAL(12,2) NOT NULL DEFAULT 0,
+      precioOferta DECIMAL(12,2) NOT NULL,
+      hastaFecha DATE,
+      activa INT NOT NULL DEFAULT 1,
+      creadoEn DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`));
+  } catch { /* ya existe */ }
+  try {
     await db.execute(sql.raw("ALTER TABLE branches ADD COLUMN whatsapp VARCHAR(30)"));
   } catch { /* ya existe */ }
   tablasListas = true;
@@ -134,8 +148,8 @@ export const tienda = {
     };
   },
 
-  // Crear una reserva (sin registro: nombre + teléfono)
-  async reservar(producto: string, precio: number, sucursal: string, nombreCliente: string, telefono: string) {
+  // Crear una reserva (sin registro: nombre + teléfono). Acepta carrito (items[]).
+  async reservar(producto: string, precio: number, sucursal: string, nombreCliente: string, telefono: string, items?: Array<{ nombre: string; precio: number; cantidad: number }>) {
     await asegurarTablas();
     const db = await getDb();
     if (!db) return { error: "Servicio no disponible, intenta más tarde." };
@@ -143,9 +157,22 @@ export const tienda = {
     const suc = String(sucursal || "").trim().slice(0, 150);
     const nom = String(nombreCliente || "").trim().slice(0, 150);
     const tel = String(telefono || "").replace(/[^\d+]/g, "").slice(0, 20);
-    if (!prod || !suc || nom.length < 2) return { error: "Completa el producto, la sucursal y tu nombre." };
+    // Carrito: validar items (máx 15), filtrar controlados, resumir
+    let itemsLimpios: Array<{ nombre: string; precio: number; cantidad: number }> = [];
+    if (Array.isArray(items) && items.length > 0) {
+      itemsLimpios = items.slice(0, 15).map(i => ({
+        nombre: String(i.nombre || "").trim().slice(0, 500),
+        precio: num(i.precio),
+        cantidad: Math.min(20, Math.max(1, Math.round(num(i.cantidad) || 1))),
+      })).filter(i => i.nombre.length > 1 && !esControlado(i.nombre));
+      if (itemsLimpios.length === 0) return { error: "El carrito quedó vacío (productos inválidos o con receta)." };
+    }
+    const resumen = itemsLimpios.length > 0
+      ? itemsLimpios.map(i => `${i.cantidad}x ${i.nombre}`).join(", ").slice(0, 500)
+      : prod;
+    if (!resumen || !suc || nom.length < 2) return { error: "Completa el producto, la sucursal y tu nombre." };
     if (tel.length < 7) return { error: "Escribe un número de teléfono válido." };
-    if (esControlado(prod)) return { error: "Ese producto requiere receta y atención en mostrador." };
+    if (itemsLimpios.length === 0 && esControlado(prod)) return { error: "Ese producto requiere receta y atención en mostrador." };
     if (!ALMACENES.some(a => a.sucursal === suc)) return { error: "Sucursal inválida." };
     // Código corto único VF-XXXX
     let codigo = "";
@@ -154,9 +181,12 @@ export const tienda = {
       const dup = rows(await db.execute(sql`SELECT id FROM reservas_tienda WHERE codigo = ${codigo} AND estado = 'pendiente' LIMIT 1`));
       if (dup.length === 0) break;
     }
+    const total = itemsLimpios.length > 0
+      ? itemsLimpios.reduce((t, i) => t + i.precio * i.cantidad, 0)
+      : num(precio);
     await db.execute(sql`
-      INSERT INTO reservas_tienda (codigo, producto, precio, sucursal, nombreCliente, telefono)
-      VALUES (${codigo}, ${prod}, ${num(precio)}, ${suc}, ${nom}, ${tel})
+      INSERT INTO reservas_tienda (codigo, producto, precio, sucursal, nombreCliente, telefono, items)
+      VALUES (${codigo}, ${resumen}, ${total}, ${suc}, ${nom}, ${tel}, ${itemsLimpios.length > 0 ? JSON.stringify(itemsLimpios) : null})
     `);
     return {
       ok: true, codigo,
@@ -180,6 +210,51 @@ export const tienda = {
       } catch { /* sin branches */ }
     }
     return { whatsappGeneral: general, porSucursal, sucursales: ALMACENES.map(a => a.sucursal) };
+  },
+
+  // Ofertas activas (público): para la zona de ofertas del home
+  async ofertas() {
+    await asegurarTablas();
+    const db = await getDb();
+    if (!db) return { ofertas: [] };
+    try { await db.execute(sql.raw(`UPDATE ofertas_tienda SET activa=0 WHERE activa=1 AND hastaFecha IS NOT NULL AND hastaFecha < CURDATE()`)); } catch { /* ignore */ }
+    const lista = rows(await db.execute(sql`
+      SELECT o.nombreProducto, o.precioNormal, o.precioOferta, o.hastaFecha, c.imagenUrl
+      FROM ofertas_tienda o LEFT JOIN productos_cache c ON c.nombre = o.nombreProducto
+      WHERE o.activa = 1 ORDER BY o.creadoEn DESC LIMIT 10
+    `));
+    return {
+      ofertas: lista.filter((o: any) => !esControlado(o.nombreProducto)).map((o: any) => ({
+        nombre: o.nombreProducto,
+        precioNormal: num(o.precioNormal),
+        precio: num(o.precioOferta),
+        imagen: o.imagenUrl || null,
+        hasta: o.hastaFecha ? String(o.hastaFecha).slice(0, 10) : null,
+      })),
+    };
+  },
+  async ponerOferta(nombreProducto: string, precioOferta: number, hastaFecha?: string) {
+    await asegurarTablas();
+    const db = await getDb();
+    if (!db) throw new Error("Sin BD");
+    const prods = rows(await db.execute(sql`
+      SELECT nombre, precioUno FROM productos_cache WHERE nombre = ${nombreProducto} LIMIT 1
+    `));
+    const precioNormal = prods.length ? num(prods[0].precioUno) : 0;
+    const hasta = /^\d{4}-\d{2}-\d{2}$/.test(hastaFecha || "") ? hastaFecha : null;
+    await db.execute(sql`UPDATE ofertas_tienda SET activa=0 WHERE nombreProducto = ${nombreProducto}`);
+    await db.execute(sql`
+      INSERT INTO ofertas_tienda (nombreProducto, precioNormal, precioOferta, hastaFecha)
+      VALUES (${nombreProducto}, ${precioNormal}, ${num(precioOferta)}, ${hasta})
+    `);
+    return `Oferta activa: ${nombreProducto} a Bs ${precioOferta}${hasta ? " hasta " + hasta : ""} (normal Bs ${precioNormal}).`;
+  },
+  async quitarOferta(nombreProducto: string) {
+    await asegurarTablas();
+    const db = await getDb();
+    if (!db) throw new Error("Sin BD");
+    await db.execute(sql`UPDATE ofertas_tienda SET activa=0 WHERE nombreProducto LIKE ${"%" + nombreProducto + "%"}`);
+    return `Oferta de "${nombreProducto}" desactivada.`;
   },
 
   // ─── Staff: gestión de reservas ───
