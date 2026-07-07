@@ -1,7 +1,8 @@
 import { useState, useMemo, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { Input } from "@/components/ui/input";
-import { Search, Package, Loader2 } from "lucide-react";
+import { Search, Package, Loader2, ShoppingCart } from "lucide-react";
+import { Link } from "wouter";
 
 /**
  * Página de SOLO CONSULTA (rol viewer): buscar productos y ver precio de venta + stock.
@@ -89,6 +90,11 @@ export default function Consulta() {
           </div>
         )}
       </div>
+          <Link href="/reservas">
+        <a className="fixed bottom-5 right-5 h-12 px-4 rounded-2xl bg-emerald-600 text-white font-bold text-sm shadow-xl flex items-center gap-2 active:scale-95 z-40">
+          <ShoppingCart className="h-4 w-4" /> Reservas
+        </a>
+      </Link>
     </div>
   );
 }

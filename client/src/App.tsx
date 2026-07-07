@@ -21,6 +21,7 @@ import Fidelizacion from "./pages/Fidelizacion";
 import Consulta from "./pages/Consulta";
 import TiendaClientes from "./pages/TiendaClientes";
 import FotosProductos from "./pages/FotosProductos";
+import Reservas from "./pages/Reservas";
 import { useAuth } from "./_core/hooks/useAuth";
 import { useLocation } from "wouter";
 
@@ -41,9 +42,9 @@ function Router() {
           <Route path="/" component={Consulta} />
           <Route path="/asistente" component={Asistente} />
           <Route path="/inventario" component={Inventario} />
-        <Route path="/fotos" component={FotosProductos} />
-          <Route path="/asistencia" component={Asistencia} />
           <Route path="/fotos" component={FotosProductos} />
+          <Route path="/asistencia" component={Asistencia} />
+          <Route path="/reservas" component={Reservas} />
           <Route component={Consulta} />
         </Switch>
       </DashboardLayout>
@@ -55,6 +56,7 @@ function Router() {
     return (
       <Switch>
         <Route path="/" component={Consulta} />
+        <Route path="/reservas" component={Reservas} />
         <Route component={Consulta} />
       </Switch>
     );
@@ -72,6 +74,7 @@ function Router() {
         <Route path="/historial" component={Historial} />
         <Route path="/inventario" component={Inventario} />
         <Route path="/fotos" component={FotosProductos} />
+        <Route path="/reservas" component={Reservas} />
         <Route path="/asistencia" component={Asistencia} />
         <Route path="/reportes" component={Reportes} />
         <Route path="/gastos" component={Gastos} />

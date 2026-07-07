@@ -48,6 +48,7 @@ const menuItems = [
   { icon: ShoppingCart, label: "Compras", path: "/compras" },
   { icon: ArrowLeftRight, label: "Transferencias", path: "/transferencias" },
   { icon: ClipboardCheck, label: "Inventario", path: "/inventario" },
+  { icon: ShoppingCart, label: "Reservas", path: "/reservas" },
   { icon: Users, label: "Asistencia", path: "/asistencia" },
   { icon: TrendingUp, label: "Reportes", path: "/reportes" },
   { icon: HeartHandshake, label: "Fidelización", path: "/fidelizacion" },
