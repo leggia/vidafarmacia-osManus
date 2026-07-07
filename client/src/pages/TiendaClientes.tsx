@@ -27,6 +27,7 @@ export default function TiendaClientes() {
   const [telefono, setTelefono] = useState("");
   const [exito, setExito] = useState<{ codigo: string; mensaje: string } | null>(null);
   const [errorMsg, setErrorMsg] = useState("");
+  const [cupon, setCupon] = useState("");
 
   useEffect(() => {
     const t = setTimeout(() => {
@@ -53,7 +54,12 @@ export default function TiendaClientes() {
   const reservar = trpc.tienda.reservar.useMutation();
 
   const totalItems = carrito.reduce((t, i) => t + i.cantidad, 0);
-  const totalBs = carrito.reduce((t, i) => t + i.precio * i.cantidad, 0);
+  const subtotalBs = carrito.reduce((t, i) => t + i.precio * i.cantidad, 0);
+  const { data: preview } = trpc.tienda.previewTotal.useQuery(
+    { items: carrito.map(({ imagen, ...i }) => i), cupon: cupon.trim() || undefined },
+    { enabled: verCarrito && carrito.length > 0, staleTime: 0 }
+  );
+  const totalBs = preview?.total ?? subtotalBs;
 
   const agregar = (p: { nombre: string; precio: number; imagen?: string | null }) => {
     setCarrito(prev => {
@@ -80,11 +86,11 @@ export default function TiendaClientes() {
     try {
       const r: any = await reservar.mutateAsync({
         items: carrito.map(({ imagen, ...i }) => i),
-        sucursal, nombreCliente: nombre, telefono,
+        sucursal, nombreCliente: nombre, telefono, cupon: cupon.trim() || undefined,
       });
       if (r?.error) { setErrorMsg(r.error); return; }
       setExito({ codigo: r.codigo, mensaje: r.mensaje });
-      setCarrito([]); setVerCarrito(false); setNombre(""); setTelefono(""); setSucursal("");
+      setCarrito([]); setVerCarrito(false); setNombre(""); setTelefono(""); setSucursal(""); setCupon("");
       window.scrollTo({ top: 0, behavior: "smooth" });
     } catch {
       setErrorMsg("No se pudo crear la reserva. Intenta de nuevo.");
@@ -298,8 +304,21 @@ export default function TiendaClientes() {
                 </div>
               </div>
             ))}
-            <div className="flex justify-between items-center py-3 font-black text-gray-900">
-              <span>Total</span><span className="text-emerald-700 text-xl">Bs {totalBs.toFixed(2)}</span>
+            {/* Cupón */}
+            <div className="flex gap-2 mt-3 mb-2">
+              <input value={cupon} onChange={e => setCupon(e.target.value.toUpperCase())} placeholder="¿Tienes un cupón?"
+                     className="flex-1 h-11 px-3 rounded-xl border-2 border-gray-200 focus:border-emerald-500 outline-none text-sm uppercase" />
+            </div>
+            {preview?.error && <p className="text-xs text-amber-600 mb-1">{preview.error}</p>}
+            {/* Desglose */}
+            <div className="py-2 space-y-1 text-sm">
+              <div className="flex justify-between text-gray-500"><span>Subtotal</span><span>Bs {subtotalBs.toFixed(2)}</span></div>
+              {preview?.descuentos?.map((d: any, i: number) => (
+                <div key={i} className="flex justify-between text-emerald-700"><span>{d.concepto}</span><span>− Bs {d.monto.toFixed(2)}</span></div>
+              ))}
+              <div className="flex justify-between items-center pt-1 font-black text-gray-900 border-t">
+                <span>Total</span><span className="text-emerald-700 text-xl">Bs {totalBs.toFixed(2)}</span>
+              </div>
             </div>
             <label className="text-xs font-bold text-gray-500">¿Dónde lo recoges?</label>
             <div className="grid grid-cols-2 gap-2 mt-1 mb-3">

@@ -252,6 +252,31 @@ export const accionesTools = {
     return proponer("quitarOferta", { nombreProducto: n }, `Quitar la oferta de "${n}" de la tienda.`);
   },
 
+  // Proponer: crear cupón
+  async crearCupon(codigo: string, tipo: string, valor: number, minimo?: number, usosMax?: number, hastaFecha?: string) {
+    const cod = String(codigo || "").trim().toUpperCase().replace(/[^A-Z0-9]/g, "");
+    if (cod.length < 3) return { error: "El código del cupón debe tener al menos 3 caracteres." };
+    const t = tipo === "monto" ? "monto" : "pct";
+    const v = num(valor);
+    if (v <= 0) return { error: "El descuento debe ser mayor a 0." };
+    const desc = t === "pct" ? `${v}% de descuento` : `Bs ${v} de descuento`;
+    return proponer("crearCupon", { codigo: cod, tipo: t, valor: v, minimo, usosMax, hastaFecha },
+      `Crear el cupón ${cod}: ${desc}${num(minimo) > 0 ? `, compra mínima Bs ${num(minimo)}` : ""}${num(usosMax) > 0 ? `, ${num(usosMax)} usos máx` : ""}${hastaFecha ? `, hasta ${hastaFecha}` : ""}.`);
+  },
+  async desactivarCupon(codigo: string) {
+    const cod = String(codigo || "").trim().toUpperCase();
+    if (cod.length < 3) return { error: "Falta el código del cupón." };
+    return proponer("desactivarCupon", { codigo: cod }, `Desactivar el cupón ${cod}.`);
+  },
+  async crearPromoMonto(descripcion: string, minimo: number, pctDescuento: number, hastaFecha?: string) {
+    const m = num(minimo), pct = num(pctDescuento);
+    if (m <= 0) return { error: "El monto mínimo debe ser mayor a 0." };
+    if (pct <= 0 || pct > 50) return { error: "El porcentaje debe estar entre 1 y 50." };
+    const desc = String(descripcion || "").trim() || `${pct}% en compras desde Bs ${m}`;
+    return proponer("crearPromoMonto", { descripcion: desc, minimo: m, pctDescuento: pct, hastaFecha },
+      `Crear promoción: ${desc} (${pct}% desde Bs ${m}${hastaFecha ? ", hasta " + hastaFecha : ""}).`);
+  },
+
   // Confirmar la propuesta pendiente → EJECUTA de verdad
   async confirmarAccion(usuario?: { id?: string; name?: string; email?: string }) {
     await asegurarTablas();
@@ -297,6 +322,18 @@ export const accionesTools = {
         const { tienda } = await import("./tienda");
         resultado = await tienda.quitarOferta(params.nombreProducto);
         await auditar("quitarOferta", a.resumen, "activa", "inactiva", "OK", quien);
+      } else if (a.tipo === "crearCupon") {
+        const { promociones } = await import("./promociones");
+        resultado = await promociones.crearCupon(params.codigo, params.tipo, num(params.valor), num(params.minimo), num(params.usosMax), params.hastaFecha);
+        await auditar("crearCupon", a.resumen, "-", params.codigo, "OK", quien);
+      } else if (a.tipo === "desactivarCupon") {
+        const { promociones } = await import("./promociones");
+        resultado = await promociones.desactivarCupon(params.codigo);
+        await auditar("desactivarCupon", a.resumen, "activo", "inactivo", "OK", quien);
+      } else if (a.tipo === "crearPromoMonto") {
+        const { promociones } = await import("./promociones");
+        resultado = await promociones.crearPromoMonto(params.descripcion, num(params.minimo), num(params.pctDescuento), params.hastaFecha);
+        await auditar("crearPromoMonto", a.resumen, "-", params.descripcion, "OK", quien);
       } else {
         throw new Error(`Tipo de acción desconocido: ${a.tipo}`);
       }

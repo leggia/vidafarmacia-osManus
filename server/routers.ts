@@ -2287,7 +2287,7 @@ const HERRAMIENTAS_SOLO_ADMIN = new Set([
 
 async function ejecutarHerramienta(nombre: string, args: any, usuario?: { id?: string; name?: string; email?: string; role?: string }): Promise<any> {
   // SEGURIDAD: las ACCIONES (modifican datos) son solo para administradores.
-  const esAccion = ["cambiarPrecioVenta", "marcarGastoPagado", "registrarGasto", "confirmarAccion", "cancelarAccion", "autorizarCorreo", "revocarCorreo", "verCorreosAutorizados", "ponerOferta", "quitarOferta"].includes(nombre);
+  const esAccion = ["cambiarPrecioVenta", "marcarGastoPagado", "registrarGasto", "confirmarAccion", "cancelarAccion", "autorizarCorreo", "revocarCorreo", "verCorreosAutorizados", "ponerOferta", "quitarOferta", "crearCupon", "desactivarCupon", "crearPromoMonto", "verPromociones"].includes(nombre);
   if (esAccion && usuario?.role !== "admin") {
     return { error: "Solo el administrador puede ejecutar acciones. Tu usuario es de consulta." };
   }
@@ -2334,6 +2334,10 @@ async function ejecutarHerramienta(nombre: string, args: any, usuario?: { id?: s
       case "reservasPendientes": { const { tienda } = await import("./tienda"); return await tienda.reservasPendientes(); }
       case "ponerOferta": { const { accionesTools } = await import("./asistente-acciones"); return await accionesTools.ponerOferta(args.nombreProducto, args.precioOferta, args.hastaFecha); }
       case "quitarOferta": { const { accionesTools } = await import("./asistente-acciones"); return await accionesTools.quitarOferta(args.nombreProducto); }
+      case "crearCupon": { const { accionesTools } = await import("./asistente-acciones"); return await accionesTools.crearCupon(args.codigo, args.tipo, args.valor, args.minimo, args.usosMax, args.hastaFecha); }
+      case "desactivarCupon": { const { accionesTools } = await import("./asistente-acciones"); return await accionesTools.desactivarCupon(args.codigo); }
+      case "crearPromoMonto": { const { accionesTools } = await import("./asistente-acciones"); return await accionesTools.crearPromoMonto(args.descripcion, args.minimo, args.pctDescuento, args.hastaFecha); }
+      case "verPromociones": { const { promociones } = await import("./promociones"); return await promociones.listar(); }
       default: return { error: "Herramienta desconocida" };
     }
   } catch (e: any) {
@@ -2456,6 +2460,10 @@ Para comparar sucursales usa una sola llamada. Nunca escribas funciones como tex
         { type: "function" as const, function: { name: "reservasPendientes", description: "Reservas de CLIENTES de la tienda pública pendientes de recoger (código, producto, sucursal, cliente, teléfono). Úsala para 'hay reservas?', 'reservas pendientes', 'qué reservaron los clientes'.", parameters: { type: "object", properties: {} } } },
         { type: "function" as const, function: { name: "ponerOferta", description: "ACCIÓN (requiere confirmación): pone un producto en OFERTA en la tienda de clientes, con precio rebajado y fecha límite opcional (YYYY-MM-DD). Úsala para 'pon en oferta X a Y Bs', 'oferta de la semana'.", parameters: { type: "object", properties: { nombreProducto: { type: "string" }, precioOferta: { type: "number" }, hastaFecha: { type: "string" } }, required: ["nombreProducto", "precioOferta"] } } },
         { type: "function" as const, function: { name: "quitarOferta", description: "ACCIÓN (requiere confirmación): quita una oferta de la tienda. Úsala para 'quita la oferta de X'.", parameters: { type: "object", properties: { nombreProducto: { type: "string" } }, required: ["nombreProducto"] } } },
+        { type: "function" as const, function: { name: "crearCupon", description: "ACCIÓN (confirmación): crea un cupón de descuento para la tienda. tipo 'pct' (porcentaje) o 'monto' (Bs fijos). Opcional: minimo (compra mínima), usosMax (límite de usos), hastaFecha (YYYY-MM-DD). Úsala para 'crea un cupón X de 10%', 'cupón de 20 Bs con compra mínima de 100'.", parameters: { type: "object", properties: { codigo: { type: "string" }, tipo: { type: "string" }, valor: { type: "number" }, minimo: { type: "number" }, usosMax: { type: "number" }, hastaFecha: { type: "string" } }, required: ["codigo", "tipo", "valor"] } } },
+        { type: "function" as const, function: { name: "desactivarCupon", description: "ACCIÓN (confirmación): desactiva un cupón. Úsala para 'desactiva el cupón X'.", parameters: { type: "object", properties: { codigo: { type: "string" } }, required: ["codigo"] } } },
+        { type: "function" as const, function: { name: "crearPromoMonto", description: "ACCIÓN (confirmación): crea una promoción automática por monto de compra ('X% en compras desde Bs Y'). Se aplica sola en el carrito. Úsala para 'promoción de 10% en compras sobre 150 Bs'.", parameters: { type: "object", properties: { descripcion: { type: "string" }, minimo: { type: "number" }, pctDescuento: { type: "number" }, hastaFecha: { type: "string" } }, required: ["minimo", "pctDescuento"] } } },
+        { type: "function" as const, function: { name: "verPromociones", description: "Lista los cupones y promociones activas de la tienda. Úsala para 'qué cupones hay', 'promociones activas'.", parameters: { type: "object", properties: {} } } },
       ];
 
       // Directiva de modo voz: va en el mensaje VARIABLE (no en el prefijo estable
@@ -2583,13 +2591,23 @@ const tiendaRouter = router({
       producto: z.string().max(500).optional(), precio: z.number().optional(),
       items: z.array(z.object({ nombre: z.string().max(500), precio: z.number(), cantidad: z.number() })).max(15).optional(),
       sucursal: z.string().max(150), nombreCliente: z.string().max(150), telefono: z.string().max(30),
+      cupon: z.string().max(30).optional(),
     }))
     .mutation(async ({ input, ctx }) => {
       const { tienda, rateLimitOk } = await import("./tienda");
       const ip = (ctx as any)?.req?.ip || "?";
       if (!rateLimitOk(ip, "reservar")) return { error: "Demasiadas reservas seguidas, espera un momento." };
       const email = (ctx as any)?.user?.email;
-      return tienda.reservar(input.producto || "", input.precio || 0, input.sucursal, input.nombreCliente, input.telefono, input.items, email);
+      return tienda.reservar(input.producto || "", input.precio || 0, input.sucursal, input.nombreCliente, input.telefono, input.items, email, input.cupon);
+    }),
+  previewTotal: publicProcedure
+    .input(z.object({
+      items: z.array(z.object({ nombre: z.string().max(500), precio: z.number(), cantidad: z.number() })).max(15),
+      cupon: z.string().max(30).optional(),
+    }))
+    .query(async ({ input }) => {
+      const { tienda } = await import("./tienda");
+      return tienda.previewTotal(input.items, input.cupon);
     }),
   misReservas: publicProcedure.query(async ({ ctx }) => {
     const email = (ctx as any)?.user?.email;

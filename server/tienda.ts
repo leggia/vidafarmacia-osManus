@@ -152,7 +152,7 @@ export const tienda = {
   },
 
   // Crear una reserva (sin registro: nombre + teléfono). Acepta carrito (items[]).
-  async reservar(producto: string, precio: number, sucursal: string, nombreCliente: string, telefono: string, items?: Array<{ nombre: string; precio: number; cantidad: number }>, emailCliente?: string) {
+  async reservar(producto: string, precio: number, sucursal: string, nombreCliente: string, telefono: string, items?: Array<{ nombre: string; precio: number; cantidad: number }>, emailCliente?: string, cupon?: string) {
     await asegurarTablas();
     const db = await getDb();
     if (!db) return { error: "Servicio no disponible, intenta más tarde." };
@@ -184,9 +184,18 @@ export const tienda = {
       const dup = rows(await db.execute(sql`SELECT id FROM reservas_tienda WHERE codigo = ${codigo} AND estado = 'pendiente' LIMIT 1`));
       if (dup.length === 0) break;
     }
-    const total = itemsLimpios.length > 0
+    // Total con promociones (server-side). Si es carrito, aplica motor; si es 1 item, subtotal simple.
+    let total = itemsLimpios.length > 0
       ? itemsLimpios.reduce((t, i) => t + i.precio * i.cantidad, 0)
       : num(precio);
+    let cuponUsado: string | undefined;
+    if (itemsLimpios.length > 0) {
+      const { calcularTotal, consumirCupon } = await import("./promociones");
+      const calc = await calcularTotal(itemsLimpios, cupon);
+      total = calc.total;
+      cuponUsado = calc.cuponAplicado;
+      if (cuponUsado) await consumirCupon(cuponUsado);
+    }
     const em = emailCliente ? String(emailCliente).trim().toLowerCase().slice(0, 320) : null;
     await db.execute(sql`
       INSERT INTO reservas_tienda (codigo, producto, precio, sucursal, nombreCliente, telefono, items, emailCliente)
@@ -196,6 +205,16 @@ export const tienda = {
       ok: true, codigo,
       mensaje: `Reserva creada. Preséntate en ${suc} con el código ${codigo}. Te la guardamos por 48 horas.`,
     };
+  },
+
+  // Previsualizar total con promociones y cupón (sin crear reserva)
+  async previewTotal(items: Array<{ nombre: string; precio: number; cantidad: number }>, cupon?: string) {
+    const { calcularTotal } = await import("./promociones");
+    const limpios = (items || []).slice(0, 15).map(i => ({
+      nombre: String(i.nombre || "").slice(0, 500), precio: num(i.precio),
+      cantidad: Math.min(20, Math.max(1, Math.round(num(i.cantidad) || 1))),
+    }));
+    return calcularTotal(limpios, cupon);
   },
 
   // Config pública (WhatsApp por sucursal, con respaldo general)
