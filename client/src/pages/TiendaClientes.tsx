@@ -1,4 +1,5 @@
 import { useState, useEffect } from "react";
+import { Home, Search, Receipt, Gift } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 
 /**
@@ -129,22 +130,27 @@ export default function TiendaClientes() {
   return (
     <div className="min-h-screen bg-gradient-to-b from-emerald-50 to-white pb-28">
       <div className="max-w-lg mx-auto px-4 py-6">
-        {/* Barra de cuenta */}
-        <div className="flex justify-end mb-2">
+        {/* Barra superior: logo pequeño + cuenta */}
+        <div className="flex items-center justify-between mb-4">
+          <img src="/vidafarma-logo.png" alt="VidaFarma" className="h-9 w-auto" />
           {esCliente ? (
-            <button onClick={() => setVerMisReservas(true)} className="text-xs font-bold text-emerald-700 flex items-center gap-1">
+            <button onClick={() => setVerMisReservas(true)}
+              className="flex items-center gap-1.5 h-9 px-3 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold active:scale-95">
               🧾 Mis reservas{(misReservas?.reservas?.length || 0) > 0 ? ` (${misReservas!.reservas.length})` : ""}
             </button>
           ) : (
-            <a href="/api/oauth/google/cliente" className="text-xs font-bold text-emerald-700">Iniciar sesión</a>
+            <a href="/api/oauth/google/cliente"
+              className="flex items-center gap-2 h-9 px-4 rounded-full bg-white border-2 border-emerald-500 text-emerald-700 text-xs font-bold shadow-sm active:scale-95">
+              <svg width="14" height="14" viewBox="0 0 48 48"><path fill="#FFC107" d="M43.6 20.1H42V20H24v8h11.3C33.7 32.7 29.2 36 24 36c-6.6 0-12-5.4-12-12s5.4-12 12-12c3.1 0 5.9 1.2 8 3l5.7-5.7C34.3 6.1 29.4 4 24 4 13 4 4 13 4 24s9 20 20 20 20-9 20-20c0-1.3-.1-2.6-.4-3.9z"/><path fill="#FF3D00" d="M6.3 14.7l6.6 4.8C14.7 15.1 19 12 24 12c3.1 0 5.9 1.2 8 3l5.7-5.7C34.3 6.1 29.4 4 24 4 16.3 4 9.7 8.3 6.3 14.7z"/><path fill="#4CAF50" d="M24 44c5.2 0 9.9-2 13.4-5.2l-6.2-5.2C29.2 35.1 26.7 36 24 36c-5.2 0-9.6-3.3-11.3-8l-6.5 5C9.6 39.6 16.3 44 24 44z"/><path fill="#1976D2" d="M43.6 20.1H42V20H24v8h11.3c-.8 2.2-2.2 4.2-4.1 5.6l6.2 5.2C41 35.3 44 30.1 44 24c0-1.3-.1-2.6-.4-3.9z"/></svg>
+              Iniciar sesión
+            </a>
           )}
         </div>
 
-        {/* Encabezado */}
-        <div className="text-center mb-6">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-emerald-600 text-white text-2xl font-black mb-2 shadow-lg">V</div>
-          <h1 className="text-2xl font-black text-emerald-900">VidaFarma</h1>
-          <p className="text-sm text-emerald-700">Tu farmacia, en tu celular</p>
+        {/* Encabezado con lema mejorado */}
+        <div className="text-center mb-5">
+          <h1 className="text-xl font-black text-gray-900">Tu salud, más cerca que nunca</h1>
+          <p className="text-sm text-gray-500 mt-0.5">Busca, reserva y recoge en tu sucursal</p>
         </div>
 
         {/* Buscador dinámico */}
@@ -187,20 +193,23 @@ export default function TiendaClientes() {
             )}
             {(ofertasData?.ofertas?.length || 0) > 0 && (
               <div className="mb-5">
-                <h2 className="font-black text-emerald-900 mb-2 flex items-center gap-2">🔥 Ofertas de la semana</h2>
-                <div className="space-y-2">
+                <h2 className="font-black text-gray-900 mb-2 flex items-center gap-2">🔥 Ofertas de la semana</h2>
+                <div className="flex gap-3 overflow-x-auto pb-2 -mx-4 px-4 snap-x snap-mandatory">
                   {ofertasData!.ofertas.map((o: any, i: number) => (
-                    <div key={i} className="p-3 rounded-2xl bg-white border-2 border-amber-200 shadow-sm flex items-center gap-3">
-                      <Avatar nombre={o.nombre} imagen={o.imagen} />
-                      <div className="flex-1 min-w-0">
-                        <p className="font-bold text-gray-900 text-sm leading-tight">{o.nombre}</p>
-                        <p className="text-[11px]">
-                          <span className="line-through text-gray-400 mr-2">Bs {o.precioNormal.toFixed(2)}</span>
-                          <span className="text-lg font-black text-red-600">Bs {o.precio.toFixed(2)}</span>
-                        </p>
-                        {o.hasta && <p className="text-[10px] text-gray-400">Hasta el {o.hasta}</p>}
+                    <div key={i} className="snap-start shrink-0 w-44 p-3 rounded-2xl bg-white border-2 border-amber-200 shadow-sm flex flex-col">
+                      <div className="relative">
+                        <Avatar nombre={o.nombre} imagen={o.imagen} grande />
+                        <span className="absolute -top-1 -right-1 text-[9px] font-black px-1.5 py-0.5 rounded-full bg-red-500 text-white shadow">
+                          -{Math.round((1 - o.precio / o.precioNormal) * 100)}%
+                        </span>
                       </div>
-                      <button onClick={() => agregar(o)} className="h-10 px-4 rounded-xl bg-emerald-600 text-white font-bold text-xs active:scale-95 shrink-0">
+                      <p className="font-bold text-gray-900 text-xs leading-tight mt-2 line-clamp-2 min-h-[2rem]">{o.nombre}</p>
+                      <div className="mt-1">
+                        <span className="line-through text-gray-400 text-[10px]">Bs {o.precioNormal.toFixed(2)}</span>
+                        <p className="text-lg font-black text-red-600 leading-none">Bs {o.precio.toFixed(2)}</p>
+                      </div>
+                      {o.hasta && <p className="text-[9px] text-gray-400 mt-0.5">Hasta {o.hasta}</p>}
+                      <button onClick={() => agregar(o)} className="mt-2 h-9 rounded-xl bg-emerald-600 text-white font-bold text-xs active:scale-95">
                         Agregar
                       </button>
                     </div>
@@ -286,10 +295,10 @@ export default function TiendaClientes() {
         </p>
       </div>
 
-      {/* Barra flotante del carrito */}
+      {/* Barra flotante del carrito (encima de la navegación inferior) */}
       {totalItems > 0 && !verCarrito && (
         <button onClick={() => setVerCarrito(true)}
-          className="fixed bottom-4 left-4 right-4 max-w-lg mx-auto h-14 rounded-2xl bg-emerald-700 text-white font-black shadow-2xl flex items-center justify-between px-5 active:scale-[0.98] z-40">
+          className="fixed bottom-20 left-4 right-4 max-w-lg mx-auto h-14 rounded-2xl bg-emerald-700 text-white font-black shadow-2xl flex items-center justify-between px-5 active:scale-[0.98] z-40">
           <span>🛒 {totalItems} producto{totalItems > 1 ? "s" : ""}</span>
           <span>Bs {totalBs.toFixed(2)} · Ver carrito →</span>
         </button>
@@ -413,6 +422,31 @@ export default function TiendaClientes() {
           </div>
         </div>
       )}
+
+      {/* Barra de navegación inferior (estilo app: como CVS/Walgreens) */}
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-100 shadow-[0_-2px_10px_rgba(0,0,0,0.04)] z-30">
+        <div className="max-w-lg mx-auto flex items-center justify-around h-16">
+          <button onClick={() => { setTermino(""); setBuscado(""); window.scrollTo({ top: 0, behavior: "smooth" }); }}
+            className={`flex flex-col items-center gap-0.5 ${enHome ? "text-emerald-600" : "text-gray-400"}`}>
+            <Home className="w-5 h-5" /><span className="text-[10px] font-bold">Inicio</span>
+          </button>
+          <button onClick={() => document.querySelector<HTMLInputElement>('input[placeholder*="producto"]')?.focus()}
+            className="flex flex-col items-center gap-0.5 text-gray-400">
+            <Search className="w-5 h-5" /><span className="text-[10px] font-bold">Buscar</span>
+          </button>
+          <button onClick={() => esCliente ? setVerMisReservas(true) : (window.location.href = "/api/oauth/google/cliente")}
+            className="flex flex-col items-center gap-0.5 text-gray-400 relative">
+            <Receipt className="w-5 h-5" /><span className="text-[10px] font-bold">Reservas</span>
+            {(misReservas?.reservas?.filter((r: any) => r.estado === "pendiente" || r.estado === "lista").length || 0) > 0 && (
+              <span className="absolute -top-1 right-2 w-2 h-2 rounded-full bg-red-500" />
+            )}
+          </button>
+          <button onClick={() => esCliente ? setVerMisReservas(true) : (window.location.href = "/api/oauth/google/cliente")}
+            className="flex flex-col items-center gap-0.5 text-gray-400">
+            <Gift className="w-5 h-5" /><span className="text-[10px] font-bold">Puntos{esCliente && puntos ? ` ${puntos.puntos}` : ""}</span>
+          </button>
+        </div>
+      </nav>
     </div>
   );
 }
