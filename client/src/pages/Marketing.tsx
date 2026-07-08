@@ -1,7 +1,7 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { Megaphone, Sparkles, Check, X, Copy, Send, Pencil, Loader2, ImagePlus } from "lucide-react";
+import { Megaphone, Sparkles, Check, X, Copy, Send, Pencil, Loader2, ImagePlus, Camera } from "lucide-react";
 
 /**
  * PANEL DE MARKETING (solo admin): el agente redacta publicaciones con datos reales
@@ -46,6 +46,37 @@ export default function Marketing() {
     },
     onError: (e) => { setGenerandoImg(null); toast.error(e.message); },
   });
+  const fileRef = useRef<HTMLInputElement>(null);
+  const [postParaFoto, setPostParaFoto] = useState<number | null>(null);
+  const subirImagen = trpc.marketing.subirImagen.useMutation({
+    onSuccess: (r: any) => {
+      if (r?.error) { toast.error(r.error); return; }
+      toast.success("Foto subida 📷");
+      utils.marketing.listar.invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
+  // Comprimir la foto en el cliente (máx 1200px, JPEG 0.85) y subir en base64
+  const procesarFoto = (file: File, postId: number) => {
+    const img = new Image();
+    img.onload = () => {
+      const MAX = 1200;
+      let { width, height } = img;
+      if (width > MAX || height > MAX) {
+        const esc = MAX / Math.max(width, height);
+        width = Math.round(width * esc); height = Math.round(height * esc);
+      }
+      const canvas = document.createElement("canvas");
+      canvas.width = width; canvas.height = height;
+      canvas.getContext("2d")!.drawImage(img, 0, 0, width, height);
+      const dataUrl = canvas.toDataURL("image/jpeg", 0.85);
+      subirImagen.mutate({ id: postId, imagenBase64: dataUrl, mime: "image/jpeg" });
+      URL.revokeObjectURL(img.src);
+    };
+    img.src = URL.createObjectURL(file);
+  };
+
   const publicar = trpc.marketing.publicar.useMutation({
     onSuccess: (r: any) => {
       if (r?.error) { toast.error(r.error); return; }
@@ -167,7 +198,12 @@ export default function Marketing() {
                       disabled={generandoImg === p.id}
                       className="h-9 px-4 rounded-xl bg-violet-100 text-violet-800 text-xs font-bold flex items-center gap-1.5 disabled:opacity-50">
                       {generandoImg === p.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImagePlus className="w-3.5 h-3.5" />}
-                      {p.tieneImagen ? "Regenerar imagen" : "Generar imagen"}
+                      {p.tieneImagen ? "Regenerar IA" : "Imagen IA"}
+                    </button>
+                    <button onClick={() => { setPostParaFoto(p.id); fileRef.current?.click(); }}
+                      disabled={subirImagen.isPending}
+                      className="h-9 px-4 rounded-xl bg-amber-100 text-amber-800 text-xs font-bold flex items-center gap-1.5 disabled:opacity-50">
+                      <Camera className="w-3.5 h-3.5" /> Subir foto
                     </button>
                     <button onClick={() => cambiarEstado.mutate({ id: p.id, estado: "descartado" })}
                       className="h-9 px-3 rounded-xl bg-muted text-muted-foreground text-xs font-bold">
@@ -192,6 +228,11 @@ export default function Marketing() {
                       className="h-9 px-3 rounded-xl bg-violet-100 text-violet-800 text-xs font-bold flex items-center gap-1.5 disabled:opacity-50">
                       {generandoImg === p.id ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <ImagePlus className="w-3.5 h-3.5" />}
                     </button>
+                    <button onClick={() => { setPostParaFoto(p.id); fileRef.current?.click(); }}
+                      disabled={subirImagen.isPending}
+                      className="h-9 px-3 rounded-xl bg-amber-100 text-amber-800 text-xs font-bold flex items-center gap-1.5 disabled:opacity-50">
+                      <Camera className="w-3.5 h-3.5" />
+                    </button>
                   </>
                 )}
                 {p.estado === "publicado" && (
@@ -202,6 +243,14 @@ export default function Marketing() {
           </div>
         ))}
       </div>
+
+      {/* Input de foto oculto (galería o cámara del celular) */}
+      <input ref={fileRef} type="file" accept="image/*" className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f && postParaFoto != null) procesarFoto(f, postParaFoto);
+          e.target.value = "";
+        }} />
 
       {/* Modal de publicación manual */}
       {modalManual && (

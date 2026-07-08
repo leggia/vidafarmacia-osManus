@@ -132,3 +132,23 @@ export async function urlImagenPublica(postId: number): Promise<string | null> {
   const base = process.env.APP_URL || "https://vidafarmacia-osmanus-production.up.railway.app";
   return `${base}/api/imagen-post/${num(postId)}`;
 }
+
+// Guardar una foto PROPIA subida por el dueño (farmacia, personal, producto real).
+// Recibe base64 (ya comprimida en el cliente) y la guarda igual que las generadas.
+export async function guardarImagenPost(postId: number, imagenBase64: string, mime?: string) {
+  await asegurarColumna();
+  const db = await getDb();
+  if (!db) return { error: "Sin BD" };
+  const post = rows(await db.execute(sql`SELECT id FROM marketing_posts WHERE id = ${num(postId)} LIMIT 1`))[0];
+  if (!post) return { error: "Post no encontrado" };
+  let buf: Buffer;
+  try {
+    const limpio = imagenBase64.replace(/^data:image\/\w+;base64,/, "");
+    buf = Buffer.from(limpio, "base64");
+  } catch { return { error: "Imagen inválida." }; }
+  if (buf.length < 1000) return { error: "Imagen demasiado pequeña o corrupta." };
+  if (buf.length > 6 * 1024 * 1024) return { error: "Imagen demasiado grande (máx 6MB). Se comprime en el cliente; intenta de nuevo." };
+  const m = /^image\/(jpeg|png|webp)$/.test(mime || "") ? mime! : "image/jpeg";
+  await db.execute(sql`UPDATE marketing_posts SET imagen = ${buf}, imagenMime = ${m} WHERE id = ${num(postId)}`);
+  return { ok: true, url: `/api/imagen-post/${num(postId)}` };
+}

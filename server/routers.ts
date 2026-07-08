@@ -2636,6 +2636,13 @@ const marketingRouter = router({
       const { generarImagenPost } = await import("./marketing-imagen");
       return generarImagenPost(input.id);
     }),
+  subirImagen: protectedProcedure
+    .input(z.object({ id: z.number(), imagenBase64: z.string().max(8_000_000), mime: z.string().max(40).optional() }))
+    .mutation(async ({ input, ctx }) => {
+      soloAdminMkt(ctx);
+      const { guardarImagenPost } = await import("./marketing-imagen");
+      return guardarImagenPost(input.id, input.imagenBase64, input.mime);
+    }),
 });
 
 const fidelizacionRouter = router({
