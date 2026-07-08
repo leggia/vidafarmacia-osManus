@@ -1,7 +1,7 @@
 {
-  "name": "VidaFarma - Registro de Compras",
+  "name": "VidaFarma - Tu farmacia en línea",
   "short_name": "VidaFarma",
-  "description": "Registro automático de compras desde facturas para VidaFarma",
+  "description": "Busca, reserva y recoge tus medicamentos en VidaFarma. Ofertas, puntos y más.",
   "start_url": "/",
   "display": "standalone",
   "orientation": "portrait",

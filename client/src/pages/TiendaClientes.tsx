@@ -147,8 +147,9 @@ export default function TiendaClientes() {
           )}
         </div>
 
-        {/* Encabezado con lema mejorado */}
-        <div className="text-center mb-5">
+        {/* Encabezado con lema mejorado + símbolo de marca */}
+        <div className="text-center mb-5 relative">
+          <img src="/vidafarma-simbolo.png" alt="" className="w-10 h-10 mx-auto mb-1 opacity-90" />
           <h1 className="text-xl font-black text-gray-900">Tu salud, más cerca que nunca</h1>
           <p className="text-sm text-gray-500 mt-0.5">Busca, reserva y recoge en tu sucursal</p>
         </div>
