@@ -941,6 +941,8 @@ const confirmacionesRouter = router({
       nombre: z.string(),
       codigo: z.string().optional(),
       descripcion: z.string().optional(),
+      principioActivo: z.string().optional(),
+      esGenerico: z.boolean().optional(),
       costoUnitario: z.number(),
       precioVenta: z.number(),
       idcategoria: z.number(),
@@ -960,10 +962,18 @@ const confirmacionesRouter = router({
       // Generar código si no se da: letra "A" + número (timestamp corto)
       const codigo = input.codigo || `A${Date.now().toString().slice(-8)}`;
 
+      // Componer la DESCRIPCIÓN con el formato del negocio: "Proveedor | Principio activo".
+      // Los genéricos no llevan principio activo (su nombre ya lo es).
+      const prov = input.nombreProveedor ? input.nombreProveedor.trim() : "";
+      const pa = (!input.esGenerico && input.principioActivo) ? input.principioActivo.trim() : "";
+      const partes = [prov, pa].filter(Boolean);
+      const descripcion = input.descripcion?.trim() || partes.join(" | ");
+
       return inventarios365.crearProducto({
         nombre: input.nombre,
         codigo,
-        descripcion: input.descripcion || (input.nombreProveedor ? `Proveedor: ${input.nombreProveedor}` : ""),
+        descripcion,
+        nombreGenerico: pa,
         costoUnitario: input.costoUnitario,
         precioVenta: input.precioVenta,
         idcategoria: input.idcategoria,

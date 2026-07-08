@@ -618,6 +618,7 @@ class Inventarios365Service {
     nombre: string;
     codigo: string;
     descripcion?: string;
+    nombreGenerico?: string;
     costoUnitario: number;
     precioVenta: number;
     idcategoria: number;
@@ -633,7 +634,7 @@ class Inventarios365Service {
       const form = new FormData();
       form.append("nombre", params.nombre);
       form.append("descripcion", params.descripcion || "");
-      form.append("nombre_generico", "");
+      form.append("nombre_generico", params.nombreGenerico || "");
       form.append("unidad_envase", String(params.unidadEnvase ?? 1));
       form.append("precio_costo_unid", String(params.costoUnitario));
       form.append("precio_costo_paq", String(params.costoUnitario));

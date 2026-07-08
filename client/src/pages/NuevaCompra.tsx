@@ -202,7 +202,7 @@ export default function NuevaCompra() {
   const [proveedoresEncontrados, setProveedoresEncontrados] = useState<any[]>([]);
   const [buscandoProveedor, setBuscandoProveedor] = useState(false);
   const [proveedorConfirmado, setProveedorConfirmado] = useState<{ id: number; nombre: string } | null>(null);
-  const [nuevoProducto, setNuevoProducto] = useState<{ nombre: string; precioVenta: number; idcategoria: number | null; categoriaNombre: string }>({ nombre: "", precioVenta: 0, idcategoria: null, categoriaNombre: "" });
+  const [nuevoProducto, setNuevoProducto] = useState<{ nombre: string; precioVenta: number; idcategoria: number | null; categoriaNombre: string; principioActivo: string; esGenerico: boolean }>({ nombre: "", precioVenta: 0, idcategoria: null, categoriaNombre: "", principioActivo: "", esGenerico: false });
   // Proveedor elegido para el producto nuevo (por defecto el de la factura, pero editable)
   const [provNuevoProducto, setProvNuevoProducto] = useState<string>("");
   const [busquedaProv, setBusquedaProv] = useState<string>("");
@@ -1312,7 +1312,7 @@ export default function NuevaCompra() {
                             onClick={async () => {
                               const costo = item.unitCost || 0;
                               const precioSugerido = precioParaMargen(costo, 0.20);
-                              setNuevoProducto({ nombre: item.productName, precioVenta: precioSugerido, idcategoria: null, categoriaNombre: "Sugiriendo..." });
+                              setNuevoProducto({ nombre: item.productName, precioVenta: precioSugerido, idcategoria: null, categoriaNombre: "Sugiriendo...", principioActivo: "", esGenerico: false });
                               setFilaCreando(idx);
                               // Pedir categoría sugerida por IA
                               try {
@@ -1334,6 +1334,23 @@ export default function NuevaCompra() {
                                 onChange={(e) => setNuevoProducto(prev => ({ ...prev, nombre: e.target.value }))}
                                 className="h-8 text-xs font-medium"
                                 placeholder="Nombre del producto"
+                              />
+                            </div>
+                            <div>
+                              <div className="flex items-center justify-between">
+                                <label className="text-[11px] text-muted-foreground">Principio activo (para búsqueda por genérico)</label>
+                                <label className="text-[11px] flex items-center gap-1 cursor-pointer">
+                                  <input type="checkbox" checked={nuevoProducto.esGenerico}
+                                    onChange={(e) => setNuevoProducto(prev => ({ ...prev, esGenerico: e.target.checked, principioActivo: e.target.checked ? "" : prev.principioActivo }))} />
+                                  Es genérico
+                                </label>
+                              </div>
+                              <Input
+                                value={nuevoProducto.esGenerico ? "" : nuevoProducto.principioActivo}
+                                onChange={(e) => setNuevoProducto(prev => ({ ...prev, principioActivo: e.target.value }))}
+                                disabled={nuevoProducto.esGenerico}
+                                className="h-8 text-xs"
+                                placeholder={nuevoProducto.esGenerico ? "El nombre ya es el principio activo" : "Ej: Ibuprofeno 400mg"}
                               />
                             </div>
                             <div className="grid grid-cols-2 gap-2">
@@ -1435,6 +1452,8 @@ export default function NuevaCompra() {
                                       precioVenta: nuevoProducto.precioVenta,
                                       idcategoria: nuevoProducto.idcategoria,
                                       nombreProveedor: (provNuevoProducto || supplier) || undefined,
+                                      principioActivo: nuevoProducto.principioActivo.trim() || undefined,
+                                      esGenerico: nuevoProducto.esGenerico,
                                       stockMinimo: 10,
                                     });
                                     if (res.success) {

@@ -8,6 +8,7 @@ import { sql } from "drizzle-orm";
 
 const rows = (r: any) => { const x = Array.isArray(r) ? r[0] : r?.rows ?? r; return Array.isArray(x) ? x : []; };
 const num = (v: any) => { const n = Number(v); return isNaN(n) ? 0 : n; };
+import { expandirBusqueda, principioDeMarca } from "./diccionario-principios";
 
 // ─── Sustancias controladas (no se muestran al público). Lista inicial:
 // benzodiacepinas, opioides, barbitúricos y otros de venta bajo receta retenida.
@@ -34,7 +35,10 @@ const CONTROLADOS = [
 ];
 const esControlado = (nombre: string, descripcion?: string | null) => {
   const texto = `${nombre || ""} ${descripcion || ""}`.toLowerCase();
-  return CONTROLADOS.some(c => texto.includes(c));
+  if (CONTROLADOS.some(c => texto.includes(c))) return true;
+  // Respaldo: si el nombre es una marca conocida cuyo principio es controlado
+  const pa = principioDeMarca(nombre || "");
+  return pa ? CONTROLADOS.some(c => pa.includes(c)) : false;
 };
 
 // ─── Tablas (idempotente) ───
@@ -144,14 +148,23 @@ export const tienda = {
     const t = String(termino || "").trim().slice(0, 80);
     if (t.length < 3) return { productos: [], mensaje: "Escribe al menos 3 letras." };
     const palabras = t.split(/\s+/).filter(Boolean).slice(0, 5);
-    // Cada palabra puede aparecer en el NOMBRE o en la DESCRIPCIÓN (principio activo
-    // + proveedor). Así "ibuprofeno" encuentra marcas cuyo genérico es ibuprofeno.
     const enNombreODesc = (w: string) => sql`(nombre LIKE ${"%" + w + "%"} OR descripcion LIKE ${"%" + w + "%"})`;
+    // Condición principal: todas las palabras en nombre o descripción.
     let cond = enNombreODesc(palabras[0]);
     for (let i = 1; i < palabras.length; i++) cond = sql`${cond} AND ${enNombreODesc(palabras[i])}`;
+    // Ampliación por DICCIONARIO (respaldo para el ~20% sin principio activo en la
+    // descripción): si el término es un principio activo o una marca conocida, se
+    // agregan como alternativas (OR) las marcas/principios equivalentes por nombre.
+    const extras = expandirBusqueda(t);
+    let condFinal = cond;
+    if (extras.length > 0) {
+      let condExtra = sql`nombre LIKE ${"%" + extras[0] + "%"}`;
+      for (let i = 1; i < extras.length; i++) condExtra = sql`${condExtra} OR nombre LIKE ${"%" + extras[i] + "%"}`;
+      condFinal = sql`(${cond}) OR (${condExtra})`;
+    }
     const prods = rows(await db.execute(sql`
       SELECT nombre, precioUno, imagenUrl, descripcion FROM productos_cache
-      WHERE ${cond} AND ocultoTienda = 0 AND precioUno > 0
+      WHERE (${condFinal}) AND ocultoTienda = 0 AND precioUno > 0
       ORDER BY nombre LIMIT 15
     `));
     const visibles = prods.filter((p: any) => !esControlado(p.nombre, p.descripcion));
