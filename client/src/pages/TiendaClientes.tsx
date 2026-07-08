@@ -38,8 +38,6 @@ export default function TiendaClientes() {
     return () => clearTimeout(t);
   }, [termino]);
 
-  useEffect(() => { if (yo?.name && !nombre) setNombre(yo.name); }, [yo]);
-
   const { data, isFetching } = trpc.tienda.buscar.useQuery(
     { termino: buscado },
     { enabled: buscado.length >= 3, staleTime: 60000 }
@@ -55,6 +53,8 @@ export default function TiendaClientes() {
   const [pagoActivo, setPagoActivo] = useState<any>(null);
   const reservar = trpc.tienda.reservar.useMutation();
   const iniciarPago = trpc.tienda.iniciarPago.useMutation();
+
+  useEffect(() => { if (yo?.name && !nombre) setNombre(yo.name); }, [yo]);
 
   const totalItems = carrito.reduce((t, i) => t + i.cantidad, 0);
   const subtotalBs = carrito.reduce((t, i) => t + i.precio * i.cantidad, 0);
