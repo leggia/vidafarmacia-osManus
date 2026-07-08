@@ -114,8 +114,11 @@ const ALMACENES: Array<{ id: number; sucursal: string }> = [
   { id: 4, sucursal: "Casa Matriz Cobol" },
 ];
 let stockCache: { data: Record<string, Record<string, number>>; expira: number } | null = null;
-async function stockPorProducto(): Promise<Record<string, Record<string, number>>> {
-  if (stockCache && stockCache.expira > Date.now()) return stockCache.data;
+let stockCargando: Promise<void> | null = null;
+
+// Carga el stock de los 4 almacenes (lento: consulta 365 en vivo). Se ejecuta en
+// segundo plano para no bloquear la búsqueda.
+async function cargarStock(): Promise<void> {
   const { inventarios365 } = await import("./inventarios365");
   const data: Record<string, Record<string, number>> = {};
   const norm = (s: string) => String(s || "").trim().toLowerCase();
@@ -132,7 +135,17 @@ async function stockPorProducto(): Promise<Record<string, Record<string, number>
     }
   }
   stockCache = { data, expira: Date.now() + 10 * 60 * 1000 };
-  return data;
+}
+
+// Devuelve el stock disponible AHORA (del caché) sin bloquear. Si el caché está
+// vencido o vacío, dispara la carga en segundo plano y devuelve lo que haya (o
+// vacío → los productos se muestran como "consultar", nunca se traba la búsqueda).
+function stockPorProductoNoBloqueante(): Record<string, Record<string, number>> {
+  const vigente = stockCache && stockCache.expira > Date.now();
+  if (!vigente && !stockCargando) {
+    stockCargando = cargarStock().finally(() => { stockCargando = null; });
+  }
+  return stockCache?.data || {};
 }
 
 const estadoDe = (stock: number | undefined) =>
@@ -169,7 +182,7 @@ export const tienda = {
     `));
     const visibles = prods.filter((p: any) => !esControlado(p.nombre, p.descripcion));
     if (visibles.length === 0) return { productos: [], mensaje: "No encontramos ese producto. Consúltanos por WhatsApp." };
-    const stocks = await stockPorProducto();
+    const stocks = stockPorProductoNoBloqueante();
     const norm = (s: string) => String(s || "").trim().toLowerCase();
     // Ofertas activas: mapa nombre → precio de oferta (para mostrar "antes/ahora").
     let ofertasMap: Record<string, number> = {};

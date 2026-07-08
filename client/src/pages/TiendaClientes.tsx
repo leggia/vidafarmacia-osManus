@@ -39,10 +39,32 @@ export default function TiendaClientes() {
     return () => clearTimeout(t);
   }, [termino]);
 
-  const { data, isFetching } = trpc.tienda.buscar.useQuery(
+  // Búsqueda INMEDIATA (categorías, chips de recompra): actualiza ambos estados a la
+  // vez, sin esperar el debounce, para que el resultado aparezca al primer toque.
+  const buscarInmediato = (q: string) => {
+    const limpio = q.trim();
+    setTermino(limpio);
+    setBuscado(limpio);
+    setExito(null);
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  };
+
+  const { data, isFetching, refetch } = trpc.tienda.buscar.useQuery(
     { termino: buscado },
     { enabled: buscado.length >= 3, staleTime: 60000 }
   );
+
+  // Si los resultados llegaron sin disponibilidad (stock cargándose en segundo
+  // plano la primera vez), reintentar una vez a los 2s para mostrar el semáforo.
+  useEffect(() => {
+    if (!data?.productos?.length) return;
+    const todosConsultar = data.productos.every((p: any) =>
+      p.disponibilidad?.every((d: any) => d.estado === "consultar"));
+    if (todosConsultar) {
+      const t = setTimeout(() => refetch(), 2000);
+      return () => clearTimeout(t);
+    }
+  }, [data]);
   const { data: config } = trpc.tienda.config.useQuery(undefined, { staleTime: 300000 });
   const { data: ofertasData } = trpc.tienda.ofertas.useQuery(undefined, { staleTime: 120000 });
   const { data: yo } = trpc.auth.me.useQuery(undefined, { staleTime: 300000 });
@@ -223,7 +245,7 @@ export default function TiendaClientes() {
                 <h2 className="font-black text-emerald-900 mb-2">🔁 Pedir de nuevo</h2>
                 <div className="flex gap-2 overflow-x-auto pb-1">
                   {recompra!.productos.map((n: string, i: number) => (
-                    <button key={i} onClick={() => setTermino(n)}
+                    <button key={i} onClick={() => buscarInmediato(n)}
                       className="shrink-0 h-10 px-3 rounded-xl bg-white border border-emerald-100 text-xs font-bold text-emerald-900 active:scale-95">
                       {n.length > 22 ? n.slice(0, 22) + "…" : n}
                     </button>
@@ -234,7 +256,7 @@ export default function TiendaClientes() {
             <h2 className="font-black text-emerald-900 mb-2">Explora por categoría</h2>
             <div className="grid grid-cols-3 gap-2 mb-6">
               {CATEGORIAS.map(c => (
-                <button key={c.txt} onClick={() => setTermino(c.q)}
+                <button key={c.txt} onClick={() => buscarInmediato(c.q)}
                   className="h-16 rounded-2xl bg-white border border-emerald-100 shadow-sm text-xs font-bold text-emerald-900 active:scale-95 px-1">
                   {c.txt}
                 </button>
