@@ -50,6 +50,7 @@ export default function TiendaClientes() {
   const esCliente = !!yo?.email;
   const { data: misReservas } = trpc.tienda.misReservas.useQuery(undefined, { enabled: esCliente, staleTime: 60000 });
   const { data: recompra } = trpc.tienda.recompra.useQuery(undefined, { enabled: esCliente, staleTime: 60000 });
+  const { data: puntos } = trpc.tienda.misPuntos.useQuery(undefined, { enabled: esCliente, staleTime: 60000 });
   const [verMisReservas, setVerMisReservas] = useState(false);
   const reservar = trpc.tienda.reservar.useMutation();
 
@@ -164,6 +165,23 @@ export default function TiendaClientes() {
         {/* HOME comercial: ofertas + categorías */}
         {enHome && (
           <>
+            {esCliente && puntos && (
+              <div className="mb-5 p-4 rounded-2xl bg-gradient-to-r from-emerald-600 to-teal-600 text-white shadow-lg">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <p className="text-xs opacity-90">Tus puntos VidaFarma</p>
+                    <p className="text-3xl font-black">{puntos.puntos}</p>
+                  </div>
+                  <div className="text-right">
+                    {puntos.vales > 0 && <p className="text-sm font-bold">🎟️ {puntos.vales} vale(s) de Bs {puntos.valorVale}</p>}
+                    <p className="text-[11px] opacity-90">Te faltan {puntos.faltanParaVale} pts para tu próximo vale</p>
+                  </div>
+                </div>
+                <div className="mt-2 h-2 rounded-full bg-white/25 overflow-hidden">
+                  <div className="h-full bg-white rounded-full" style={{ width: `${Math.min(100, ((1000 - puntos.faltanParaVale) / 1000) * 100)}%` }} />
+                </div>
+              </div>
+            )}
             {(ofertasData?.ofertas?.length || 0) > 0 && (
               <div className="mb-5">
                 <h2 className="font-black text-emerald-900 mb-2 flex items-center gap-2">🔥 Ofertas de la semana</h2>

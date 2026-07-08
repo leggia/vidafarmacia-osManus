@@ -2297,7 +2297,7 @@ const HERRAMIENTAS_SOLO_ADMIN = new Set([
 
 async function ejecutarHerramienta(nombre: string, args: any, usuario?: { id?: string; name?: string; email?: string; role?: string }): Promise<any> {
   // SEGURIDAD: las ACCIONES (modifican datos) son solo para administradores.
-  const esAccion = ["cambiarPrecioVenta", "marcarGastoPagado", "registrarGasto", "confirmarAccion", "cancelarAccion", "autorizarCorreo", "revocarCorreo", "verCorreosAutorizados", "ponerOferta", "quitarOferta", "crearCupon", "desactivarCupon", "crearPromoMonto", "verPromociones"].includes(nombre);
+  const esAccion = ["cambiarPrecioVenta", "marcarGastoPagado", "registrarGasto", "confirmarAccion", "cancelarAccion", "autorizarCorreo", "revocarCorreo", "verCorreosAutorizados", "ponerOferta", "quitarOferta", "crearCupon", "desactivarCupon", "crearPromoMonto", "verPromociones", "programaFidelidad"].includes(nombre);
   if (esAccion && usuario?.role !== "admin") {
     return { error: "Solo el administrador puede ejecutar acciones. Tu usuario es de consulta." };
   }
@@ -2342,6 +2342,7 @@ async function ejecutarHerramienta(nombre: string, args: any, usuario?: { id?: s
       case "revocarCorreo": { const { accionesTools } = await import("./asistente-acciones"); return await accionesTools.revocarCorreo(args.email); }
       case "verCorreosAutorizados": { const { accionesTools } = await import("./asistente-acciones"); return await accionesTools.verCorreosAutorizados(); }
       case "reservasPendientes": { const { tienda } = await import("./tienda"); return await tienda.reservasPendientes(); }
+      case "programaFidelidad": { const { resumenFidelidad } = await import("./puntos-fidelidad"); return await resumenFidelidad(); }
       case "ponerOferta": { const { accionesTools } = await import("./asistente-acciones"); return await accionesTools.ponerOferta(args.nombreProducto, args.precioOferta, args.hastaFecha); }
       case "quitarOferta": { const { accionesTools } = await import("./asistente-acciones"); return await accionesTools.quitarOferta(args.nombreProducto); }
       case "crearCupon": { const { accionesTools } = await import("./asistente-acciones"); return await accionesTools.crearCupon(args.codigo, args.tipo, args.valor, args.minimo, args.usosMax, args.hastaFecha); }
@@ -2468,6 +2469,7 @@ Para comparar sucursales usa una sola llamada. Nunca escribas funciones como tex
         { type: "function" as const, function: { name: "revocarCorreo", description: "ACCIÓN (requiere confirmación): revoca el acceso de un correo (ya no podrá entrar con Google). Úsala para 'quita el acceso a X', 'revoca el correo X'.", parameters: { type: "object", properties: { email: { type: "string" } }, required: ["email"] } } },
         { type: "function" as const, function: { name: "verCorreosAutorizados", description: "Lista los correos autorizados a entrar con Google y su rol. Úsala para 'qué correos tienen acceso', 'lista de usuarios autorizados'.", parameters: { type: "object", properties: {} } } },
         { type: "function" as const, function: { name: "reservasPendientes", description: "Reservas de CLIENTES de la tienda pública pendientes de recoger (código, producto, sucursal, cliente, teléfono). Úsala para 'hay reservas?', 'reservas pendientes', 'qué reservaron los clientes'.", parameters: { type: "object", properties: {} } } },
+        { type: "function" as const, function: { name: "programaFidelidad", description: "Resumen del programa de puntos de fidelidad: clientes inscritos, puntos activos, vales generados y los mejores clientes. Úsala para 'cómo va la fidelización', 'programa de puntos', 'mejores clientes'.", parameters: { type: "object", properties: {} } } },
         { type: "function" as const, function: { name: "ponerOferta", description: "ACCIÓN (requiere confirmación): pone un producto en OFERTA en la tienda de clientes, con precio rebajado y fecha límite opcional (YYYY-MM-DD). Úsala para 'pon en oferta X a Y Bs', 'oferta de la semana'.", parameters: { type: "object", properties: { nombreProducto: { type: "string" }, precioOferta: { type: "number" }, hastaFecha: { type: "string" } }, required: ["nombreProducto", "precioOferta"] } } },
         { type: "function" as const, function: { name: "quitarOferta", description: "ACCIÓN (requiere confirmación): quita una oferta de la tienda. Úsala para 'quita la oferta de X'.", parameters: { type: "object", properties: { nombreProducto: { type: "string" } }, required: ["nombreProducto"] } } },
         { type: "function" as const, function: { name: "crearCupon", description: "ACCIÓN (confirmación): crea un cupón de descuento para la tienda. tipo 'pct' (porcentaje) o 'monto' (Bs fijos). Opcional: minimo (compra mínima), usosMax (límite de usos), hastaFecha (YYYY-MM-DD). Úsala para 'crea un cupón X de 10%', 'cupón de 20 Bs con compra mínima de 100'.", parameters: { type: "object", properties: { codigo: { type: "string" }, tipo: { type: "string" }, valor: { type: "number" }, minimo: { type: "number" }, usosMax: { type: "number" }, hastaFecha: { type: "string" } }, required: ["codigo", "tipo", "valor"] } } },
@@ -2630,6 +2632,12 @@ const tiendaRouter = router({
     if (!email) return { productos: [] };
     const { tienda } = await import("./tienda");
     return tienda.recompra(email);
+  }),
+  misPuntos: publicProcedure.query(async ({ ctx }) => {
+    const email = (ctx as any)?.user?.email;
+    if (!email) return null;
+    const { tienda } = await import("./tienda");
+    return tienda.misPuntos(email);
   }),
   ofertas: publicProcedure.query(async () => {
     const { tienda } = await import("./tienda");

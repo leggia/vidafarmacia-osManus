@@ -333,7 +333,18 @@ export const tienda = {
     if (!db) throw new Error("Sin BD");
     if (!["pendiente", "lista", "entregada", "cancelada"].includes(estado)) throw new Error("Estado inválido");
     await db.execute(sql`UPDATE reservas_tienda SET estado = ${estado} WHERE id = ${num(id)}`);
+    // Al ENTREGAR: otorgar puntos de fidelidad (si el cliente tiene cuenta). Idempotente.
+    if (estado === "entregada") {
+      try { const { otorgarPuntosPorReserva } = await import("./puntos-fidelidad"); await otorgarPuntosPorReserva(num(id)); }
+      catch (e: any) { console.warn("[Tienda] puntos no otorgados:", e?.message); }
+    }
     return { ok: true };
+  },
+
+  // Saldo de puntos del cliente (para la tienda)
+  async misPuntos(email: string) {
+    const { saldoCliente } = await import("./puntos-fidelidad");
+    return saldoCliente(email);
   },
 
   // Historial de reservas de un cliente (por su email de sesión)
