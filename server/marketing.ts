@@ -35,6 +35,7 @@ async function asegurarTablas() {
     )`));
   } catch { /* ya existe */ }
   try { await db.execute(sql.raw("ALTER TABLE marketing_posts ADD COLUMN imagen MEDIUMBLOB")); } catch { /* ya existe */ }
+  try { await db.execute(sql.raw("ALTER TABLE marketing_posts ADD COLUMN programadoPara DATETIME")); } catch { /* ya existe */ }
   try { await db.execute(sql.raw("ALTER TABLE marketing_posts ADD COLUMN imagenMime VARCHAR(40)")); } catch { /* ya existe */ }
   tablasListas = true;
 }
@@ -172,7 +173,7 @@ export const marketing = {
     const cond = estado ? sql`WHERE estado = ${estado}` : sql`WHERE estado != 'descartado'`;
     const posts = rows(await db.execute(sql`
       SELECT id, tipo, titulo, contenido, hashtags, sugerenciaImagen, estado, redes,
-             publicadoEn, creadoEn, (imagen IS NOT NULL) AS tieneImagen
+             publicadoEn, creadoEn, programadoPara, (imagen IS NOT NULL) AS tieneImagen
       FROM marketing_posts ${cond} ORDER BY creadoEn DESC LIMIT 50
     `));
     return { posts };
@@ -194,6 +195,49 @@ export const marketing = {
     await db.execute(sql`UPDATE marketing_posts SET estado = ${estado}${estado === "publicado" ? sql`, publicadoEn = NOW()` : sql``} WHERE id = ${num(id)}`);
     return { ok: true };
   },
+  // Programar (o desprogramar con fecha null) la publicación de un post aprobado.
+  // fechaISO llega en hora de Bolivia (UTC-4) desde el panel; se guarda en UTC.
+  async programar(id: number, fechaISO: string | null) {
+    await asegurarTablas();
+    const db = await getDb();
+    if (!db) throw new Error("Sin BD");
+    if (!fechaISO) {
+      await db.execute(sql`UPDATE marketing_posts SET programadoPara = NULL WHERE id = ${num(id)}`);
+      return { ok: true, mensaje: "Programación cancelada." };
+    }
+    // Bolivia UTC-4 → UTC: sumar 4 horas
+    const local = new Date(fechaISO + (fechaISO.length <= 16 ? ":00" : ""));
+    if (isNaN(local.getTime())) return { error: "Fecha inválida." };
+    const utc = new Date(local.getTime() + 4 * 3600 * 1000);
+    const utcStr = utc.toISOString().slice(0, 19).replace("T", " ");
+    await db.execute(sql`UPDATE marketing_posts SET programadoPara = ${utcStr} WHERE id = ${num(id)} AND estado = 'aprobado'`);
+    return { ok: true, mensaje: `Programado. Se publicará automáticamente si hay redes conectadas.` };
+  },
+
+  // Publicar los posts aprobados cuya hora programada ya llegó (lo llama el scheduler).
+  // Solo actúa si hay un conector real; en modo manual no puede publicar solo.
+  async publicarProgramados() {
+    await asegurarTablas();
+    const db = await getDb();
+    if (!db) return { publicados: 0 };
+    const { redesDisponibles } = await import("./publicacion-redes");
+    if (redesDisponibles().modo === "manual") return { publicados: 0, motivo: "sin redes conectadas" };
+    const pendientes = rows(await db.execute(sql.raw(
+      `SELECT id FROM marketing_posts WHERE estado = 'aprobado' AND programadoPara IS NOT NULL AND programadoPara <= UTC_TIMESTAMP() LIMIT 5`
+    )));
+    let publicados = 0;
+    for (const p of pendientes) {
+      try {
+        const r: any = await marketing.publicar(num(p.id));
+        if (r?.ok) publicados++;
+        else console.warn(`[Marketing] programado ${p.id} no publicado:`, r?.error || r?.modo);
+      } catch (e: any) {
+        console.warn(`[Marketing] programado ${p.id} error:`, e?.message);
+      }
+    }
+    return { publicados };
+  },
+
   // Publicar un post aprobado por el conector disponible
   async publicar(id: number) {
     await asegurarTablas();

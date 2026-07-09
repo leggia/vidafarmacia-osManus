@@ -2303,7 +2303,7 @@ const HERRAMIENTAS_SOLO_ADMIN = new Set([
 
 async function ejecutarHerramienta(nombre: string, args: any, usuario?: { id?: string; name?: string; email?: string; role?: string }): Promise<any> {
   // SEGURIDAD: las ACCIONES (modifican datos) son solo para administradores.
-  const esAccion = ["cambiarPrecioVenta", "marcarGastoPagado", "registrarGasto", "confirmarAccion", "cancelarAccion", "autorizarCorreo", "revocarCorreo", "verCorreosAutorizados", "ponerOferta", "quitarOferta", "crearCupon", "desactivarCupon", "crearPromoMonto", "verPromociones", "programaFidelidad", "sugerirOfertas"].includes(nombre);
+  const esAccion = ["cambiarPrecioVenta", "marcarGastoPagado", "registrarGasto", "confirmarAccion", "cancelarAccion", "autorizarCorreo", "revocarCorreo", "verCorreosAutorizados", "ponerOferta", "quitarOferta", "crearCupon", "desactivarCupon", "crearPromoMonto", "verPromociones", "programaFidelidad", "sugerirOfertas", "segmentarClientes"].includes(nombre);
   if (esAccion && usuario?.role !== "admin") {
     return { error: "Solo el administrador puede ejecutar acciones. Tu usuario es de consulta." };
   }
@@ -2350,6 +2350,7 @@ async function ejecutarHerramienta(nombre: string, args: any, usuario?: { id?: s
       case "reservasPendientes": { const { tienda } = await import("./tienda"); return await tienda.reservasPendientes(); }
       case "programaFidelidad": { const { resumenFidelidad } = await import("./puntos-fidelidad"); return await resumenFidelidad(); }
       case "sugerirOfertas": { const { asistenteTools } = await import("./asistente"); return await asistenteTools.sugerirOfertas(); }
+      case "segmentarClientes": { const { asistenteTools } = await import("./asistente"); return await asistenteTools.segmentarClientes(); }
       case "ponerOferta": { const { accionesTools } = await import("./asistente-acciones"); return await accionesTools.ponerOferta(args.nombreProducto, args.precioOferta, args.hastaFecha); }
       case "quitarOferta": { const { accionesTools } = await import("./asistente-acciones"); return await accionesTools.quitarOferta(args.nombreProducto); }
       case "crearCupon": { const { accionesTools } = await import("./asistente-acciones"); return await accionesTools.crearCupon(args.codigo, args.tipo, args.valor, args.minimo, args.usosMax, args.hastaFecha); }
@@ -2478,6 +2479,7 @@ Para comparar sucursales usa una sola llamada. Nunca escribas funciones como tex
         { type: "function" as const, function: { name: "reservasPendientes", description: "Reservas de CLIENTES de la tienda pública pendientes de recoger (código, producto, sucursal, cliente, teléfono). Úsala para 'hay reservas?', 'reservas pendientes', 'qué reservaron los clientes'.", parameters: { type: "object", properties: {} } } },
         { type: "function" as const, function: { name: "programaFidelidad", description: "Resumen del programa de puntos de fidelidad: clientes inscritos, puntos activos, vales generados y los mejores clientes. Úsala para 'cómo va la fidelización', 'programa de puntos', 'mejores clientes'.", parameters: { type: "object", properties: {} } } },
         { type: "function" as const, function: { name: "sugerirOfertas", description: "MARKETING: sugiere qué productos poner en OFERTA cruzando vencimiento próximo + rotación de ventas + margen (precio sugerido sin bajar del costo). Úsala para 'qué pongo en oferta', 'sugerencias de ofertas', 'productos por vencer para ofertar', 'cómo reduzco merma'.", parameters: { type: "object", properties: {} } } },
+        { type: "function" as const, function: { name: "segmentarClientes", description: "MARKETING: segmenta a los clientes (con teléfono) en grupos accionables: frecuentes (4+ compras), alto valor (gasto 90 días), inactivos (45+ días sin volver) y nuevos (primera compra <30 días), con acciones sugeridas de campaña. Úsala para 'segmenta mis clientes', 'clientes inactivos', 'mejores clientes para campaña', 'a quién le mando promociones'.", parameters: { type: "object", properties: {} } } },
         { type: "function" as const, function: { name: "ponerOferta", description: "ACCIÓN (requiere confirmación): pone un producto en OFERTA en la tienda de clientes, con precio rebajado y fecha límite opcional (YYYY-MM-DD). Úsala para 'pon en oferta X a Y Bs', 'oferta de la semana'.", parameters: { type: "object", properties: { nombreProducto: { type: "string" }, precioOferta: { type: "number" }, hastaFecha: { type: "string" } }, required: ["nombreProducto", "precioOferta"] } } },
         { type: "function" as const, function: { name: "quitarOferta", description: "ACCIÓN (requiere confirmación): quita una oferta de la tienda. Úsala para 'quita la oferta de X'.", parameters: { type: "object", properties: { nombreProducto: { type: "string" } }, required: ["nombreProducto"] } } },
         { type: "function" as const, function: { name: "crearCupon", description: "ACCIÓN (confirmación): crea un cupón de descuento para la tienda. tipo 'pct' (porcentaje) o 'monto' (Bs fijos). Opcional: minimo (compra mínima), usosMax (límite de usos), hastaFecha (YYYY-MM-DD). Úsala para 'crea un cupón X de 10%', 'cupón de 20 Bs con compra mínima de 100'.", parameters: { type: "object", properties: { codigo: { type: "string" }, tipo: { type: "string" }, valor: { type: "number" }, minimo: { type: "number" }, usosMax: { type: "number" }, hastaFecha: { type: "string" } }, required: ["codigo", "tipo", "valor"] } } },
@@ -2637,6 +2639,13 @@ const marketingRouter = router({
       soloAdminMkt(ctx);
       const { generarImagenPost } = await import("./marketing-imagen");
       return generarImagenPost(input.id);
+    }),
+  programar: protectedProcedure
+    .input(z.object({ id: z.number(), fecha: z.string().max(25).nullable() }))
+    .mutation(async ({ input, ctx }) => {
+      soloAdminMkt(ctx);
+      const { marketing } = await import("./marketing");
+      return marketing.programar(input.id, input.fecha);
     }),
   subirImagen: protectedProcedure
     .input(z.object({ id: z.number(), imagenBase64: z.string().max(8_000_000), mime: z.string().max(40).optional() }))

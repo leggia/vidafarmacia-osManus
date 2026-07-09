@@ -890,6 +890,73 @@ export const asistenteTools = {
 
   // 19. VENCIMIENTOS PRÓXIMOS: productos comprados cuyo vencimiento cae en los
   // próximos N meses (según las fechas registradas en compras).
+  // MARKETING: segmentación de clientes para campañas dirigidas por WhatsApp.
+  // Usa ventas reales enlazadas a clientes con teléfono (misma llave que puntos).
+  async segmentarClientes() {
+    const db = await getDb();
+    if (!db) return { error: "Sin BD" };
+    // Base: clientes con teléfono y sus métricas de compra
+    const base = rows(await db.execute(sql`
+      SELECT c.id, c.nombre, c.telefono,
+             COUNT(DISTINCT v.id) AS compras,
+             COALESCE(SUM(v.total), 0) AS gastoTotal,
+             MAX(v.fecha) AS ultimaCompra,
+             MIN(v.fecha) AS primeraCompra,
+             COALESCE(SUM(CASE WHEN v.fecha >= DATE_FORMAT(DATE_SUB(CURDATE(), INTERVAL 90 DAY), '%Y-%m-%d') THEN v.total ELSE 0 END), 0) AS gasto90
+      FROM clientes c
+      JOIN ventas v ON v.idCliente = c.id
+      WHERE c.telefono IS NOT NULL AND c.telefono != ''
+      GROUP BY c.id, c.nombre, c.telefono
+      HAVING compras >= 1
+    `));
+    if (base.length === 0) return { mensaje: "No hay clientes con teléfono y compras registradas. Recuerda: las vendedoras deben registrar el teléfono del cliente en 365 al facturar." };
+    const hoyStr = ahoraBolivia().toISOString().slice(0, 10);
+    const diasDesde = (fecha: string) => {
+      const [y, m, d] = String(fecha).slice(0, 10).split("-").map(Number);
+      const hoy = ahoraBolivia();
+      return Math.round((Date.UTC(hoy.getUTCFullYear(), hoy.getUTCMonth(), hoy.getUTCDate()) - Date.UTC(y, m - 1, d)) / 86400000);
+    };
+    const frecuentes: any[] = [], altoValor: any[] = [], inactivos: any[] = [], nuevos: any[] = [];
+    for (const c of base) {
+      const dias = diasDesde(c.ultimaCompra);
+      const item = {
+        cliente: c.nombre || "Sin nombre", telefono: String(c.telefono),
+        compras: num(c.compras), gastoTotal: `Bs ${num(c.gastoTotal).toFixed(0)}`,
+        ultimaCompra: String(c.ultimaCompra).slice(0, 10), haceDias: dias,
+      };
+      if (num(c.compras) >= 2 && dias > 45) inactivos.push(item);
+      else if (diasDesde(c.primeraCompra) <= 30) nuevos.push(item);
+      if (num(c.compras) >= 4) frecuentes.push(item);
+      if (num(c.gasto90) > 0) altoValor.push({ ...item, gasto90dias: `Bs ${num(c.gasto90).toFixed(0)}` });
+    }
+    altoValor.sort((a, b) => parseFloat(b.gasto90dias?.replace(/\D/g, "") || "0") - parseFloat(a.gasto90dias?.replace(/\D/g, "") || "0"));
+    inactivos.sort((a, b) => b.haceDias - a.haceDias);
+    frecuentes.sort((a, b) => b.compras - a.compras);
+    const TOP = 10;
+    return {
+      criterio: "Segmentos sobre clientes con teléfono registrado y compras enlazadas.",
+      resumen: {
+        totalClientesConCompras: base.length,
+        frecuentes: frecuentes.length,
+        altoValor90dias: altoValor.filter((a: any) => parseFloat(String(a.gasto90dias).replace(/\D/g, "")) > 0).length,
+        inactivos45dias: inactivos.length,
+        nuevosUltimos30dias: nuevos.length,
+      },
+      segmentos: {
+        frecuentes: { descripcion: "4+ compras — tus leales; ideales para el programa de puntos", top: frecuentes.slice(0, TOP) },
+        altoValor: { descripcion: "Mayor gasto en 90 días — cuídalos con atención preferente", top: altoValor.slice(0, TOP) },
+        inactivos: { descripcion: "Compraban (2+) y llevan 45+ días sin volver — campaña de recuperación por WhatsApp con un cupón", top: inactivos.slice(0, TOP) },
+        nuevos: { descripcion: "Primera compra hace menos de 30 días — dales la bienvenida e invítalos a los puntos", top: nuevos.slice(0, TOP) },
+      },
+      accionesSugeridas: [
+        "Inactivos: mensaje de WhatsApp con un cupón de retorno (crea uno: 'crea un cupón VUELVE de 10%').",
+        "Nuevos: bienvenida + invitación al programa de puntos y la tienda online.",
+        "Frecuentes/alto valor: aviso temprano de ofertas de la semana.",
+      ],
+      instruccionEstricta: "Muestra SOLO estos datos reales. NO inventes clientes ni cifras.",
+    };
+  },
+
   // MARKETING: sugerir qué poner en OFERTA cruzando vencimiento + rotación + margen.
   // Objetivo Company of One: mover stock por vencer con descuento = menos merma + más venta.
   async sugerirOfertas() {

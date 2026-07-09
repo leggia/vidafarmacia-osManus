@@ -334,6 +334,17 @@ async function startServer() {
   registerFotoProductoRoute(app);
   const { registerImagenPostRoute } = await import("../marketing-imagen");
   registerImagenPostRoute(app);
+  // Scheduler de publicaciones programadas (cada 5 min, arranca tras 60s).
+  // Solo consulta la BD y las APIs de redes; jamás llama a inventarios365.
+  setTimeout(() => {
+    setInterval(async () => {
+      try {
+        const { marketing } = await import("../marketing");
+        const r = await marketing.publicarProgramados();
+        if ((r as any)?.publicados > 0) console.log(`[Marketing] ${(r as any).publicados} post(s) programado(s) publicado(s).`);
+      } catch (e: any) { console.warn("[Marketing] scheduler:", e?.message); }
+    }, 5 * 60 * 1000);
+  }, 60 * 1000);
   // Webhook de pago del banco (BNB/OpenBCB llaman aquí al confirmarse un pago QR)
   app.post("/api/pagos/webhook", async (req: any, res: any) => {
     try {

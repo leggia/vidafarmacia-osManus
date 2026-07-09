@@ -1,7 +1,7 @@
 import { useState, useRef } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { Megaphone, Sparkles, Check, X, Copy, Send, Pencil, Loader2, ImagePlus, Camera } from "lucide-react";
+import { Megaphone, Sparkles, Check, X, Copy, Send, Pencil, Loader2, ImagePlus, Camera, CalendarClock } from "lucide-react";
 
 /**
  * PANEL DE MARKETING (solo admin): el agente redacta publicaciones con datos reales
@@ -19,6 +19,17 @@ export default function Marketing() {
   const [editando, setEditando] = useState<number | null>(null);
   const [textoEdit, setTextoEdit] = useState("");
   const [modalManual, setModalManual] = useState<string | null>(null);
+  const [programando, setProgramando] = useState<number | null>(null);
+  const [fechaProg, setFechaProg] = useState("");
+  const programar = trpc.marketing.programar.useMutation({
+    onSuccess: (r: any) => {
+      setProgramando(null); setFechaProg("");
+      if (r?.error) { toast.error(r.error); return; }
+      toast.success(r?.mensaje || "Programado 📅");
+      utils.marketing.listar.invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
 
   const generar = trpc.marketing.generar.useMutation({
     onSuccess: (r: any) => {
@@ -223,6 +234,10 @@ export default function Marketing() {
                     </button>
                     <button onClick={() => cambiarEstado.mutate({ id: p.id, estado: "publicado" })}
                       className="h-9 px-4 rounded-xl bg-muted text-xs font-bold">✓ Ya lo publiqué</button>
+                    <button onClick={() => { setProgramando(programando === p.id ? null : p.id); setFechaProg(""); }}
+                      className="h-9 px-3 rounded-xl bg-sky-100 text-sky-800 text-xs font-bold flex items-center gap-1.5">
+                      <CalendarClock className="w-3.5 h-3.5" /> {p.programadoPara ? "Reprogramar" : "Programar"}
+                    </button>
                     <button onClick={() => { setGenerandoImg(p.id); generarImagen.mutate({ id: p.id }); }}
                       disabled={generandoImg === p.id}
                       className="h-9 px-3 rounded-xl bg-violet-100 text-violet-800 text-xs font-bold flex items-center gap-1.5 disabled:opacity-50">
@@ -234,6 +249,22 @@ export default function Marketing() {
                       <Camera className="w-3.5 h-3.5" />
                     </button>
                   </>
+                )}
+                {p.estado === "aprobado" && p.programadoPara && programando !== p.id && (
+                  <p className="text-[11px] text-sky-700 font-bold mt-2">
+                    📅 Programado: {new Date(new Date(p.programadoPara).getTime() - 4 * 3600 * 1000).toLocaleString("es-BO", { dateStyle: "short", timeStyle: "short" })} (hora Bolivia)
+                    {redes?.modo === "manual" && " — ⚠ requiere redes conectadas para publicarse solo"}
+                    <button onClick={() => programar.mutate({ id: p.id, fecha: null })} className="ml-2 underline text-muted-foreground">cancelar</button>
+                  </p>
+                )}
+                {programando === p.id && (
+                  <div className="flex gap-2 mt-2 items-center">
+                    <input type="datetime-local" value={fechaProg} onChange={e => setFechaProg(e.target.value)}
+                      className="h-9 px-3 rounded-xl border text-xs bg-white dark:bg-background" />
+                    <button onClick={() => fechaProg && programar.mutate({ id: p.id, fecha: fechaProg })}
+                      disabled={!fechaProg || programar.isPending}
+                      className="h-9 px-4 rounded-xl bg-sky-600 text-white text-xs font-bold disabled:opacity-50">OK</button>
+                  </div>
                 )}
                 {p.estado === "publicado" && (
                   <span className="text-[11px] text-emerald-700 font-bold">✓ Publicado {p.publicadoEn ? String(p.publicadoEn).slice(0, 16).replace("T", " ") : ""}</span>
