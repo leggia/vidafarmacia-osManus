@@ -13,33 +13,7 @@ import { expandirBusqueda, principioDeMarca } from "./diccionario-principios";
 // ─── Sustancias controladas (no se muestran al público). Lista inicial:
 // benzodiacepinas, opioides, barbitúricos y otros de venta bajo receta retenida.
 // El admin puede ocultar más productos con la marca ocultoTienda.
-const CONTROLADOS = [
-  // Benzodiacepinas
-  "diazepam", "clonazepam", "alprazolam", "lorazepam", "midazolam", "bromazepam",
-  "clobazam", "flunitrazepam", "nitrazepam", "triazolam", "cloxazolam", "ketazolam",
-  "clordiazepoxido", "clordiazepóxido", "flurazepam", "tetrazepam",
-  // Hipnóticos / sedantes
-  "zolpidem", "zopiclona", "zaleplon", "fenobarbital", "pentobarbital", "secobarbital",
-  // Opioides
-  "tramadol", "codeina", "codeína", "morfina", "fentanil", "fentanilo", "oxicodona",
-  "hidrocodona", "petidina", "meperidina", "metadona", "buprenorfina", "nalbufina",
-  "tapentadol", "dextropropoxifeno", "tilidina",
-  // Estimulantes / TDAH
-  "metilfenidato", "anfetamina", "lisdexanfetamina", "modafinilo",
-  // Anestésicos / otros de control
-  "ketamina", "ergotamina", "flunarizina",
-  // Anticonvulsivos de control
-  "carbamazepina", "pregabalina", "gabapentina",
-  // Precursores de uso restringido
-  "pseudoefedrina", "efedrina", "misoprostol",
-];
-export const esControlado = (nombre: string, descripcion?: string | null) => {
-  const texto = `${nombre || ""} ${descripcion || ""}`.toLowerCase();
-  if (CONTROLADOS.some(c => texto.includes(c))) return true;
-  // Respaldo: si el nombre es una marca conocida cuyo principio es controlado
-  const pa = principioDeMarca(nombre || "");
-  return pa ? CONTROLADOS.some(c => pa.includes(c)) : false;
-};
+export { esControlado, CONTROLADOS } from "./domain/controlados";
 
 // ─── Tablas (idempotente) ───
 let tablasListas = false;

@@ -4,16 +4,11 @@
 // Enfoque Company of One: reglas simples y automáticas, cero gestión manual.
 import { getDb } from "./db";
 import { sql } from "drizzle-orm";
+import { normTel } from "./domain/telefono";
 
 const rows = (r: any) => { const x = Array.isArray(r) ? r[0] : r?.rows ?? r; return Array.isArray(x) ? x : []; };
 const num = (v: any) => { const n = Number(v); return isNaN(n) ? 0 : n; };
-// Normaliza teléfono a solo dígitos, tomando los últimos 8 (celular Bolivia) para
-// casar formatos distintos (con/sin +591, con espacios). Es la LLAVE cross-canal.
-function normTel(t: string | null | undefined): string | null {
-  const d = String(t || "").replace(/\D/g, "");
-  if (d.length < 7) return null;
-  return d.slice(-8);
-}
+
 
 // Reglas (como Chávez Plus+): 1 punto por cada Bs gastado; 1000 puntos = vale Bs 10.
 const PUNTOS_POR_BS = 1;

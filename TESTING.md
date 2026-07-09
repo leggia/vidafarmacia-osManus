@@ -58,8 +58,31 @@ Verificar manualmente cuando se toca la tienda o los permisos:
 - **Zona horaria** (servidor UTC, Bolivia UTC-4) → usar `ahoraBolivia()`.
 - **365 rechaza peticiones muy rápidas** → reintentos + pausa.
 
+## Smoke tests (lógica crítica, sin BD)
+
+```bash
+npm run smoke     # compila server/tests/smoke.ts con esbuild y lo ejecuta
+```
+
+12 pruebas sobre los módulos PUROS (`server/domain/*` + diccionario), ejecutables en
+cualquier entorno incluso sin `node_modules`:
+
+1. **Controlados** (5): tramadol/codeína por nombre, controlado en la DESCRIPCIÓN
+   (principio activo), benzodiacepinas y precursores, y que la venta libre NO se
+   bloquee. → Garantiza el caso de seguridad #1: un controlado nunca aparece en la
+   tienda.
+2. **Diccionario** (4): principio→marcas (ibuprofeno→advil), marca→principio
+   (panadol→paracetamol), reconocimiento dentro de nombres completos.
+3. **Teléfono** (2): formatos distintos (+591, guiones, espacios) → misma llave de
+   puntos; inválidos → null. Protege la identidad cross-canal de la fidelidad.
+4. **Descuentos en cascada** (1): la matemática del dinero de compras.
+
+La lógica se extrajo a módulos puros para poder testearla: `server/domain/controlados.ts`
+(esControlado, re-exportado por tienda.ts) y `server/domain/telefono.ts` (normTel).
+Los tests de vitest (`server/domain/*.test.ts`) siguen disponibles para la PC/CI con
+`npm test`.
+
 ## Pendiente (mejoras futuras)
 
-- Smoke tests automatizados de los 5 flujos críticos contra una BD de prueba.
 - Entorno de staging (rama/deploy de prueba) antes de producción.
-- Integrar `verificar.mjs` como git hook (pre-push) para que corra solo.
+- Integrar `verificar.mjs` + `smoke.mjs` como git hook (pre-push) para que corran solos.
