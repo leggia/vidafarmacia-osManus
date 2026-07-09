@@ -13,7 +13,8 @@ import { expandirBusqueda, principioDeMarca } from "./diccionario-principios";
 // ─── Sustancias controladas (no se muestran al público). Lista inicial:
 // benzodiacepinas, opioides, barbitúricos y otros de venta bajo receta retenida.
 // El admin puede ocultar más productos con la marca ocultoTienda.
-export { esControlado, CONTROLADOS } from "./domain/controlados";
+import { esControlado, CONTROLADOS } from "./domain/controlados";
+export { esControlado, CONTROLADOS };
 
 // ─── Tablas (idempotente) ───
 let tablasListas = false;
