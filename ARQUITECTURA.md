@@ -175,3 +175,23 @@ Extraer de `NuevaCompra.tsx` hooks y componentes:
 5. **El POS es la fuente de verdad**: la BD local es caché y valor agregado, no duplica el POS.
 6. **Aprender > codificar reglas**: preferir que el sistema aprenda (emparejamientos, descuentos)
    sobre codificar reglas rígidas que se rompen con cada variación.
+
+
+## Módulos de la era Tienda + Marketing (v1.85+)
+
+**Patrón de convención:** cada módulo de dominio vive en un archivo (`server/<dominio>.ts`), crea sus propias tablas con `CREATE TABLE IF NOT EXISTS` / `ALTER` idempotentes (try/catch) al primer uso, y expone funciones puras que `routers.ts` importa dinámicamente. Las integraciones externas (pagos, redes, imagen) son **enchufables**: la arquitectura existe siempre; el proveedor se activa por variables de entorno, con modo manual como respaldo.
+
+| Módulo | Archivo | Tablas propias |
+|---|---|---|
+| Tienda pública | `server/tienda.ts` | reservas_tienda, ofertas_tienda |
+| Promociones | `server/promociones.ts` | cupones, promos_monto |
+| Puntos fidelidad | `server/puntos-fidelidad.ts` | clientes_puntos, puntos_movimientos, puntos_ventas_procesadas |
+| Recordatorios | `server/fidelizacion.ts` | recordatorios_enviados |
+| Pagos QR | `server/pagos.ts` | pagos_qr |
+| Fotos productos | `server/fotos-productos.ts` | fotos_productos (MEDIUMBLOB) |
+| Marketing | `server/marketing.ts` | marketing_posts (con imagen MEDIUMBLOB) |
+| Imagen de posts | `server/marketing-imagen.ts` | (columnas en marketing_posts) |
+| Publicación redes | `server/publicacion-redes.ts` | — (conector puro) |
+| Diccionario | `server/diccionario-principios.ts` | — (estático) |
+
+Rutas HTTP no-tRPC registradas en `server/_core/index.ts`: OAuth Google (staff y cliente), `/api/foto-producto/:id`, `/api/imagen-post/:id`, webhook `/api/pagos/webhook`, y el scheduler de publicaciones programadas (cada 5 min, nunca llama a 365).

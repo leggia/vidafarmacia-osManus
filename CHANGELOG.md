@@ -1,3 +1,14 @@
+## v1.85 → v2.3 — Era "Tienda + Marketing" (julio 2026)
+
+- **Tienda pública** (/tienda): búsqueda por principio activo (descripción 365 + diccionario), carrito, reservas VF-XXXX, home estilo CVS (recompensas, categorías, más vendidos, carrusel ofertas), barra sticky, PWA con símbolo de marca.
+- **Promociones**: motor unificado (ofertas, cupones, promos por monto), cálculo server-side, gestionado por el asistente.
+- **Fidelidad**: puntos unificados por TELÉFONO (mostrador 365 + online), 1 pt/Bs, vale a los 1000; recordatorios de recompra por tasa de consumo con registro de contacto.
+- **Pagos QR**: arquitectura enchufable BNB/OpenBCB + modo manual con comprobante.
+- **Cuentas de cliente**: Google sin lista blanca (rol cliente), mis reservas, recompra.
+- **Seguridad**: filtro de controlados reforzado (nombre+principio+diccionario), roles, auditoría, política de privacidad (/privacidad).
+- **Testing**: chequeo pre-push (scripts/verificar.mjs) — heurístico use-before-declaration + esbuild. Ver TESTING.md.
+- **Marketing** (/marketing): agente redactor con datos reales, imagen IA (Together/FLUX) o foto propia, cola de aprobación, publicación enchufable (Facebook/Ayrshare), calendario con scheduler, sugerirOfertas (anti-merma) y segmentarClientes en el asistente.
+
 # Changelog — VidaFarma OS
 
 Formato: [Semantic Versioning](https://semver.org/)

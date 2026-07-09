@@ -77,3 +77,8 @@ Prioridades para diferenciarse de la competencia, en orden:
 1. **Fidelización de clientes crónicos**: detectar patrones de recompra mensual (hipertensión, diabetes) y generar lista diaria de clientes por recordar vía WhatsApp. La mayor oportunidad de ingresos recurrentes.
 2. **Alerta de vencimientos**: panel de productos por vencer (60/90 días) con valor en Bs, para rematar a tiempo. Ya se captura fecha de vencimiento en compras.
 3. **Alerta de quiebres de stock**: convertir productosUrgentes en aviso automático matutino por sucursal.
+
+
+## Era Tienda + Marketing (v1.85 → v2.3, julio 2026)
+
+Se construyó la cara al cliente y el área comercial completa, con enfoque **Company of One** (documentado en `SERVICIOS.md`): tienda pública profesional (nivel Farmacorp/Chávez, con búsqueda por principio activo como diferenciador), programa de puntos unificado por teléfono entre mostrador y online, recordatorios de recompra por tasa de consumo, pagos QR enchufables, y un módulo de marketing donde un agente redacta publicaciones con datos reales del negocio (ofertas, más vendidos, temporada), genera o recibe imagen, y publica a redes por conector enchufable con aprobación humana obligatoria. Se agregó el sistema de testing pre-push (`scripts/verificar.mjs`, ver `TESTING.md`) tras un crash en producción por use-before-declaration. Análisis de competencia boliviana y estructura de las 9 áreas de negocio en `SERVICIOS.md`.
