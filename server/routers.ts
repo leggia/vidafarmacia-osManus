@@ -2564,7 +2564,7 @@ async function ejecutarHerramienta(nombre: string, args: any, usuario?: { id?: s
       case "comprasProveedor": return await asistenteTools.comprasProveedor(args.proveedor, args.periodo);
       case "productoMasVendido": return await asistenteTools.productoMasVendido(args.periodo, args.porValor);
       case "gananciaPeriodo": return await asistenteTools.gananciaPeriodo(args.periodo, args.sucursal);
-      case "infoProducto": return await asistenteTools.infoProducto(args.nombre);
+      case "infoProducto": return await asistenteTools.infoProducto(args.nombre, args.incluirCodigo === true);
       case "ventasCliente": return await asistenteTools.ventasCliente(args.cliente, args.periodo);
       case "trabajadoresSucursal": return await asistenteTools.trabajadoresSucursal(args.sucursal);
       case "mejoresVendedores": return await asistenteTools.mejoresVendedores(args.periodo, args.sucursal);
@@ -2683,11 +2683,13 @@ const asistenteRouter = router({
 
       // PREFIJO ESTABLE (para caché de contexto de DeepSeek): system + tools
       // SIEMPRE idénticos y al inicio. El contenido variable (pregunta) va al final.
-      const systemPrompt = `Asistente de VidaFarma (farmacia, Cochabamba, Bolivia). Responde en español, breve y profesional.
+      const systemPrompt = `Asistente de VidaFarma (farmacia, Cochabamba, Bolivia). Responde en español, breve, directo y profesional. Respuestas CORTAS: ve al grano, sin rodeos ni repetir lo que ya sabe el usuario. Evita párrafos largos — 1-3 frases o una lista corta, salvo que pidan detalle.
 
 REGLA ABSOLUTA — NO INVENTAR: Solo puedes mencionar nombres, cifras, productos, trabajadores o datos que provengan EXACTAMENTE de los resultados de las herramientas. Está PROHIBIDO inventar o completar datos. Si una herramienta devuelve vacío, pocos datos o un mensaje de "no disponible", di EXACTAMENTE eso ("No tengo esa información disponible" o el mensaje que devolvió la herramienta). NUNCA inventes nombres de personas ni tablas de trabajadores. Si no estás seguro, di que no tienes el dato.
 
-REGLA ABSOLUTA — ACCIONES: si el usuario pide MODIFICAR algo (cambiar/subir/bajar precio, cambiar/aumentar stock, marcar gasto pagado, registrar gasto, poner/quitar oferta, crear/desactivar cupón), DEBES invocar la herramienta de acción correspondiente en esta misma respuesta. Está PROHIBIDO escribir frases como "procedo a cambiar", "voy a actualizar" o "ya se hizo" sin haber invocado la herramienta — esas palabras sin la herramienta invocada NO producen ningún cambio real y confunden al usuario. Si necesitas datos primero (ej. el stock actual), puedes invocar la herramienta de consulta Y la de acción en la misma respuesta. Si el usuario da un valor OBJETIVO final (ej. "cambia el stock A 700", "que quede en 700"), usa el parámetro correspondiente para el valor final (ej. nuevoTotal) en vez de calcular tú tu la diferencia.
+REGLA ABSOLUTA — CÓDIGO DE PRODUCTO: nunca menciones el código de un producto (ej. "TR8888") a menos que el usuario lo pida explícitamente. No es un dato relevante para el trabajo diario.
+
+REGLA ABSOLUTA — ACCIONES, UNA SOLA CONFIRMACIÓN: si el usuario pide MODIFICAR algo (cambiar/subir/bajar precio, cambiar/aumentar stock, marcar gasto pagado, registrar gasto, poner/quitar oferta, crear/desactivar cupón), DEBES invocar la herramienta de acción correspondiente INMEDIATAMENTE, en esta misma respuesta — sin preguntar antes en texto libre si desea continuar. La HERRAMIENTA ya genera la pregunta de confirmación por ti; NUNCA hagas tú una pregunta de confirmación previa a mano ("¿confirmas que...?", "¿deseas continuar?") — eso obliga al usuario a confirmar DOS veces. Está PROHIBIDO escribir frases como "procedo a cambiar", "voy a actualizar" o "ya se hizo" sin haber invocado la herramienta — esas palabras sin la herramienta invocada NO producen ningún cambio real y confunden al usuario. Si necesitas datos primero (ej. el stock actual), invoca la herramienta de consulta Y la de acción en la MISMA respuesta, una tras otra. Si el usuario da un valor OBJETIVO final (ej. "cambia el stock A 700", "que quede en 700"), usa el parámetro correspondiente para el valor final (ej. nuevoTotal) en vez de calcular tú la diferencia.
 
 Para comparar sucursales usa una sola llamada. Nunca escribas funciones como texto. Solo lectura. Montos en Bs.
 
@@ -2698,7 +2700,7 @@ SUCURSALES: Petrolera, Lanza, Cobol (nombre completo "Casa Matriz Cobol" — "Co
         { type: "function" as const, function: { name: "comprasProveedor", description: "Compras a un proveedor en un período.", parameters: { type: "object", properties: { proveedor: { type: "string" }, periodo: { type: "string" } }, required: ["proveedor", "periodo"] } } },
         { type: "function" as const, function: { name: "productoMasVendido", description: "Productos más vendidos en un período.", parameters: { type: "object", properties: { periodo: { type: "string" }, porValor: { type: "boolean" } }, required: ["periodo"] } } },
         { type: "function" as const, function: { name: "gananciaPeriodo", description: "Ganancia de un período: bruta y NETA (descontando gastos del mes). Opcional por sucursal.", parameters: { type: "object", properties: { periodo: { type: "string" }, sucursal: { type: "string" } }, required: ["periodo"] } } },
-        { type: "function" as const, function: { name: "infoProducto", description: "Precio/costo de un producto por su nombre.", parameters: { type: "object", properties: { nombre: { type: "string" } }, required: ["nombre"] } } },
+        { type: "function" as const, function: { name: "infoProducto", description: "Precio/costo de un producto por su nombre. Por defecto NO incluye el código del producto — usa incluirCodigo=true SOLO si el usuario pidió explícitamente el código.", parameters: { type: "object", properties: { nombre: { type: "string" }, incluirCodigo: { type: "boolean" } }, required: ["nombre"] } } },
         { type: "function" as const, function: { name: "ventasCliente", description: "Productos vendidos a un cliente.", parameters: { type: "object", properties: { cliente: { type: "string" }, periodo: { type: "string" } }, required: ["cliente"] } } },
         { type: "function" as const, function: { name: "trabajadoresSucursal", description: "Trabajadores de una sucursal.", parameters: { type: "object", properties: { sucursal: { type: "string" } }, required: ["sucursal"] } } },
         { type: "function" as const, function: { name: "mejoresVendedores", description: "Mejores vendedores en un período.", parameters: { type: "object", properties: { periodo: { type: "string" }, sucursal: { type: "string" } }, required: ["periodo"] } } },
@@ -2819,7 +2821,7 @@ SUCURSALES: Petrolera, Lanza, Cobol (nombre completo "Casa Matriz Cobol" — "Co
         }
 
         // Segunda llamada: el modelo redacta la respuesta final con los datos
-        const instruccionRedaccion = "Redacta usando ÚNICAMENTE los datos de las herramientas anteriores. No agregues nombres, filas ni cifras que no estén en esos datos. Si los datos están vacíos, dilo."
+        const instruccionRedaccion = "Redacta usando ÚNICAMENTE los datos de las herramientas anteriores. No agregues nombres, filas ni cifras que no estén en esos datos. Si los datos están vacíos, dilo. SÉ BREVE: 1-3 frases o una lista corta, sin rodeos. NUNCA menciones el código del producto salvo que el usuario lo haya pedido explícitamente."
           + (input.modoVoz ? " MODO VOZ: 1-2 frases cortas y directas, sin markdown ni listas, como si hablaras en voz alta." : "");
         mensajes.push({ role: "system", content: instruccionRedaccion });
         const r2 = await invokeDeepSeek({ messages: mensajes, maxTokens: 1024 });

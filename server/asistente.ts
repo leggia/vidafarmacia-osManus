@@ -221,8 +221,9 @@ export const asistenteTools = {
     return resultado;
   },
 
-  // 6. Precio y stock de un producto
-  async infoProducto(nombre: string) {
+  // 6. Precio y stock de un producto. incluirCodigo=true solo si el usuario pidió
+  // explícitamente el código del producto (por defecto no se muestra).
+  async infoProducto(nombre: string, incluirCodigo?: boolean) {
     const db = await getDb();
     if (!db) return { error: "Sin BD" };
     const cond = condPalabras("nombre", nombre);
@@ -269,7 +270,7 @@ export const asistenteTools = {
     // 1-3 coincidencias: mostrar detalle completo
     return {
       productos: r.map((p: any) => ({
-        nombre: p.nombre, codigo: p.codigo,
+        nombre: p.nombre, ...(incluirCodigo ? { codigo: p.codigo } : {}),
         precioVenta: `Bs ${fmtBs(p.precioUno)}`,
         precioCosto: `Bs ${fmtBs(p.precioCostoUnid)}`,
         proveedor: p.nombreProveedor || "no especificado",
