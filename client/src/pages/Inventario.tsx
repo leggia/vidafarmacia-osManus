@@ -665,7 +665,7 @@ export default function Inventario() {
                   ) : resultadosPuntual.map((prod: any) => (
                     <button key={prod.id} onClick={() => agregarProductoPuntual(prod)}
                       className="w-full flex items-center justify-between bg-white dark:bg-gray-900 rounded px-2 py-1.5 border border-gray-200 dark:border-gray-700 hover:border-blue-400 text-left">
-                      <span className="text-xs font-medium truncate flex-1">{prod.nombre}</span>
+                      <span className="text-xs font-medium line-clamp-2 leading-snug flex-1">{prod.nombre}</span>
                       <span className="text-[11px] text-muted-foreground mx-2 shrink-0">stock: {prod.stock}</span>
                       <Plus className="h-3.5 w-3.5 text-blue-600 shrink-0" />
                     </button>
@@ -682,25 +682,29 @@ export default function Inventario() {
               const dif = item.fisico !== null ? item.fisico - item.stock : null;
               const contado = item.fisico !== null;
               return (
-                <div key={item.id} className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 transition-colors ${
+                <div key={item.id} className={`rounded-lg border px-3 py-2.5 transition-colors ${
                   dif !== null && dif !== 0 ? "border-red-300 bg-red-50/50 dark:bg-red-950/20"
                   : contado ? "border-green-300 bg-green-50/50 dark:bg-green-950/20" : "border-foreground/10"
                 }`}>
-                  <span className={`text-[10px] font-black w-5 h-5 rounded flex items-center justify-center shrink-0 ${claseColor(item.clase)}`}>{item.clase}</span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium truncate">{item.nombre}</p>
-                    <p className="text-[11px] text-muted-foreground">Cód: {item.codigo}{item.costoUnit > 0 ? ` · Costo ${item.costoUnit.toFixed(2)} Bs` : ""}{item.vencimiento ? ` · Vto: ${item.vencimiento}` : ""}</p>
+                  {/* Fila 1: clase + NOMBRE COMPLETO (hasta 2 líneas, todo el ancho) */}
+                  <div className="flex items-start gap-2 mb-1.5">
+                    <span className={`text-[10px] font-black w-5 h-5 rounded flex items-center justify-center shrink-0 mt-0.5 ${claseColor(item.clase)}`}>{item.clase}</span>
+                    <p className="text-sm font-medium leading-snug line-clamp-2 flex-1">{item.nombre}</p>
                   </div>
-                  <div className="text-center shrink-0 w-14">
-                    <p className="text-sm font-bold">{item.stock}</p>
-                    <p className="text-[9px] uppercase text-muted-foreground">Sistema</p>
-                  </div>
-                  <div className="shrink-0 w-20">
-                    <Input type="number" inputMode="numeric" value={item.fisico ?? ""} onChange={(e) => setFisico(item.id, e.target.value)} placeholder="Físico"
-                      className={`h-9 text-center text-sm font-bold ${dif !== null && dif !== 0 ? "border-red-400" : contado ? "border-green-400" : ""}`} />
-                  </div>
-                  <div className="text-center shrink-0 w-12">
-                    {dif !== null ? (dif === 0 ? <Check className="h-4 w-4 text-green-600 mx-auto" /> : <span className={`text-sm font-black ${dif < 0 ? "text-red-600" : "text-blue-600"}`}>{dif > 0 ? "+" : ""}{dif}</span>) : <span className="text-xs text-muted-foreground">—</span>}
+                  {/* Fila 2: código/costo/vto + sistema + físico + diferencia */}
+                  <div className="flex items-center gap-3">
+                    <p className="text-[11px] text-muted-foreground flex-1 min-w-0 truncate">Cód: {item.codigo}{item.costoUnit > 0 ? ` · Costo ${item.costoUnit.toFixed(2)} Bs` : ""}{item.vencimiento ? ` · Vto: ${item.vencimiento}` : ""}</p>
+                    <div className="text-center shrink-0 w-12">
+                      <p className="text-sm font-bold">{item.stock}</p>
+                      <p className="text-[9px] uppercase text-muted-foreground">Sistema</p>
+                    </div>
+                    <div className="shrink-0 w-20">
+                      <Input type="number" inputMode="numeric" value={item.fisico ?? ""} onChange={(e) => setFisico(item.id, e.target.value)} placeholder="Físico"
+                        className={`h-9 text-center text-sm font-bold ${dif !== null && dif !== 0 ? "border-red-400" : contado ? "border-green-400" : ""}`} />
+                    </div>
+                    <div className="text-center shrink-0 w-10">
+                      {dif !== null ? (dif === 0 ? <Check className="h-4 w-4 text-green-600 mx-auto" /> : <span className={`text-sm font-black ${dif < 0 ? "text-red-600" : "text-blue-600"}`}>{dif > 0 ? "+" : ""}{dif}</span>) : <span className="text-xs text-muted-foreground">—</span>}
+                    </div>
                   </div>
                 </div>
               );
