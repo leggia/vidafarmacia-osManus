@@ -2518,6 +2518,31 @@ const NOMBRES_SOLO_ADMIN_ASISTENTE = ["cambiarPrecioVenta", "aumentarStock", "ma
 // Subconjunto que REALMENTE modifica datos (para el mensaje de fallback: no decir
 // "la acción se procesó" cuando en realidad solo se hizo una consulta de lectura).
 const NOMBRES_ACCIONES_QUE_MODIFICAN = ["cambiarPrecioVenta", "aumentarStock", "marcarGastoPagado", "registrarGasto", "confirmarAccion", "autorizarCorreo", "revocarCorreo", "ponerOferta", "quitarOferta", "crearCupon", "desactivarCupon", "crearPromoMonto"];
+// Herramientas de proponer/confirmar/cancelar una acción: su respuesta al usuario
+// se construye DIRECTO de los datos que devuelven (nunca redactada libremente por
+// el modelo) — ver "ATAJO DETERMINÍSTICO" más abajo.
+const NOMBRES_BYPASS_REDACCION = [...NOMBRES_ACCIONES_QUE_MODIFICAN, "cancelarAccion"];
+
+// Construye la respuesta final DIRECTO del resultado de una herramienta de acción,
+// sin pasar por el modelo. Devuelve null si el resultado no tiene una forma
+// reconocida (en ese caso, se usa la redacción normal como respaldo).
+function respuestaDirectaAccion(resultado: any): string | null {
+  if (!resultado || typeof resultado !== "object") return null;
+  if (typeof resultado.error === "string") return `⚠️ ${resultado.error}`;
+  if (resultado.ejecutada === true && typeof resultado.resultado === "string") return `✅ ${resultado.resultado}`;
+  if (resultado.cancelada === true) return resultado.mensaje || "Propuesta cancelada. No se ejecutó nada.";
+  if (resultado.estado === "PENDIENTE DE CONFIRMACIÓN" && typeof resultado.propuesta === "string") {
+    return `${resultado.propuesta}\n\n¿Confirmas? Responde "sí" para aplicarlo o "no" para cancelar.`;
+  }
+  if (Array.isArray(resultado.opciones) && resultado.opciones.length > 0) {
+    const lista = resultado.opciones.slice(0, 6).map((o: any, i: number) => {
+      const extra = o.stockActual != null ? ` (stock: ${o.stockActual})` : o.precioActual ? ` (precio: ${o.precioActual})` : "";
+      return `${i + 1}. ${o.nombre}${extra}`;
+    }).join("\n");
+    return `${resultado.mensaje || "Hay varias coincidencias, dime cuál exactamente:"}\n${lista}`;
+  }
+  return null;
+}
 
 async function ejecutarHerramienta(nombre: string, args: any, usuario?: { id?: string; name?: string; email?: string; role?: string }): Promise<any> {
   // SEGURIDAD: las ACCIONES (modifican datos) son solo para administradores.
@@ -2557,7 +2582,7 @@ async function ejecutarHerramienta(nombre: string, args: any, usuario?: { id?: s
       case "margenProductos": return await asistenteTools.margenProductos(args.orden, args.sucursal);
       case "resumenEjecutivo": return await asistenteTools.resumenEjecutivo();
       case "cambiarPrecioVenta": { const { accionesTools } = await import("./asistente-acciones"); return await accionesTools.cambiarPrecioVenta(args.nombreProducto, args.nuevoPrecio); }
-      case "aumentarStock": { const { accionesTools } = await import("./asistente-acciones"); return await accionesTools.aumentarStock(args.nombreProducto, args.sucursal, args.cantidad); }
+      case "aumentarStock": { const { accionesTools } = await import("./asistente-acciones"); return await accionesTools.aumentarStock(args.nombreProducto, args.sucursal, args.cantidad, args.nuevoTotal); }
       case "marcarGastoPagado": { const { accionesTools } = await import("./asistente-acciones"); return await accionesTools.marcarGastoPagado(args.nombreGasto, args.sucursal); }
       case "registrarGasto": { const { accionesTools } = await import("./asistente-acciones"); return await accionesTools.registrarGasto(args.nombre, args.monto, args.sucursal, args.categoria, args.yaPagado); }
       case "confirmarAccion": { const { accionesTools } = await import("./asistente-acciones"); return await accionesTools.confirmarAccion(usuario); }
@@ -2662,6 +2687,8 @@ const asistenteRouter = router({
 
 REGLA ABSOLUTA — NO INVENTAR: Solo puedes mencionar nombres, cifras, productos, trabajadores o datos que provengan EXACTAMENTE de los resultados de las herramientas. Está PROHIBIDO inventar o completar datos. Si una herramienta devuelve vacío, pocos datos o un mensaje de "no disponible", di EXACTAMENTE eso ("No tengo esa información disponible" o el mensaje que devolvió la herramienta). NUNCA inventes nombres de personas ni tablas de trabajadores. Si no estás seguro, di que no tienes el dato.
 
+REGLA ABSOLUTA — ACCIONES: si el usuario pide MODIFICAR algo (cambiar/subir/bajar precio, cambiar/aumentar stock, marcar gasto pagado, registrar gasto, poner/quitar oferta, crear/desactivar cupón), DEBES invocar la herramienta de acción correspondiente en esta misma respuesta. Está PROHIBIDO escribir frases como "procedo a cambiar", "voy a actualizar" o "ya se hizo" sin haber invocado la herramienta — esas palabras sin la herramienta invocada NO producen ningún cambio real y confunden al usuario. Si necesitas datos primero (ej. el stock actual), puedes invocar la herramienta de consulta Y la de acción en la misma respuesta. Si el usuario da un valor OBJETIVO final (ej. "cambia el stock A 700", "que quede en 700"), usa el parámetro correspondiente para el valor final (ej. nuevoTotal) en vez de calcular tú tu la diferencia.
+
 Para comparar sucursales usa una sola llamada. Nunca escribas funciones como texto. Solo lectura. Montos en Bs.
 
 SUCURSALES: Petrolera, Lanza, Cobol (nombre completo "Casa Matriz Cobol" — "Cobol" o "Sucursal Cobol" es la misma) y Casa Matriz (también conocida como "Honduras" o "Central" — son la misma sucursal; si el usuario dice "Honduras" o "Central" trátalo como Casa Matriz).`;
@@ -2689,7 +2716,7 @@ SUCURSALES: Petrolera, Lanza, Cobol (nombre completo "Casa Matriz Cobol" — "Co
         { type: "function" as const, function: { name: "margenProductos", description: "Margen de ganancia por producto (vendidos el mes pasado): con orden 'bajo' muestra los que casi no dejan ganancia (revisar precios), con 'alto' los más rentables. Úsala para 'qué productos me dejan poco margen', 'dónde gano más', 'productos poco rentables'.", parameters: { type: "object", properties: { orden: { type: "string", description: "'bajo' o 'alto'" }, sucursal: { type: "string" } } } } },
         { type: "function" as const, function: { name: "resumenEjecutivo", description: "Parte ejecutivo del negocio en una sola consulta: ventas de HOY por sucursal, ritmo del mes (acumulado vs mes anterior al mismo día), pagos pendientes, vencimientos a 30 días y cajas abiertas. Úsala para 'cómo está el negocio', 'resumen del día', 'cómo vamos', 'dame el parte'.", parameters: { type: "object", properties: {} } } },
         { type: "function" as const, function: { name: "cambiarPrecioVenta", description: "ACCIÓN (requiere confirmación): propone cambiar el precio de venta de un producto. NO se ejecuta hasta que el usuario confirme. Úsala cuando pidan 'cambia el precio de X a Y'.", parameters: { type: "object", properties: { nombreProducto: { type: "string" }, nuevoPrecio: { type: "number" } }, required: ["nombreProducto", "nuevoPrecio"] } } },
-        { type: "function" as const, function: { name: "aumentarStock", description: "ACCIÓN (requiere confirmación): propone AUMENTAR el stock de un producto en una sucursal (Petrolera, Lanza, Cobol o Casa Matriz/Honduras) — para correcciones o entradas que no son compra ni transferencia. NO se ejecuta hasta que el usuario confirme. Úsala cuando pidan 'aumenta el stock de X en Y sucursal', 'agrega N unidades de X en Y'.", parameters: { type: "object", properties: { nombreProducto: { type: "string" }, sucursal: { type: "string" }, cantidad: { type: "number", description: "Unidades a AGREGAR al stock actual (no el total final)." } }, required: ["nombreProducto", "sucursal", "cantidad"] } } },
+        { type: "function" as const, function: { name: "aumentarStock", description: "ACCIÓN (requiere confirmación): propone AUMENTAR el stock de un producto en una sucursal (Petrolera, Lanza, Cobol o Casa Matriz/Honduras/Central) — para correcciones o entradas que no son compra ni transferencia. SIEMPRE debes invocar esta herramienta para proponer el cambio — nunca digas 'procedo a cambiar' o similar sin haberla llamado. NO se ejecuta hasta que el usuario confirme.", parameters: { type: "object", properties: { nombreProducto: { type: "string" }, sucursal: { type: "string" }, cantidad: { type: "number", description: "Unidades a AGREGAR al stock actual. Usa esto si el usuario dice 'agrega/aumenta N unidades'." }, nuevoTotal: { type: "number", description: "El stock FINAL deseado (valor objetivo). Usa esto si el usuario dice 'cambia/pon el stock A N' — así no calculas tú la diferencia, la herramienta lo hace con el stock real actual." } }, required: ["nombreProducto", "sucursal"] } } },
         { type: "function" as const, function: { name: "marcarGastoPagado", description: "ACCIÓN (requiere confirmación): propone marcar como pagado un gasto pendiente del mes (alquiler, luz, etc.). Úsala cuando digan 'ya pagué X', 'marca como pagado X'.", parameters: { type: "object", properties: { nombreGasto: { type: "string" }, sucursal: { type: "string" } }, required: ["nombreGasto"] } } },
         { type: "function" as const, function: { name: "registrarGasto", description: "ACCIÓN (requiere confirmación): propone registrar un gasto ocasional del mes. Úsala cuando digan 'registra un gasto de X por Y Bs'.", parameters: { type: "object", properties: { nombre: { type: "string" }, monto: { type: "number" }, sucursal: { type: "string" }, categoria: { type: "string" }, yaPagado: { type: "boolean" } }, required: ["nombre", "monto"] } } },
         { type: "function" as const, function: { name: "confirmarAccion", description: "Ejecuta la acción pendiente de confirmación. Úsala SOLO cuando el usuario confirme explícitamente ('sí', 'confirmo', 'dale', 'hazlo').", parameters: { type: "object", properties: {} } } },
@@ -2765,13 +2792,30 @@ SUCURSALES: Petrolera, Lanza, Cobol (nombre completo "Casa Matriz Cobol" — "Co
         // Ejecutar las herramientas que pidió
         mensajes.push({ role: "assistant", content: msg?.content || "", tool_calls: toolCalls });
         const herramientasUsadas: string[] = [];
+        const resultadosPorHerramienta: { nombre: string; resultado: any }[] = [];
         for (const tc of toolCalls) {
           const nombre = tc.function?.name;
           let args: any = {};
           try { args = JSON.parse(tc.function?.arguments || "{}"); } catch {}
           herramientasUsadas.push(nombre);
           const resultado = await ejecutarHerramienta(nombre, args, usuarioActual);
+          resultadosPorHerramienta.push({ nombre, resultado });
           mensajes.push({ role: "tool", tool_call_id: tc.id, content: JSON.stringify(resultado) });
+        }
+
+        // ATAJO DETERMINÍSTICO: si se llamó una herramienta de PROPONER/CONFIRMAR/
+        // CANCELAR una acción, la respuesta se construye DIRECTO de sus datos reales
+        // — sin pasar por la segunda llamada al modelo. Esto evita dos problemas
+        // reales que ocurrieron: (1) el modelo "narraba" que iba a hacer un cambio
+        // sin haber invocado la herramienta (ahora es imposible: si no se llamó la
+        // herramienta, no hay texto de confirmación que mostrar), y (2) la fuga de
+        // tokens internos del modelo podía perder el mensaje de confirmación.
+        const ultimaAccion = [...resultadosPorHerramienta].reverse().find((r) => NOMBRES_BYPASS_REDACCION.includes(r.nombre));
+        if (ultimaAccion) {
+          const directa = respuestaDirectaAccion(ultimaAccion.resultado);
+          if (directa) {
+            return { respuesta: directa, usoHerramienta: herramientasUsadas.join(", ") };
+          }
         }
 
         // Segunda llamada: el modelo redacta la respuesta final con los datos

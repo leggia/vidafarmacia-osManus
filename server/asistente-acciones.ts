@@ -7,7 +7,7 @@ import { sql } from "drizzle-orm";
 
 const rows = (r: any) => { const x = Array.isArray(r) ? r[0] : r?.rows ?? r; return Array.isArray(x) ? x : []; };
 const num = (v: any) => { const n = Number(v); return isNaN(n) ? 0 : n; };
-const EXPIRA_MIN = 10; // una propuesta caduca a los 10 minutos
+const EXPIRA_MIN = 4; // una propuesta caduca a los 4 minutos (antes 10: ventana más chica reduce el riesgo de confirmar una propuesta vieja y ya olvidada)
 
 let tablasListas = false;
 async function asegurarTablas() {
@@ -189,13 +189,17 @@ export const accionesTools = {
 
   // Proponer: AUMENTAR STOCK de un producto en una sucursal (entrada de inventario
   // fuera de compra/transferencia — ej. corrección, donación, producción propia).
-  async aumentarStock(nombreProducto: string, sucursal: string, cantidad: number) {
+  // Acepta CUALQUIERA de los dos: `cantidad` (unidades a AGREGAR) o `nuevoTotal`
+  // (el valor final deseado) — así el modelo no tiene que calcular la resta él
+  // mismo cuando el usuario dice "cambia el stock A 700" (valor objetivo).
+  async aumentarStock(nombreProducto: string, sucursal: string, cantidad?: number, nuevoTotal?: number) {
     if (!nombreProducto || !nombreProducto.trim()) return { error: "Falta el nombre del producto." };
     if (!sucursal || !sucursal.trim()) return { error: "Falta indicar la sucursal (Petrolera, Lanza, Cobol o Casa Matriz)." };
-    const cant = num(cantidad);
-    if (cant <= 0) return { error: "La cantidad a aumentar debe ser mayor a 0." };
+    if ((cantidad == null || num(cantidad) <= 0) && (nuevoTotal == null)) {
+      return { error: "Falta indicar la cantidad a agregar o el nuevo total deseado." };
+    }
     const almacen = resolverAlmacen(sucursal);
-    if (!almacen) return { error: `No reconozco la sucursal "${sucursal}". Usa: Petrolera, Lanza, Cobol o Casa Matriz (Honduras).` };
+    if (!almacen) return { error: `No reconozco la sucursal "${sucursal}". Usa: Petrolera, Lanza, Cobol o Casa Matriz (Honduras/Central).` };
 
     const { inventarios365 } = await import("./inventarios365");
     const lista = await inventarios365.listarParaInventario(almacen.id, "");
@@ -212,6 +216,12 @@ export const accionesTools = {
       };
     }
     const m = matches[0];
+    // Calcular cantidad a agregar: si dieron nuevoTotal, se deriva de ahí (siempre
+    // a partir del stock REAL actual, no de lo que el usuario cree que es).
+    const cant = nuevoTotal != null ? (num(nuevoTotal) - num(m.stock)) : num(cantidad);
+    if (cant <= 0) {
+      return { error: `El stock actual de "${m.nombre}" ya es ${m.stock}. ${nuevoTotal != null ? `Para llegar a ${nuevoTotal} no hace falta aumentar (o el valor pedido es menor/igual al actual).` : "La cantidad a agregar debe ser mayor a 0."}` };
+    }
     const stockNuevo = num(m.stock) + cant;
     return proponer("aumentarStock",
       {
