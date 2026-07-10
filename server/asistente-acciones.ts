@@ -119,7 +119,40 @@ async function ejecutarRevocarCorreo(params: any) {
   return await correosAutorizados.revocar(String(params.email));
 }
 
-// ─── API pública (las herramientas del asistente) ───
+// Sucursales/almacenes conocidos, con sus alias (mismo criterio que el resto del
+// asistente). "Cobol" y variantes apuntan a la Casa Matriz Cobol; "Honduras" a la
+// Casa Matriz / Almacén Principal.
+const ALMACENES_ACCION: { id: number; nombre: string; alias: string[] }[] = [
+  { id: 1, nombre: "Almacén Principal", alias: ["principal", "matriz", "casa matriz", "honduras"] },
+  { id: 2, nombre: "Almacén Petrolera", alias: ["petrolera"] },
+  { id: 3, nombre: "Almacén Lanza", alias: ["lanza"] },
+  { id: 4, nombre: "Almacén Cobol", alias: ["cobol", "sucursal cobol", "casa matriz cobol", "cob"] },
+];
+function resolverAlmacen(sucursal: string): { id: number; nombre: string } | null {
+  const s = sucursal.toLowerCase().trim();
+  const encontrado = ALMACENES_ACCION.find(al => al.alias.some(x => s.includes(x) || x.includes(s)));
+  return encontrado ? { id: encontrado.id, nombre: encontrado.nombre } : null;
+}
+
+async function ejecutarAumentarStock(params: any) {
+  const { inventarios365 } = await import("./inventarios365");
+  const r = await inventarios365.ajustarInventario({
+    almacenId: num(params.almacenId),
+    motivoId: 2, // "Ajuste periodico"
+    ajustes: [{
+      productoId: num(params.productoId),
+      inventarioId: params.inventarioId ?? null,
+      stockAnterior: num(params.stockAnterior),
+      stockReal: num(params.stockNuevo),
+      fechaVencimiento: params.vencimiento || null,
+    }],
+  });
+  if (!r.ok) throw new Error(r.mensaje || "365 rechazó el ajuste de inventario");
+  // Refrescar el cache local de stock si existe (no bloqueante)
+  return `Stock de "${params.nombreProducto}" en ${params.almacenNombre} aumentado de ${params.stockAnterior} a ${params.stockNuevo} unidades (+${params.cantidad}).`;
+}
+
+
 export const accionesTools = {
   // Proponer: cambiar precio de venta
   async cambiarPrecioVenta(nombreProducto: string, nuevoPrecio: number) {
@@ -152,6 +185,41 @@ export const accionesTools = {
     return proponer("cambiarPrecio",
       { idArticulo: p.articuloId, nombreProducto: p.nombre, precioAnterior: actual, nuevoPrecio: precio },
       `Cambiar el precio de venta de "${p.nombre}" de Bs ${actual} a Bs ${precio}.${alerta}`);
+  },
+
+  // Proponer: AUMENTAR STOCK de un producto en una sucursal (entrada de inventario
+  // fuera de compra/transferencia — ej. corrección, donación, producción propia).
+  async aumentarStock(nombreProducto: string, sucursal: string, cantidad: number) {
+    if (!nombreProducto || !nombreProducto.trim()) return { error: "Falta el nombre del producto." };
+    if (!sucursal || !sucursal.trim()) return { error: "Falta indicar la sucursal (Petrolera, Lanza, Cobol o Casa Matriz)." };
+    const cant = num(cantidad);
+    if (cant <= 0) return { error: "La cantidad a aumentar debe ser mayor a 0." };
+    const almacen = resolverAlmacen(sucursal);
+    if (!almacen) return { error: `No reconozco la sucursal "${sucursal}". Usa: Petrolera, Lanza, Cobol o Casa Matriz (Honduras).` };
+
+    const { inventarios365 } = await import("./inventarios365");
+    const lista = await inventarios365.listarParaInventario(almacen.id, "");
+    const palabras = nombreProducto.toLowerCase().trim().split(/\s+/).filter(Boolean);
+    const matches = lista.filter((p: any) => {
+      const texto = `${p.nombre} ${p.codigo || ""}`.toLowerCase();
+      return palabras.every((w) => texto.includes(w));
+    });
+    if (matches.length === 0) return { error: `No encontré "${nombreProducto}" en ${almacen.nombre}. Verifica el nombre.` };
+    if (matches.length > 1) {
+      return {
+        mensaje: "Hay varios productos que coinciden. Pide al usuario precisar cuál:",
+        opciones: matches.slice(0, 6).map((m: any) => ({ nombre: m.nombre, stockActual: m.stock })),
+      };
+    }
+    const m = matches[0];
+    const stockNuevo = num(m.stock) + cant;
+    return proponer("aumentarStock",
+      {
+        almacenId: almacen.id, almacenNombre: almacen.nombre,
+        productoId: m.id, inventarioId: m.inventarioId, nombreProducto: m.nombre,
+        stockAnterior: num(m.stock), cantidad: cant, stockNuevo, vencimiento: m.vencimiento,
+      },
+      `Aumentar el stock de "${m.nombre}" en ${almacen.nombre} de ${m.stock} a ${stockNuevo} unidades (+${cant}).`);
   },
 
   // Proponer: marcar un gasto como pagado
@@ -302,6 +370,9 @@ export const accionesTools = {
       if (a.tipo === "cambiarPrecio") {
         resultado = await ejecutarCambioPrecio(params);
         await auditar("cambiarPrecio", a.resumen, `Bs ${params.precioAnterior}`, `Bs ${params.nuevoPrecio}`, "OK", quien);
+      } else if (a.tipo === "aumentarStock") {
+        resultado = await ejecutarAumentarStock(params);
+        await auditar("aumentarStock", a.resumen, `${params.stockAnterior}`, `${params.stockNuevo}`, "OK", quien);
       } else if (a.tipo === "marcarPagado") {
         resultado = await ejecutarMarcarPagado(params);
         await auditar("marcarPagado", a.resumen, "pendiente", "pagado", "OK", quien);

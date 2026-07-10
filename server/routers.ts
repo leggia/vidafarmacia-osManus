@@ -2506,7 +2506,7 @@ const HERRAMIENTAS_SOLO_ADMIN = new Set([
 
 async function ejecutarHerramienta(nombre: string, args: any, usuario?: { id?: string; name?: string; email?: string; role?: string }): Promise<any> {
   // SEGURIDAD: las ACCIONES (modifican datos) son solo para administradores.
-  const esAccion = ["cambiarPrecioVenta", "marcarGastoPagado", "registrarGasto", "confirmarAccion", "cancelarAccion", "autorizarCorreo", "revocarCorreo", "verCorreosAutorizados", "ponerOferta", "quitarOferta", "crearCupon", "desactivarCupon", "crearPromoMonto", "verPromociones", "programaFidelidad", "sugerirOfertas", "segmentarClientes"].includes(nombre);
+  const esAccion = ["cambiarPrecioVenta", "aumentarStock", "marcarGastoPagado", "registrarGasto", "confirmarAccion", "cancelarAccion", "autorizarCorreo", "revocarCorreo", "verCorreosAutorizados", "ponerOferta", "quitarOferta", "crearCupon", "desactivarCupon", "crearPromoMonto", "verPromociones", "programaFidelidad", "sugerirOfertas", "segmentarClientes"].includes(nombre);
   if (esAccion && usuario?.role !== "admin") {
     return { error: "Solo el administrador puede ejecutar acciones. Tu usuario es de consulta." };
   }
@@ -2542,6 +2542,7 @@ async function ejecutarHerramienta(nombre: string, args: any, usuario?: { id?: s
       case "margenProductos": return await asistenteTools.margenProductos(args.orden, args.sucursal);
       case "resumenEjecutivo": return await asistenteTools.resumenEjecutivo();
       case "cambiarPrecioVenta": { const { accionesTools } = await import("./asistente-acciones"); return await accionesTools.cambiarPrecioVenta(args.nombreProducto, args.nuevoPrecio); }
+      case "aumentarStock": { const { accionesTools } = await import("./asistente-acciones"); return await accionesTools.aumentarStock(args.nombreProducto, args.sucursal, args.cantidad); }
       case "marcarGastoPagado": { const { accionesTools } = await import("./asistente-acciones"); return await accionesTools.marcarGastoPagado(args.nombreGasto, args.sucursal); }
       case "registrarGasto": { const { accionesTools } = await import("./asistente-acciones"); return await accionesTools.registrarGasto(args.nombre, args.monto, args.sucursal, args.categoria, args.yaPagado); }
       case "confirmarAccion": { const { accionesTools } = await import("./asistente-acciones"); return await accionesTools.confirmarAccion(usuario); }
@@ -2648,7 +2649,7 @@ REGLA ABSOLUTA — NO INVENTAR: Solo puedes mencionar nombres, cifras, productos
 
 Para comparar sucursales usa una sola llamada. Nunca escribas funciones como texto. Solo lectura. Montos en Bs.
 
-SUCURSALES: Petrolera, Lanza, Cobol y Casa Matriz (también conocida como "Honduras" — es la misma sucursal; si el usuario dice "Honduras" trátalo como Casa Matriz).`;
+SUCURSALES: Petrolera, Lanza, Cobol (nombre completo "Casa Matriz Cobol" — "Cobol" o "Sucursal Cobol" es la misma) y Casa Matriz (también conocida como "Honduras" — es la misma sucursal; si el usuario dice "Honduras" trátalo como Casa Matriz).`;
 
       const tools = [
         { type: "function" as const, function: { name: "ventasPeriodo", description: "Ventas en un período (hoy/ayer/semana/mes/YYYY-MM), opcional por sucursal.", parameters: { type: "object", properties: { periodo: { type: "string" }, sucursal: { type: "string" } }, required: ["periodo"] } } },
@@ -2673,6 +2674,7 @@ SUCURSALES: Petrolera, Lanza, Cobol y Casa Matriz (también conocida como "Hondu
         { type: "function" as const, function: { name: "margenProductos", description: "Margen de ganancia por producto (vendidos el mes pasado): con orden 'bajo' muestra los que casi no dejan ganancia (revisar precios), con 'alto' los más rentables. Úsala para 'qué productos me dejan poco margen', 'dónde gano más', 'productos poco rentables'.", parameters: { type: "object", properties: { orden: { type: "string", description: "'bajo' o 'alto'" }, sucursal: { type: "string" } } } } },
         { type: "function" as const, function: { name: "resumenEjecutivo", description: "Parte ejecutivo del negocio en una sola consulta: ventas de HOY por sucursal, ritmo del mes (acumulado vs mes anterior al mismo día), pagos pendientes, vencimientos a 30 días y cajas abiertas. Úsala para 'cómo está el negocio', 'resumen del día', 'cómo vamos', 'dame el parte'.", parameters: { type: "object", properties: {} } } },
         { type: "function" as const, function: { name: "cambiarPrecioVenta", description: "ACCIÓN (requiere confirmación): propone cambiar el precio de venta de un producto. NO se ejecuta hasta que el usuario confirme. Úsala cuando pidan 'cambia el precio de X a Y'.", parameters: { type: "object", properties: { nombreProducto: { type: "string" }, nuevoPrecio: { type: "number" } }, required: ["nombreProducto", "nuevoPrecio"] } } },
+        { type: "function" as const, function: { name: "aumentarStock", description: "ACCIÓN (requiere confirmación): propone AUMENTAR el stock de un producto en una sucursal (Petrolera, Lanza, Cobol o Casa Matriz/Honduras) — para correcciones o entradas que no son compra ni transferencia. NO se ejecuta hasta que el usuario confirme. Úsala cuando pidan 'aumenta el stock de X en Y sucursal', 'agrega N unidades de X en Y'.", parameters: { type: "object", properties: { nombreProducto: { type: "string" }, sucursal: { type: "string" }, cantidad: { type: "number", description: "Unidades a AGREGAR al stock actual (no el total final)." } }, required: ["nombreProducto", "sucursal", "cantidad"] } } },
         { type: "function" as const, function: { name: "marcarGastoPagado", description: "ACCIÓN (requiere confirmación): propone marcar como pagado un gasto pendiente del mes (alquiler, luz, etc.). Úsala cuando digan 'ya pagué X', 'marca como pagado X'.", parameters: { type: "object", properties: { nombreGasto: { type: "string" }, sucursal: { type: "string" } }, required: ["nombreGasto"] } } },
         { type: "function" as const, function: { name: "registrarGasto", description: "ACCIÓN (requiere confirmación): propone registrar un gasto ocasional del mes. Úsala cuando digan 'registra un gasto de X por Y Bs'.", parameters: { type: "object", properties: { nombre: { type: "string" }, monto: { type: "number" }, sucursal: { type: "string" }, categoria: { type: "string" }, yaPagado: { type: "boolean" } }, required: ["nombre", "monto"] } } },
         { type: "function" as const, function: { name: "confirmarAccion", description: "Ejecuta la acción pendiente de confirmación. Úsala SOLO cuando el usuario confirme explícitamente ('sí', 'confirmo', 'dale', 'hazlo').", parameters: { type: "object", properties: {} } } },
