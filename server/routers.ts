@@ -2504,9 +2504,16 @@ const HERRAMIENTAS_SOLO_ADMIN = new Set([
   "comprasProveedor", "historialCompraProducto",
 ]);
 
+// Nombres de herramientas que requieren rol ADMIN (incluye acciones que modifican
+// datos y consultas sensibles de negocio como segmentación/promociones).
+const NOMBRES_SOLO_ADMIN_ASISTENTE = ["cambiarPrecioVenta", "aumentarStock", "marcarGastoPagado", "registrarGasto", "confirmarAccion", "cancelarAccion", "autorizarCorreo", "revocarCorreo", "verCorreosAutorizados", "ponerOferta", "quitarOferta", "crearCupon", "desactivarCupon", "crearPromoMonto", "verPromociones", "programaFidelidad", "sugerirOfertas", "segmentarClientes"];
+// Subconjunto que REALMENTE modifica datos (para el mensaje de fallback: no decir
+// "la acción se procesó" cuando en realidad solo se hizo una consulta de lectura).
+const NOMBRES_ACCIONES_QUE_MODIFICAN = ["cambiarPrecioVenta", "aumentarStock", "marcarGastoPagado", "registrarGasto", "confirmarAccion", "autorizarCorreo", "revocarCorreo", "ponerOferta", "quitarOferta", "crearCupon", "desactivarCupon", "crearPromoMonto"];
+
 async function ejecutarHerramienta(nombre: string, args: any, usuario?: { id?: string; name?: string; email?: string; role?: string }): Promise<any> {
   // SEGURIDAD: las ACCIONES (modifican datos) son solo para administradores.
-  const esAccion = ["cambiarPrecioVenta", "aumentarStock", "marcarGastoPagado", "registrarGasto", "confirmarAccion", "cancelarAccion", "autorizarCorreo", "revocarCorreo", "verCorreosAutorizados", "ponerOferta", "quitarOferta", "crearCupon", "desactivarCupon", "crearPromoMonto", "verPromociones", "programaFidelidad", "sugerirOfertas", "segmentarClientes"].includes(nombre);
+  const esAccion = NOMBRES_SOLO_ADMIN_ASISTENTE.includes(nombre);
   if (esAccion && usuario?.role !== "admin") {
     return { error: "Solo el administrador puede ejecutar acciones. Tu usuario es de consulta." };
   }
@@ -2765,11 +2772,24 @@ SUCURSALES: Petrolera, Lanza, Cobol (nombre completo "Casa Matriz Cobol" — "Co
         mensajes.push({ role: "system", content: instruccionRedaccion });
         const r2 = await invokeDeepSeek({ messages: mensajes, maxTokens: 1024 });
         const respuestaCruda = r2.choices?.[0]?.message?.content || "Obtuve los datos pero no pude redactar la respuesta.";
-        // Defensa: si el modelo filtró una invocación de función como texto crudo
-        // en vez de redactar, no se lo mostramos al usuario tal cual.
-        const respuesta = /DSML|tool_calls|invoke\s+name=|<function|<｜/i.test(respuestaCruda)
-          ? "La acción se procesó, pero no pude redactar el mensaje final. Escribe \"muéstrame la auditoría\" para confirmar qué se hizo."
-          : respuestaCruda;
+        // Defensa: si el modelo filtró tokens internos (ej. intento de otra
+        // invocación) al final del texto, RESCATAMOS lo que alcanzó a redactar
+        // antes de la fuga en vez de descartar toda la respuesta.
+        const patronFuga = /DSML|tool_calls|invoke\s+name=|<function|<｜/i;
+        const idxFuga = respuestaCruda.search(patronFuga);
+        const rescatado = idxFuga > 0 ? respuestaCruda.slice(0, idxFuga).trim() : "";
+        const seModificaronDatos = herramientasUsadas.some((n) => NOMBRES_ACCIONES_QUE_MODIFICAN.includes(n));
+        let respuesta: string;
+        if (idxFuga < 0) {
+          respuesta = respuestaCruda; // sin fuga, todo normal
+        } else if (rescatado.length >= 15) {
+          respuesta = rescatado; // se alcanzó a redactar algo útil antes de la fuga: usarlo
+        } else {
+          // Nada útil que rescatar: mensaje honesto según si hubo una acción o solo consulta
+          respuesta = seModificaronDatos
+            ? "La acción se procesó, pero no pude redactar el mensaje final. Escribe \"muéstrame la auditoría\" para confirmar qué se hizo."
+            : "Encontré los datos pero tuve un problema para redactar la respuesta. Vuelve a hacer la pregunta, por favor — no se modificó nada.";
+        }
         return { respuesta, usoHerramienta: herramientasUsadas.join(", ") };
       } catch (e: any) {
         const msg = String(e?.message || "");
