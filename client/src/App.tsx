@@ -29,6 +29,22 @@ import Personal from "./pages/Personal";
 import FlujoCaja from "./pages/FlujoCaja";
 import { useAuth } from "./_core/hooks/useAuth";
 import { useLocation } from "wouter";
+import { LogOut } from "lucide-react";
+
+// Botón simple de cerrar sesión, para vistas simplificadas que no usan
+// DashboardLayout (donde normalmente vive el logout).
+function BotonCerrarSesion() {
+  const { logout } = useAuth();
+  return (
+    <button
+      onClick={() => logout()}
+      className="flex items-center gap-1.5 text-xs font-bold text-muted-foreground hover:text-foreground"
+      title="Cerrar sesión"
+    >
+      <LogOut className="w-4 h-4" /> Salir
+    </button>
+  );
+}
 
 function Router() {
   const { user } = useAuth();
@@ -66,14 +82,23 @@ function Router() {
     );
   }
 
-  // Rol "viewer" (consulta): solo ve la página de consulta de precios/stock.
+  // Rol "viewer" (consulta): solo ve la página de consulta de precios/stock, en
+  // una vista simplificada (sin el menú completo) — pero SÍ necesita poder cerrar
+  // sesión, por ejemplo cuando le cambian el rol y debe reingresar para que se
+  // aplique. Barra superior mínima con el botón de salir.
   if (user?.role === "viewer") {
     return (
-      <Switch>
-        <Route path="/" component={Consulta} />
-        <Route path="/reservas" component={Reservas} />
-        <Route component={Consulta} />
-      </Switch>
+      <div className="min-h-screen">
+        <div className="flex items-center justify-between px-4 h-12 border-b bg-background">
+          <span className="text-sm font-bold">VidaFarma</span>
+          <BotonCerrarSesion />
+        </div>
+        <Switch>
+          <Route path="/" component={Consulta} />
+          <Route path="/reservas" component={Reservas} />
+          <Route component={Consulta} />
+        </Switch>
+      </div>
     );
   }
 
