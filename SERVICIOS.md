@@ -36,12 +36,12 @@ Regla de oro transversal: **el agente sugiere, el humano aprueba.** Nada estruct
 | 1 | **Operaciones / Inventario** | Compras, stock, transferencias, vencimientos | 🟢 Operativo |
 | 2 | **Ventas / Tienda** | Tienda online, reservas, catálogo, pagos | 🟢 Operativo |
 | 3 | **Atención al cliente** | Consultas, reservas, WhatsApp, fidelización | 🟢 Operativo |
-| 4 | **Finanzas** | Rentabilidad, gastos, sueldos, reportes | 🟢 Operativo |
+| 4 | **Finanzas** | Rentabilidad, gastos, sueldos, reportes, créditos, personal | 🟢 Operativo |
 | 5 | **Desarrollo (Dev)** | Código, features, mantenimiento de la app | 🟢 Operativo |
-| 6 | **Testing / QA** | Verificación pre-push, prevención de errores | 🟢 Operativo |
-| 7 | **Marketing** | Promociones, publicación auto en Facebook/TikTok, recompra, contenido | 🟡 En diseño |
+| 6 | **Testing / QA** | Verificación pre-push, smoke tests, prevención de errores | 🟢 Operativo |
+| 7 | **Marketing** | Promociones, contenido, calendario, segmentación (falta conectar redes) | 🟢 Operativo |
 | 8 | **Inteligencia de negocio** | Análisis, decisiones, competencia | 🟢 Operativo |
-| 9 | **Cumplimiento / Legal** | Controlados, recetas, normativa, datos | 🟡 Parcial |
+| 9 | **Cumplimiento / Legal** | Controlados, recetas, normativa, privacidad | 🟡 Parcial |
 
 Leyenda: 🟢 operativo · 🟡 parcial o en diseño · 🔴 pendiente.
 
@@ -482,28 +482,35 @@ Company of One — siempre el mejor modelo, se paga solo lo usado, cero mantenim
 
 ## 12. Prioridades sugeridas (hoja de ruta)
 
-Ordenadas por impacto sobre esfuerzo, enfoque Company of One:
+**✅ Completado** (desde la última revisión de esta hoja de ruta):
+1. Testing — chequeo pre-push automatizado + smoke tests (16/16).
+2. Legal — página de privacidad + consentimiento (`/privacidad`).
+3. Marketing — sugerencias de oferta por rotación/vencimiento (`sugerirOfertas`).
+4. Marketing — cola de aprobación + generador de contenido + imagen IA/foto propia
+   (`/marketing`).
+5. Marketing — segmentación de clientes (`segmentarClientes`) y calendario de
+   publicaciones programadas (scheduler).
+6. Transferencias con listas manuscritas (emparejado difuso) + carga de inventario
+   por foto (con número de fila como ancla de precisión).
+7. Créditos de la farmacia (registro, pagos, edición, análisis de conveniencia) y
+   apartado personal privado.
+8. Asistente: acción `aumentarStock`, alias de sucursales (Honduras/Central/Cobol),
+   flujo de confirmación robustecido (una sola confirmación, respuestas breves, sin
+   código de producto salvo pedido explícito).
 
-1. **Testing — chequeo pre-push automatizado** (evita crashes como el de la tienda).
-   Impacto en estabilidad, esfuerzo bajo. Es la base para construir con confianza.
-2. **Legal — página de privacidad + consentimiento.** Doble beneficio: cumple la norma
-   de datos Y es requisito de Facebook/TikTok para el marketing en redes. Desbloquea.
-3. **Marketing — sugerencias de oferta por rotación/vencimiento** (mueve stock por
-   vencer, reduce merma, usa datos que ya tienes). Alto impacto, esfuerzo medio.
-4. **Marketing — cola de aprobación + generador de contenido** (`/marketing`): el
-   agente redacta posts, Luis aprueba. Base del módulo de redes.
-5. **Marketing — conector de Facebook** (Graph API, el más accesible). Primera red
-   con publicación real.
-6. **Marketing — conector unificado TikTok + Instagram** (tras elegir proveedor y
-   tener la política de privacidad). Completa la publicación automática.
-7. **Atención — adopción del registro de teléfono en mostrador** (desbloquea puntos
-   y recordatorios masivos). Sin código: es hábito de las vendedoras.
-8. **Pagos QR automáticos** (tras el trámite bancario). Ya construido, falta activar.
-9. **Marketing — segmentación de clientes** y calendario de publicaciones.
+**🔲 Pendiente — requiere trámite/decisión de Luis** (no es código):
+- Conector de Facebook (Graph API) y/o API unificado (Ayrshare) para TikTok/Instagram
+  — falta crear la página de Facebook de negocio y/o elegir proveedor + credenciales.
+- Cuenta empresarial + API de pago QR (BNB/OpenBCB) — trámite bancario.
+- Hábito de las vendedoras: registrar el teléfono del cliente en 365 al facturar.
 
-**Nota de secuencia:** Testing (1) y Privacidad (2) van primero porque habilitan todo
-lo demás con seguridad y cumplimiento. El marketing en redes (4-6) depende de la
-política de privacidad (2). Es la ruta Company of One: bases sólidas, luego escalar.
+**🔲 Pendiente — construible ahora:**
+- Finanzas — proyecciones de flujo de caja y alertas automáticas de margen bajo.
+- Inteligencia de negocio — panel de tendencias visual y alertas proactivas ("las
+  ventas de esta semana bajaron X% vs la pasada").
+- Legal — registro de dispensación de controlados en mostrador.
+- Testing — entorno de staging antes de producción.
+- Migrar el lector de facturas de compras de Groq a un modelo de visión vigente.
 
 ---
 
