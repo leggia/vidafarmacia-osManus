@@ -1083,12 +1083,15 @@ const inventarioRouter = router({
           messages: [
             { role: "system", content: "Eres experto en leer hojas de conteo de inventario de farmacia, incluida letra manuscrita. Respondes SOLO JSON válido." },
             { role: "user", content: [
-              { type: "text", text: `Esta foto es una hoja de conteo físico de inventario, con columnas: # (número de fila), Clase (A/B/C), Producto, Sistema, Físico (cantidad contada, a mano o impresa).
-Extrae SOLO las filas que tengan una cantidad FÍSICA anotada. Devuelve JSON:
-{"items":[{"numero": numero_de_fila_columna_#_o_null_si_no_se_ve, "nombre":"nombre del producto tal como se lee","cantidad": numero_entero_de_la_columna_fisico}]}
-- El NÚMERO DE FILA (columna "#", a la izquierda) es MUY IMPORTANTE: léelo con cuidado, es la clave para identificar el producto correcto. Si no se alcanza a leer, pon null.
-- Lee la cantidad FÍSICA (manuscrita o impresa) con el mayor cuidado — no la confundas con la columna "Sistema".
-- Si una fila no tiene cantidad física escrita, OMÍTELA.
+              { type: "text", text: `Esta foto es una hoja de conteo físico de inventario, con columnas: # (número de fila, impreso), Clase (A/B/C, impreso), Producto (impreso), Sistema (cantidad del sistema, IMPRESA), Físico (una CASILLA EN BLANCO donde el personal ANOTA A MANO la cantidad contada).
+
+TAREA CRÍTICA: extrae SOLO las filas donde la casilla "Físico" tiene algo ESCRITO A MANO por el personal. Esa casilla nace vacía (con borde de recuadro) — si está vacía o no distingues una anotación manuscrita clara ahí, esa fila NO se cuenta, aunque tenga otros datos impresos.
+- NUNCA copies el número de la columna "Sistema" como si fuera el "Físico". Son columnas distintas: Sistema está impresa (a máquina) y Físico es manuscrita (a mano, en el recuadro vacío).
+- Solo reporta un producto si estás seguro de que su casilla Físico fue modificada/llenada a mano. Ante la duda, omite la fila — es preferible reportar menos filas pero con certeza, que adivinar.
+- El NÚMERO DE FILA (columna "#", a la izquierda, impreso) es la clave para identificar el producto correcto: léelo con cuidado. Si no se alcanza a leer, pon null.
+
+Devuelve JSON:
+{"items":[{"numero": numero_de_fila_columna_#_o_null_si_no_se_ve, "nombre":"nombre del producto tal como se lee","cantidad": numero_entero_escrito_a_mano_en_Fisico}]}
 - Responde SOLO el JSON.` },
               { type: "image_url", image_url: { url: dataUrl, detail: "high" } },
             ] },

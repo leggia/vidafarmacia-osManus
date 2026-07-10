@@ -54,6 +54,7 @@ export default function Inventario() {
   const [procesandoFoto, setProcesandoFoto] = useState(false);
   const [revisionFoto, setRevisionFoto] = useState<any[] | null>(null);
   const [busquedaManual, setBusquedaManual] = useState<Record<number, string>>({});
+  const [corrigiendo, setCorrigiendo] = useState<Record<number, boolean>>({});
   const extraerConteoFoto = trpc.inventario.extraerConteoFoto.useMutation();
 
   // Comprimir y enviar la foto de la hoja de conteo; abrir modal de revisión
@@ -99,7 +100,7 @@ export default function Inventario() {
     setItems(prev => {
       const copia = [...prev];
       for (const r of revisionFoto) {
-        const destino = r.elegidoId ?? r.sugerido?.id;
+        const destino = r.elegidoId !== undefined ? r.elegidoId : r.sugerido?.id;
         if (destino == null) continue;
         const idx = copia.findIndex(it => it.id === destino);
         if (idx >= 0) { copia[idx] = { ...copia[idx], fisico: r.cantidad }; aplicados++; }
@@ -107,7 +108,7 @@ export default function Inventario() {
       return copia;
     });
     toast.success(`${aplicados} cantidad(es) cargada(s) al conteo`);
-    setRevisionFoto(null); setBusquedaManual({});
+    setRevisionFoto(null); setBusquedaManual({}); setCorrigiendo({});
   };
   const [cacheProductos, setCacheProductos] = useState<any[]>([]);
   const [cargandoCache, setCargandoCache] = useState(false);
@@ -791,67 +792,75 @@ export default function Inventario() {
                 </div>
                 <div className="overflow-y-auto p-3 space-y-2 flex-1">
                   {revisionFoto.map((r: any, idx: number) => {
-                    const destino = r.elegidoId ?? r.sugerido?.id ?? null;
+                    const destino = r.elegidoId !== undefined ? r.elegidoId : (r.sugerido?.id ?? null);
                     const prodElegido = destino != null ? itemsNumerados.find(p => p.id === destino) : null;
+                    const abierto = !!corrigiendo[idx];
                     const buscando = busquedaManual[idx] || "";
                     const resultadosManual = buscando.trim().length >= 2
                       ? itemsNumerados.filter(p => p.nombre.toLowerCase().includes(buscando.toLowerCase())).slice(0, 8)
                       : [];
                     return (
-                      <div key={idx} className={`rounded-lg border p-2.5 ${destino ? "border-green-300 bg-green-50/40 dark:bg-green-950/10" : "border-red-300 bg-red-50/40 dark:bg-red-950/10"}`}>
-                        <div className="flex items-center gap-2 mb-1">
-                          {/* Guía: número de fila leído de la hoja impresa (columna #) */}
+                      <div key={idx} className={`rounded-lg border p-2 ${destino ? "border-green-300 bg-green-50/40 dark:bg-green-950/10" : "border-red-300 bg-red-50/40 dark:bg-red-950/10"}`}>
+                        {/* Una sola fila: guía + PRODUCTO EMPAREJADO (prominente) + cantidad + corregir */}
+                        <div className="flex items-center gap-2">
                           {r.numeroLeido != null ? (
                             <span className="text-[10px] font-black shrink-0 px-1.5 py-0.5 rounded bg-gray-800 text-white" title="Número de fila leído en la hoja impresa">#{r.numeroLeido}</span>
                           ) : (
                             <span className="text-[10px] font-bold shrink-0 px-1.5 py-0.5 rounded bg-amber-100 text-amber-700" title="No se pudo leer el número de fila">#?</span>
                           )}
-                          <span className="text-[10px] text-muted-foreground shrink-0">Leído:</span>
-                          <span className="text-xs font-medium flex-1 truncate">"{r.textoLeido}"</span>
-                          <span className="text-[10px] text-muted-foreground shrink-0">Cant:</span>
+                          <div className="min-w-0 flex-1">
+                            {prodElegido ? (
+                              <p className="text-sm font-black leading-tight truncate">
+                                {prodElegido.nombre}
+                                {r.viaNumero && <Check className="inline w-3.5 h-3.5 text-emerald-600 ml-1" />}
+                              </p>
+                            ) : (
+                              <p className="text-sm font-black leading-tight text-red-600 truncate">Sin coincidencia</p>
+                            )}
+                            <p className="text-[10px] text-muted-foreground truncate">leído: "{r.textoLeido}"</p>
+                          </div>
                           <input type="number" inputMode="numeric" value={r.cantidad}
                             onChange={(e) => setRevisionFoto(prev => prev!.map((x, i) => i === idx ? { ...x, cantidad: parseInt(e.target.value) || 0 } : x))}
-                            className="w-16 h-8 text-center text-sm font-bold border rounded-lg bg-white dark:bg-background" />
+                            className="w-14 h-8 text-center text-sm font-bold border rounded-lg bg-white dark:bg-background shrink-0" />
+                          <button type="button" onClick={() => setCorrigiendo(prev => ({ ...prev, [idx]: !prev[idx] }))}
+                            className="h-8 w-8 shrink-0 rounded-lg bg-muted flex items-center justify-center" title="Corregir producto">
+                            ✏️
+                          </button>
                         </div>
-                        {prodElegido && (
-                          <p className="text-[10px] text-muted-foreground mb-1 pl-6">
-                            → {prodElegido.nombre} {prodElegido.codigo ? `· Cód: ${prodElegido.codigo}` : ""} · Sistema: {prodElegido.stock}
-                            {r.viaNumero && <span className="text-emerald-700 font-bold"> · emparejado por N° de fila</span>}
-                          </p>
+
+                        {/* Corrección (oculta por defecto): candidatos cercanos + búsqueda manual */}
+                        {abierto && (
+                          <div className="mt-2 pt-2 border-t space-y-1.5">
+                            {r.candidatos && r.candidatos.length > 0 && (
+                              <div className="flex flex-wrap gap-1">
+                                {r.candidatos.map((c: any) => (
+                                  <button key={c.id} type="button"
+                                    onClick={() => { setRevisionFoto(prev => prev!.map((x, i) => i === idx ? { ...x, elegidoId: c.id } : x)); setCorrigiendo(prev => ({ ...prev, [idx]: false })); }}
+                                    className={`text-[10px] px-2 py-1 rounded-full border font-bold active:scale-95 ${c.id === destino ? "bg-emerald-600 text-white border-emerald-600" : "bg-white dark:bg-background text-gray-700 border-gray-300"}`}>
+                                    {c.nombre.length > 32 ? c.nombre.slice(0, 32) + "…" : c.nombre} {c.stock != null ? `(Sist: ${c.stock})` : ""}
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                            <input type="text" value={buscando} placeholder="🔍 Buscar otro producto por nombre…"
+                              onChange={(e) => setBusquedaManual(prev => ({ ...prev, [idx]: e.target.value }))}
+                              className="w-full h-7 text-[11px] border rounded-lg px-2 bg-white dark:bg-background" />
+                            {resultadosManual.length > 0 && (
+                              <div className="max-h-28 overflow-y-auto border rounded-lg divide-y">
+                                {resultadosManual.map(p => (
+                                  <button key={p.id} type="button"
+                                    onClick={() => { setRevisionFoto(prev => prev!.map((x, i) => i === idx ? { ...x, elegidoId: p.id } : x)); setBusquedaManual(prev => ({ ...prev, [idx]: "" })); setCorrigiendo(prev => ({ ...prev, [idx]: false })); }}
+                                    className="w-full text-left px-2 py-1.5 text-[11px] hover:bg-emerald-50 flex justify-between gap-2">
+                                    <span className="truncate">#{p.numero} {p.nombre}</span>
+                                    <span className="text-muted-foreground shrink-0">Sist: {p.stock}</span>
+                                  </button>
+                                ))}
+                              </div>
+                            )}
+                            <button type="button" onClick={() => { setRevisionFoto(prev => prev!.map((x, i) => i === idx ? { ...x, elegidoId: null } : x)); }}
+                              className="text-[10px] text-red-600 font-bold">No cargar esta fila</button>
+                          </div>
                         )}
-                        {r.candidatos && r.candidatos.length > 0 ? (
-                          <select value={destino ?? ""}
-                            onChange={(e) => setRevisionFoto(prev => prev!.map((x, i) => i === idx ? { ...x, elegidoId: e.target.value ? parseInt(e.target.value) : null } : x))}
-                            className="w-full h-8 text-xs border rounded-lg px-2 bg-white dark:bg-background">
-                            <option value="">— no cargar esta fila —</option>
-                            {r.candidatos.map((c: any) => (
-                              <option key={c.id} value={c.id}>
-                                {c.confianza === "alta" ? "✓ " : c.confianza === "media" ? "≈ " : "· "}
-                                {c.nombre}{c.codigo ? ` (Cód: ${c.codigo})` : ""}{c.stock != null ? ` — Sistema: ${c.stock}` : ""}
-                              </option>
-                            ))}
-                          </select>
-                        ) : (
-                          <p className="text-[11px] text-red-600 font-bold mb-1">✗ Sin coincidencia cercana — busca manualmente abajo</p>
-                        )}
-                        {/* Búsqueda manual de respaldo: por si ninguna opción es la correcta */}
-                        <div className="mt-1.5">
-                          <input type="text" value={buscando} placeholder="🔍 Buscar otro producto por nombre…"
-                            onChange={(e) => setBusquedaManual(prev => ({ ...prev, [idx]: e.target.value }))}
-                            className="w-full h-7 text-[11px] border rounded-lg px-2 bg-white dark:bg-background" />
-                          {resultadosManual.length > 0 && (
-                            <div className="mt-1 max-h-28 overflow-y-auto border rounded-lg divide-y">
-                              {resultadosManual.map(p => (
-                                <button key={p.id} type="button"
-                                  onClick={() => { setRevisionFoto(prev => prev!.map((x, i) => i === idx ? { ...x, elegidoId: p.id } : x)); setBusquedaManual(prev => ({ ...prev, [idx]: "" })); }}
-                                  className="w-full text-left px-2 py-1.5 text-[11px] hover:bg-emerald-50 flex justify-between gap-2">
-                                  <span className="truncate">#{p.numero} {p.nombre}</span>
-                                  <span className="text-muted-foreground shrink-0">Sist: {p.stock}</span>
-                                </button>
-                              ))}
-                            </div>
-                          )}
-                        </div>
                       </div>
                     );
                   })}
