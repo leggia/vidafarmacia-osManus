@@ -328,25 +328,49 @@ export async function confirmTransfer(transferId: number, userId: number) {
   const db = await getDb();
   if (!db) throw new Error("Database not available");
 
-  await db
-    .update(transfers)
-    .set({ status: "completed" as any })
-    .where(and(eq(transfers.id, transferId), eq(transfers.userId, userId)));
+  // 1. Cargar la transferencia, sus sucursales y sus items
+  const cab = await db.select().from(transfers).where(and(eq(transfers.id, transferId), eq(transfers.userId, userId))).limit(1);
+  if (cab.length === 0) throw new Error("Transferencia no encontrada");
+  const t = cab[0];
+  const [origen, destino] = await Promise.all([getBranchById(t.fromBranchId), getBranchById(t.toBranchId)]);
+  const its = await db.select().from(transferItems).where(eq(transferItems.transferId, transferId));
+  if (its.length === 0) throw new Error("La transferencia no tiene productos");
 
-  await db
-    .delete(taskQueue)
-    .where(and(eq(taskQueue.referenceId, transferId), eq(taskQueue.type, "transfer_sync")));
+  // 2. Registrar DE VERDAD en inventarios365 (mueve el stock entre almacenes)
+  let resultado365: { success: boolean; message: string };
+  try {
+    const { inventarios365 } = await import("./inventarios365");
+    resultado365 = await inventarios365.registrarTransferencia({
+      sucursalOrigen: origen?.name || "",
+      sucursalDestino: destino?.name || "",
+      items: its.map((i) => ({ nombre: i.productName, cantidad: i.quantity })),
+      observacion: t.notes || `Transferencia VidaFarma #${transferId}`,
+    });
+  } catch (e: any) {
+    resultado365 = { success: false, message: `Error conectando con 365: ${e?.message || "desconocido"}` };
+  }
 
+  // 3. Registrar el resultado en el historial y actualizar estado según haya funcionado
   await db.insert(operationHistory).values({
-    userId,
-    type: "transfer",
-    referenceId: transferId,
+    userId, type: "transfer", referenceId: transferId,
     action: "Transferencia confirmada",
-    status: "success",
-    details: "Transferencia confirmada manualmente por el usuario",
+    status: resultado365.success ? "success" : "error",
+    details: resultado365.message,
   });
 
-  return { success: true };
+  if (!resultado365.success) {
+    // No se movió el stock: dejar pendiente para reintentar, NO marcar completada
+    await db.update(transfers).set({ status: "pending" as any })
+      .where(and(eq(transfers.id, transferId), eq(transfers.userId, userId)));
+    return { success: false, message: resultado365.message };
+  }
+
+  await db.update(transfers).set({ status: "completed" as any })
+    .where(and(eq(transfers.id, transferId), eq(transfers.userId, userId)));
+  await db.delete(taskQueue)
+    .where(and(eq(taskQueue.referenceId, transferId), eq(taskQueue.type, "transfer_sync")));
+
+  return { success: true, message: resultado365.message };
 }
 
 // ─── Task Queue ───

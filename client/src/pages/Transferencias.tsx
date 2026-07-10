@@ -14,8 +14,14 @@ export default function Transferencias() {
   const [confirmingId, setConfirmingId] = useState<number | null>(null);
 
   const confirmTransfer = trpc.transfers.confirm.useMutation({
-    onSuccess: () => {
-      toast.success("Transferencia confirmada y completada exitosamente");
+    onSuccess: (r: any) => {
+      if (r?.success === false) {
+        toast.error(r.message || "No se pudo registrar en inventarios365", { duration: 9000 });
+      } else if (r?.message && r.message.includes("OMITIDOS")) {
+        toast.warning(r.message, { duration: 12000 });
+      } else {
+        toast.success(r?.message || "Transferencia registrada en inventarios365");
+      }
       utils.transfers.list.invalidate();
       utils.dashboard.stats.invalidate();
       setConfirmingId(null);
