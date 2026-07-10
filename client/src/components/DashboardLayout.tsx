@@ -35,7 +35,7 @@ import {
   Users,
   Plus,
   Sparkles,
-  HeartHandshake, Megaphone, Landmark, Wallet2 } from "lucide-react";
+  HeartHandshake, Megaphone, Landmark, Wallet2, LineChart } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
@@ -54,6 +54,7 @@ const menuItems = [
   { icon: Megaphone, label: "Marketing", path: "/marketing" },
   { icon: Wallet, label: "Gastos", path: "/gastos" },
   { icon: Landmark, label: "Créditos", path: "/creditos" },
+  { icon: LineChart, label: "Flujo de Caja", path: "/flujo-caja" },
   { icon: Wallet2, label: "Personal", path: "/personal", soloAdmin: true },
   { icon: ListTodo, label: "Tareas Pendientes", path: "/tareas" },
   { icon: History, label: "Historial", path: "/historial" },

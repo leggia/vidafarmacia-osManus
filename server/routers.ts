@@ -2127,6 +2127,16 @@ const personalRouter = router({
     }),
 });
 
+const flujoCajaRouter = router({
+  ver: protectedProcedure
+    .input(z.object({ mesesHistoria: z.number().min(1).max(24).optional(), mesesProyectar: z.number().min(1).max(12).optional() }).optional())
+    .query(async ({ input, ctx }) => {
+      soloFinanzas(ctx);
+      const { flujoDeCaja } = await import("./flujo-caja");
+      return flujoDeCaja(input?.mesesHistoria ?? 6, input?.mesesProyectar ?? 3);
+    }),
+});
+
 const gastosRouter = router({
   // Listar plantilla de gastos fijos
   listarFijos: protectedProcedure.query(async () => {
@@ -3110,6 +3120,7 @@ export const appRouter = router({
   fotos: fotosRouter,
   ventas: ventasRouter,
   gastos: gastosRouter,
+  flujoCaja: flujoCajaRouter,
   fidelizacion: fidelizacionRouter,
   marketing: marketingRouter,
   creditos: creditosRouter,
