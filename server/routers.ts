@@ -2004,6 +2004,88 @@ const ventasRouter = router({
 });
 
 // ─── Gastos de la farmacia (fijos recurrentes + ocasionales) ──────────────────
+
+// ─── Créditos de la farmacia (admin y finanzas) ───
+const soloFinanzas = (ctx: any) => {
+  if (ctx?.user?.role !== "admin" && ctx?.user?.role !== "regente") throw new Error("Solo administrador o regente.");
+};
+// ─── Apartado personal PRIVADO (solo admin/dueño) ───
+const soloDueno = (ctx: any) => {
+  if (ctx?.user?.role !== "admin") throw new Error("Apartado personal: solo el dueño (admin).");
+};
+
+const creditosRouter = router({
+  listar: protectedProcedure.query(async ({ ctx }) => {
+    soloFinanzas(ctx);
+    const { creditos } = await import("./finanzas-personal");
+    return creditos.listar();
+  }),
+  crear: protectedProcedure
+    .input(z.object({ banco: z.string().max(120), descripcion: z.string().max(250).optional(), montoTotal: z.number(), cuotaMensual: z.number(), plazoMeses: z.number(), tasaAnual: z.number().optional(), fechaInicio: z.string().max(12).optional(), diaPago: z.number().optional() }))
+    .mutation(async ({ input, ctx }) => {
+      soloFinanzas(ctx);
+      const { creditos } = await import("./finanzas-personal");
+      return creditos.crear(input);
+    }),
+  registrarPago: protectedProcedure
+    .input(z.object({ creditoId: z.number(), monto: z.number(), fecha: z.string().max(12), nota: z.string().max(250).optional() }))
+    .mutation(async ({ input, ctx }) => {
+      soloFinanzas(ctx);
+      const { creditos } = await import("./finanzas-personal");
+      return creditos.registrarPago(input);
+    }),
+  pagosDe: protectedProcedure
+    .input(z.object({ creditoId: z.number() }))
+    .query(async ({ input, ctx }) => {
+      soloFinanzas(ctx);
+      const { creditos } = await import("./finanzas-personal");
+      return creditos.pagosDe(input.creditoId);
+    }),
+  eliminar: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      soloFinanzas(ctx);
+      const { creditos } = await import("./finanzas-personal");
+      return creditos.eliminar(input.id);
+    }),
+  marcarEstado: protectedProcedure
+    .input(z.object({ id: z.number(), estado: z.string().max(20) }))
+    .mutation(async ({ input, ctx }) => {
+      soloFinanzas(ctx);
+      const { creditos } = await import("./finanzas-personal");
+      return creditos.marcarEstado(input.id, input.estado);
+    }),
+});
+
+const personalRouter = router({
+  resumen: protectedProcedure
+    .input(z.object({ desde: z.string().max(12).optional(), hasta: z.string().max(12).optional() }).optional())
+    .query(async ({ input, ctx }) => {
+      soloDueno(ctx);
+      const { personal } = await import("./finanzas-personal");
+      return personal.resumen(input?.desde, input?.hasta);
+    }),
+  categorias: protectedProcedure.query(async ({ ctx }) => {
+    soloDueno(ctx);
+    const { CATEGORIAS_INGRESO, CATEGORIAS_GASTO } = await import("./finanzas-personal");
+    return { ingreso: CATEGORIAS_INGRESO, gasto: CATEGORIAS_GASTO };
+  }),
+  registrar: protectedProcedure
+    .input(z.object({ tipo: z.string().max(10), categoria: z.string().max(80).optional(), detalle: z.string().max(250).optional(), monto: z.number(), fecha: z.string().max(12) }))
+    .mutation(async ({ input, ctx }) => {
+      soloDueno(ctx);
+      const { personal } = await import("./finanzas-personal");
+      return personal.registrar(input);
+    }),
+  eliminar: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      soloDueno(ctx);
+      const { personal } = await import("./finanzas-personal");
+      return personal.eliminar(input.id);
+    }),
+});
+
 const gastosRouter = router({
   // Listar plantilla de gastos fijos
   listarFijos: protectedProcedure.query(async () => {
@@ -2919,6 +3001,8 @@ export const appRouter = router({
   gastos: gastosRouter,
   fidelizacion: fidelizacionRouter,
   marketing: marketingRouter,
+  creditos: creditosRouter,
+  personal: personalRouter,
 });
 
 export type AppRouter = typeof appRouter;

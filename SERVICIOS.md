@@ -144,6 +144,26 @@ para admin; jamás visibles a otros roles.
 
 ## 6. Área: DESARROLLO (Dev) 🟢
 
+**Nota operativa — precios pico de DeepSeek (desde mediados de julio 2026).**
+DeepSeek introduce precio "hora pico / hora valle": el costo se **duplica** en dos
+ventanas diarias (hora de Beijing 9:00–12:00 y 14:00–18:00 = UTC 1:00–4:00 y
+6:00–10:00). **Convertido a hora de Cochabamba (UTC-4): 9:00 PM–12:00 AM y
+2:00 AM–6:00 AM.**
+
+Diagnóstico actual: **ninguna automatización llama a DeepSeek sola.** Todas las
+llamadas (asistente conversacional, generar post de marketing) las dispara Luis con
+un clic, en horario diurno boliviano — que es horario valle (precio normal). El
+scheduler de marketing (cada 5 min) solo *publica* posts ya aprobados; no genera
+contenido nuevo, así que no toca la API de DeepSeek.
+
+**Regla para automatizaciones futuras que SÍ llamen a DeepSeek sin intervención
+humana** (ej. un futuro "genera el post de la semana automáticamente" o análisis
+nocturnos): evitar que se disparen entre **9:00 PM–12:00 AM** y **2:00 AM–6:00 AM**
+hora Bolivia. Si una tarea de fondo necesita ese horario por otro motivo (poco
+tráfico del servidor), usar un modelo distinto a DeepSeek para esa tarea puntual, o
+programarla fuera de esas ventanas. El resto de integraciones (inventarios365, Groq,
+Claude, servicios de imagen) no tienen este esquema de precio y no se ven afectadas.
+
 **Qué hace.** Construir y mantener la app: nuevas funciones, correcciones, mejoras.
 
 **Automatización actual:**

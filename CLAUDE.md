@@ -60,3 +60,11 @@ node scripts/verificar.mjs   # o: npm run verificar
 ```
 
 No hacer push si falla. Ver `TESTING.md` para el checklist completo de release.
+
+## Automatizaciones y DeepSeek (horario pico)
+
+Si construyes una automatización que llame a DeepSeek SIN intervención humana
+(scheduler, cron, tarea de fondo), evita que se dispare entre **9:00 PM–12:00 AM** y
+**2:00 AM–6:00 AM hora Bolivia** (horario pico de DeepSeek, precio doble desde
+mediados de julio 2026). Ver detalle en `SERVICIOS.md` §6. Hoy ninguna automatización
+existente llama a DeepSeek sola, así que esto solo aplica a features nuevas.
