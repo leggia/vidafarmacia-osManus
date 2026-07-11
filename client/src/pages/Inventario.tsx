@@ -829,6 +829,14 @@ export default function Inventario() {
                   </div>
                   <button onClick={() => setRevisionFoto(null)} className="p-1"><X className="h-5 w-5" /></button>
                 </div>
+                {/* Encabezado de columnas — refleja el mismo orden de la hoja impresa (#, Producto, Sistema, Físico) */}
+                <div className="flex items-center gap-2 px-4 py-1.5 border-b bg-muted/50 text-[9px] font-bold text-muted-foreground uppercase">
+                  <span className="w-7 shrink-0">#</span>
+                  <span className="flex-1">Producto</span>
+                  <span className="w-14 text-center shrink-0">Sistema</span>
+                  <span className="w-14 text-center shrink-0">Físico</span>
+                  <span className="w-8 shrink-0"></span>
+                </div>
                 <div className="overflow-y-auto p-3 space-y-2 flex-1">
                   {revisionFoto.map((r: any, idx: number) => {
                     const destino = r.elegidoId !== undefined ? r.elegidoId : (r.sugerido?.id ?? null);
@@ -840,7 +848,7 @@ export default function Inventario() {
                       : [];
                     return (
                       <div key={idx} className={`rounded-lg border p-2 ${destino ? "border-green-300 bg-green-50/40 dark:bg-green-950/10" : "border-red-300 bg-red-50/40 dark:bg-red-950/10"}`}>
-                        {/* Una sola fila: guía + PRODUCTO EMPAREJADO (prominente) + cantidad + corregir */}
+                        {/* Fila estilo "como la hoja impresa": # · Nombre · Sistema · Físico */}
                         <div className="flex items-center gap-2">
                           {r.numeroLeido != null ? (
                             <span className="text-[10px] font-black shrink-0 px-1.5 py-0.5 rounded bg-gray-800 text-white" title="Número de fila leído en la hoja impresa">#{r.numeroLeido}</span>
@@ -849,23 +857,37 @@ export default function Inventario() {
                           )}
                           <div className="min-w-0 flex-1">
                             {prodElegido ? (
-                              <p className="text-sm font-black leading-tight truncate">
-                                {prodElegido.nombre}
-                                {r.viaNumero && <Check className="inline w-3.5 h-3.5 text-emerald-600 ml-1" />}
-                              </p>
+                              <p className="text-sm font-black leading-tight truncate">{prodElegido.nombre}</p>
                             ) : (
                               <p className="text-sm font-black leading-tight text-red-600 truncate">Sin coincidencia</p>
                             )}
                             <p className="text-[10px] text-muted-foreground truncate">leído: "{r.textoLeido}"</p>
                           </div>
-                          <input type="number" inputMode="numeric" value={r.cantidad}
-                            onChange={(e) => setRevisionFoto(prev => prev!.map((x, i) => i === idx ? { ...x, cantidad: parseInt(e.target.value) || 0 } : x))}
-                            className="w-14 h-8 text-center text-sm font-bold border rounded-lg bg-white dark:bg-background shrink-0" />
+                          {/* Sistema: leído en la foto vs. el valor REAL que ya conocemos */}
+                          <div className="text-center shrink-0 w-14">
+                            <p className="text-[9px] text-muted-foreground uppercase">Sistema</p>
+                            <p className={`text-xs font-bold ${prodElegido && r.sistemaLeido != null && r.sistemaLeido !== prodElegido.stock ? "text-amber-600" : ""}`}>
+                              {r.sistemaLeido ?? "—"}{prodElegido && r.sistemaLeido != null && r.sistemaLeido !== prodElegido.stock && <span className="block text-[8px]">real: {prodElegido.stock}</span>}
+                            </p>
+                          </div>
+                          <div className="text-center shrink-0">
+                            <p className="text-[9px] text-muted-foreground uppercase">Físico</p>
+                            <input type="number" inputMode="numeric" value={r.cantidad}
+                              onChange={(e) => setRevisionFoto(prev => prev!.map((x, i) => i === idx ? { ...x, cantidad: parseInt(e.target.value) || 0 } : x))}
+                              className="w-14 h-8 text-center text-sm font-bold border rounded-lg bg-white dark:bg-background" />
+                          </div>
                           <button type="button" onClick={() => setCorrigiendo(prev => ({ ...prev, [idx]: !prev[idx] }))}
                             className="h-8 w-8 shrink-0 rounded-lg bg-muted flex items-center justify-center" title="Corregir producto">
                             ✏️
                           </button>
                         </div>
+                        {/* Señales que coincidieron (triangulación): más señales = más confianza */}
+                        {r.señales && r.señales.length > 0 && (
+                          <p className="text-[9px] text-muted-foreground mt-1 pl-6">
+                            ✓ coincide por: {r.señales.join(", ")}
+                            {r.señales.length >= 2 && <span className="text-emerald-700 font-bold"> (doble verificación)</span>}
+                          </p>
+                        )}
 
                         {/* Corrección (oculta por defecto): candidatos cercanos + búsqueda manual */}
                         {abierto && (

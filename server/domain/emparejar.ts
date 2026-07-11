@@ -108,3 +108,48 @@ export function mejoresCandidatos(
     confianza: c.puntaje >= 0.78 ? "alta" : c.puntaje >= 0.58 ? "media" : "baja",
   }));
 }
+
+// ─── TRIANGULACIÓN para lectura de hojas de conteo (foto) ───
+// No confía en UNA sola señal (el número de fila puede leerse mal, el nombre
+// manuscrito puede tener errores). Combina TRES señales independientes:
+//   1. El NÚMERO de fila leído vs. el número real impreso en el catálogo.
+//   2. La cantidad de "SISTEMA" leída (impresa, no manuscrita) vs. el stock REAL
+//      que ya conocemos para cada producto — esta señal es fuerte porque no
+//      depende de interpretar letra manuscrita en absoluto, solo dígitos impresos.
+//   3. El nombre del producto leído (similitud difusa, tolera errores/abreviación).
+// Cuantas más señales coincidan en el MISMO producto, mayor la confianza.
+export type ProductoNumerado = { id: number; nombre: string; codigo?: string | null; stock: number; numero: number };
+export type LecturaFila = { numero: number | null; nombre: string; sistema: number | null };
+export type CandidatoTriangulado = {
+  id: number; nombre: string; codigo?: string | null; stock: number; numero: number;
+  puntaje: number; confianza: "alta" | "media" | "baja"; señales: string[];
+};
+
+export function triangularFila(lectura: LecturaFila, catalogo: ProductoNumerado[]): CandidatoTriangulado[] {
+  const nombreLimpio = normalizar(lectura.nombre || "");
+  const candidatos = catalogo.map((p) => {
+    let puntaje = 0;
+    const señales: string[] = [];
+    if (lectura.numero != null && p.numero === lectura.numero) {
+      puntaje += 0.35; señales.push("número de fila");
+    }
+    if (lectura.sistema != null && p.stock === lectura.sistema) {
+      puntaje += 0.4; señales.push("cantidad de sistema");
+    }
+    const simNombre = nombreLimpio ? puntuarCandidato(lectura.nombre, p.nombre) : 0;
+    puntaje += simNombre * 0.4;
+    if (simNombre >= 0.45) señales.push("nombre");
+    return { ...p, puntaje: Math.min(1, puntaje), señales };
+  })
+    .filter((c) => c.puntaje >= 0.3 && c.señales.length > 0)
+    .sort((a, b) => b.puntaje - a.puntaje)
+    .slice(0, 5);
+
+  return candidatos.map((c) => ({
+    ...c,
+    // Dos o más señales de acuerdo = confianza alta, sin importar qué tan
+    // "fuerte" sea cada una por separado — el acuerdo entre señales independientes
+    // es más confiable que una sola señal con puntaje alto.
+    confianza: c.señales.length >= 2 ? "alta" : c.puntaje >= 0.55 ? "media" : "baja",
+  }));
+}

@@ -7,7 +7,7 @@ import { esControlado } from "../domain/controlados";
 import { normTel } from "../domain/telefono";
 import { expandirBusqueda, principioDeMarca } from "../diccionario-principios";
 import { calcularDescuentosCascada } from "../domain/descuentos";
-import { mejoresCandidatos } from "../domain/emparejar";
+import { mejoresCandidatos, triangularFila } from "../domain/emparejar";
 
 let pasan = 0, fallan = 0;
 function test(nombre: string, fn: () => void) {
@@ -101,6 +101,28 @@ test("'omeprasol' (s por z) → OMEPRAZOL (alta)", () => {
 test("producto inexistente → sin candidatos (no inventa)", () => {
   const r = mejoresCandidatos("crema dental blanqueadora xyz", CATALOGO);
   assert.equal(r.length, 0);
+});
+
+// ─── 6. TRIANGULACIÓN: lectura de foto de conteo (número + sistema + nombre) ───
+console.log("\nTriangulación (foto de conteo, 3 señales):");
+const CATALOGO_NUM = [
+  { id: 1, nombre: "AMOXICILINA 500MG X50", stock: 14, numero: 12 },
+  { id: 2, nombre: "AMOXICILINA 250MG SUSP", stock: 30, numero: 13 },
+  { id: 3, nombre: "PARACETAMOL 500MG", stock: 200, numero: 45 },
+];
+test("número de fila mal leído: sistema+nombre desambiguan igual", () => {
+  const r = triangularFila({ numero: 11, nombre: "amoxicilina 500", sistema: 14 }, CATALOGO_NUM);
+  assert.equal(r[0]?.id, 1);
+  assert.equal(r[0]?.confianza, "alta");
+});
+test("nombre ambiguo (sin dosis): la cantidad de SISTEMA desambigua al producto correcto", () => {
+  const r = triangularFila({ numero: null, nombre: "amoxicilina", sistema: 30 }, CATALOGO_NUM);
+  assert.equal(r[0]?.id, 2); // el de stock=30, no el de stock=14
+});
+test("las 3 señales de acuerdo → confianza alta con las 3 señales listadas", () => {
+  const r = triangularFila({ numero: 45, nombre: "paracetamol 500", sistema: 200 }, CATALOGO_NUM);
+  assert.equal(r[0]?.id, 3);
+  assert.equal(r[0]?.señales.length, 3);
 });
 
 // ─── Resultado ───

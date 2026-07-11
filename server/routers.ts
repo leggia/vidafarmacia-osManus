@@ -1088,23 +1088,27 @@ const inventarioRouter = router({
       const isImage = input.mimeType.startsWith("image/");
       if (!isImage) return { error: "Sube una foto (imagen) de la hoja de conteo." };
       const dataUrl = `data:${input.mimeType};base64,${input.fileBase64}`;
-      let leidos: { numero: number | null; nombre: string; cantidad: number }[] = [];
+      let leidos: { numero: number | null; nombre: string; sistema: number | null; fisico: number }[] = [];
       try {
         const llmResult = await invokeLLM({
           messages: [
             { role: "system", content: "Eres experto en leer hojas de conteo de inventario de farmacia, incluida letra manuscrita. Respondes SOLO JSON válido." },
             { role: "user", content: [
-              { type: "text", text: `Esta foto es una hoja de conteo físico de inventario, con columnas: # (número de fila, impreso), Clase (A/B/C, impreso), Producto (impreso), Sistema (cantidad del sistema, IMPRESA), Físico (una CASILLA EN BLANCO donde el personal ANOTA A MANO la cantidad contada).
+              { type: "text", text: `Esta foto es una hoja de conteo físico de inventario, con columnas: # (número de fila, IMPRESO), Clase (A/B/C, impreso), Producto (nombre, impreso), Sistema (cantidad del sistema, IMPRESA a máquina), Físico (una CASILLA EN BLANCO donde el personal ANOTA A MANO la cantidad contada).
 
-⚠️ LA HOJA ESTÁ IMPRESA EN 2 COLUMNAS lado a lado (como un periódico). El orden de impresión es: primero TODA la columna IZQUIERDA de arriba a abajo (filas #1, #2, #3... en orden correlativo), y RECIÉN DESPUÉS continúa la columna DERECHA (con los números siguientes). NO leas fila por fila cruzando ambas columnas por su altura en la imagen (eso mezcla filas de columnas distintas que casualmente están a la misma altura y es la causa de errores). Para cada fila que reportes, usa el NÚMERO impreso en la columna "#" como identificador — es la fuente de verdad de qué producto es, más confiable que la posición en la imagen.
+⚠️ LA HOJA ESTÁ IMPRESA EN 2 COLUMNAS lado a lado (como un periódico). El orden de impresión es: primero TODA la columna IZQUIERDA de arriba a abajo (filas #1, #2, #3... en orden correlativo), y RECIÉN DESPUÉS continúa la columna DERECHA. NO leas fila por fila cruzando ambas columnas por su altura en la imagen (eso mezcla filas de columnas distintas que están a la misma altura y es causa de errores).
 
-TAREA CRÍTICA: extrae SOLO las filas donde la casilla "Físico" tiene algo ESCRITO A MANO por el personal. Esa casilla nace vacía (con borde de recuadro) — si está vacía o no distingues una anotación manuscrita clara ahí, esa fila NO se cuenta, aunque tenga otros datos impresos.
-- NUNCA copies el número de la columna "Sistema" como si fuera el "Físico". Son columnas distintas: Sistema está impresa (a máquina) y Físico es manuscrita (a mano, en el recuadro vacío).
-- Solo reporta un producto si estás seguro de que su casilla Físico fue modificada/llenada a mano Y de que el NÚMERO "#" que le asignas es el que está impreso junto a esa fila exacta. Ante la duda (del número o de la cantidad), omite la fila — es preferible reportar menos filas pero con certeza, que adivinar.
-- El NÚMERO DE FILA (columna "#", a la izquierda de cada fila, impreso) es la clave para identificar el producto correcto: léelo con cuidado, fila por fila. Si no se alcanza a leer con seguridad, pon null (no adivines un número).
+TAREA CRÍTICA: para CADA fila donde la casilla "Físico" tiene algo ESCRITO A MANO, repórtala con LOS 4 DATOS DE ESA FILA EXACTA (no te saltes ni mezcles filas):
+1. El número de la columna "#" (impreso, a la izquierda de la fila).
+2. El nombre del producto (columna "Producto", impreso).
+3. El número de la columna "Sistema" (IMPRESO A MÁQUINA, junto a Físico — NO es lo que escribió el personal).
+4. El número que el personal escribió A MANO en la casilla "Físico" (el recuadro en blanco).
+
+Los 4 datos deben venir DE LA MISMA FILA — verifica que el "Sistema" y el "Físico" que reportas están realmente al lado del mismo nombre y del mismo número "#", sin cruzarte a la fila de arriba/abajo o a la otra columna. Si no puedes leer con seguridad el número "#" o el "Sistema" de una fila, igual repórtala (pon null en lo que no puedas leer) — con el NOMBRE y el FÍSICO alcanza para intentar identificarla, pero entre más datos leas bien, mejor.
+- Si la casilla "Físico" está vacía o no hay nada escrito a mano ahí, OMITE esa fila por completo.
 
 Devuelve JSON:
-{"items":[{"numero": numero_de_fila_columna_#_o_null_si_no_se_ve, "nombre":"nombre del producto tal como se lee","cantidad": numero_entero_escrito_a_mano_en_Fisico}]}
+{"items":[{"numero": numero_columna_#_o_null, "nombre":"nombre del producto tal como se lee", "sistema": numero_columna_Sistema_o_null, "fisico": numero_entero_escrito_a_mano}]}
 - Responde SOLO el JSON.` },
               { type: "image_url", image_url: { url: dataUrl, detail: "high" } },
             ] },
@@ -1113,54 +1117,37 @@ Devuelve JSON:
         });
         const txt = (llmResult?.choices?.[0]?.message?.content || "").replace(/```json|```/g, "").trim();
         const parsed = JSON.parse(txt);
+        const aNumOrNull = (v: any) => v != null && !isNaN(Number(v)) ? Math.round(Number(v)) : null;
         leidos = Array.isArray(parsed?.items)
-          ? parsed.items.filter((i: any) => i?.nombre && i?.cantidad != null)
-              .map((i: any) => ({ numero: i.numero != null && !isNaN(Number(i.numero)) ? Math.round(Number(i.numero)) : null, nombre: i.nombre, cantidad: i.cantidad }))
+          ? parsed.items.filter((i: any) => i?.nombre && i?.fisico != null)
+              .map((i: any) => ({ numero: aNumOrNull(i.numero), nombre: i.nombre, sistema: aNumOrNull(i.sistema), fisico: Math.round(Number(i.fisico)) }))
           : [];
       } catch (e: any) {
-        return { error: "No se pudo leer la foto. Asegúrate de que se vean bien los nombres, el número de fila y las cantidades." };
+        return { error: "No se pudo leer la foto. Asegúrate de que se vean bien los nombres y las cantidades." };
       }
       if (leidos.length === 0) return { error: "No se encontraron cantidades en la foto." };
 
-      // Emparejar cada lectura contra los productos de la sesión (motor difuso).
-      // El NÚMERO DE FILA leído es la señal más precisa (ancla contra la hoja
-      // impresa); el nombre por similitud de texto es el respaldo/verificación.
-      const { mejoresCandidatos } = await import("./domain/emparejar");
-      const catalogo = input.productos.map((p) => p.nombre);
-      const porNumero = new Map(input.productos.filter((p) => p.numero != null).map((p) => [p.numero, p]));
+      // TRIANGULACIÓN: combina número de fila + cantidad de SISTEMA (que YA
+      // CONOCEMOS de antemano, la imprimimos nosotros) + nombre — no depende de
+      // una sola señal manuscrita/leída. Ver server/domain/emparejar.ts.
+      const { triangularFila } = await import("./domain/emparejar");
+      const catalogoNumerado = input.productos
+        .filter((p) => p.numero != null && p.stock != null)
+        .map((p) => ({ id: p.id, nombre: p.nombre, codigo: p.codigo || null, stock: p.stock!, numero: p.numero! }));
 
       const resultados = leidos.map((l) => {
-        const cands = mejoresCandidatos(l.nombre, catalogo, 5); // más opciones "cercanas" para elegir
-        const porNombreMap = new Map(input.productos.map((p) => [p.nombre, p]));
-        const candidatosEnriquecidos = cands.map((c) => {
-          const pr = porNombreMap.get(c.nombre);
-          return pr ? { id: pr.id, nombre: pr.nombre, codigo: pr.codigo || null, stock: pr.stock ?? null, confianza: c.confianza } : null;
-        }).filter(Boolean) as any[];
-
-        // Candidato por NÚMERO DE FILA leído (ancla contra la hoja impresa)
-        const prodPorNumero = l.numero != null ? porNumero.get(l.numero) : undefined;
-        let sugerido: any = null;
-        let viaNumero = false;
-        if (prodPorNumero) {
-          // Confianza alta directa por número; si además el nombre coincide bien, mejor aún.
-          sugerido = { id: prodPorNumero.id, nombre: prodPorNumero.nombre, confianza: "alta" };
-          viaNumero = true;
-          // Asegurar que esté primero en la lista de candidatos mostrados
-          if (!candidatosEnriquecidos.some((c) => c.id === prodPorNumero.id)) {
-            candidatosEnriquecidos.unshift({ id: prodPorNumero.id, nombre: prodPorNumero.nombre, codigo: prodPorNumero.codigo || null, stock: prodPorNumero.stock ?? null, confianza: "alta" });
-          }
-        } else {
-          const mejor = candidatosEnriquecidos[0];
-          sugerido = mejor && mejor.confianza !== "baja" ? { id: mejor.id, nombre: mejor.nombre, confianza: mejor.confianza } : null;
-        }
-
+        const cands = triangularFila({ numero: l.numero, nombre: l.nombre, sistema: l.sistema }, catalogoNumerado);
+        const candidatos = cands.map((c) => ({ id: c.id, nombre: c.nombre, codigo: c.codigo, stock: c.stock, numero: c.numero, confianza: c.confianza, señales: c.señales }));
+        const mejor = candidatos[0];
+        const sugerido = mejor && mejor.confianza !== "baja" ? { id: mejor.id, nombre: mejor.nombre, confianza: mejor.confianza } : null;
         return {
           numeroLeido: l.numero,
           textoLeido: l.nombre,
-          cantidad: Math.round(Number(l.cantidad)),
+          sistemaLeido: l.sistema,
+          cantidad: l.fisico,
           sugerido,
-          viaNumero,
-          candidatos: candidatosEnriquecidos.slice(0, 5),
+          señales: mejor?.señales || [],
+          candidatos,
         };
       });
       const emparejados = resultados.filter((r) => r.sugerido).length;
