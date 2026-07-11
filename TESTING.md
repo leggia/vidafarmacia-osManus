@@ -57,6 +57,19 @@ Verificar manualmente cuando se toca la tienda o los permisos:
 - **Llamadas a 365 al arrancar** → el servidor debe escuchar primero.
 - **Zona horaria** (servidor UTC, Bolivia UTC-4) → usar `ahoraBolivia()`.
 - **365 rechaza peticiones muy rápidas** → reintentos + pausa.
+- **Migración idempotente que solo corre en UN endpoint** → si una tabla tiene
+  columnas nuevas agregadas por `ALTER TABLE ... ADD COLUMN` (patrón try/catch
+  correcto), esa migración debe llamarse al **inicio de TODOS los endpoints que
+  leen o escriben esa tabla**, no solo el primero que se escribió. Si un endpoint
+  de solo LECTURA corre antes de que cualquier endpoint de escritura haya
+  disparado el ALTER, la consulta falla con "Unknown column" y el error se
+  disfraza de "no hay datos" en el frontend — pasó con Inventario (v2.10.3): los
+  inventarios existían, pero `listarSesiones` reventaba en silencio antes de que
+  nadie completara un conteo nuevo. **Patrón correcto:** extraer la migración a
+  una función compartida nombrada (`asegurarColumnasX(db)`) y llamarla al inicio
+  de cada endpoint que toca esa tabla — nunca dejarla inline en un solo lugar.
+  Cubierto parcialmente por `scripts/verificar.mjs` (ver más abajo), pero requiere
+  también revisión manual al agregar columnas a una tabla existente.
 
 ## Smoke tests (lógica crítica, sin BD)
 

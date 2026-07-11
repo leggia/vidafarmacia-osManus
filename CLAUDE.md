@@ -61,6 +61,19 @@ node scripts/verificar.mjs   # o: npm run verificar
 
 No hacer push si falla. Ver `TESTING.md` para el checklist completo de release.
 
+## Migraciones idempotentes (columnas nuevas en tablas existentes)
+
+Si agregas una columna a una tabla existente con `ALTER TABLE ... ADD COLUMN`
+(patrón try/catch), extráela a una función compartida nombrada
+(`asegurarColumnasX(db)`) y llámala al **inicio de TODOS los endpoints** que leen
+o escriben esa tabla — no solo el primero que se escribió. Si la dejas inline en
+un solo endpoint, cualquier OTRO endpoint (típicamente uno de lectura, que corre
+apenas se abre una pantalla) puede fallar con "Unknown column" antes de que la
+migración se dispare, y el error se disfraza de "no hay datos" en el frontend.
+Pasó en producción (v2.10.3, inventarios "desaparecidos"). `npm run verificar`
+detecta el caso más simple (helper definido pero llamado 0-1 veces); igual
+revisa manualmente cada endpoint que toque la tabla.
+
 ## Automatizaciones y DeepSeek (horario pico)
 
 Si construyes una automatización que llame a DeepSeek SIN intervención humana

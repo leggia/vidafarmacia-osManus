@@ -123,6 +123,31 @@ function chequearReexportSinBinding(archivo, contenido) {
   return problemas;
 }
 
+// ─── 1c. Migración compartida llamada desde muy pocos lugares (v2.10.3) ───
+// Detecta el patrón real que rompió Inventario en producción: una función
+// `asegurarColumnasX(db)` que contiene un ALTER TABLE pero se llama desde muy
+// pocos endpoints — si hay más de un endpoint que toca esa tabla, todos deben
+// llamarla al inicio, o alguno puede fallar con "Unknown column" antes de que la
+// migración se dispare (el error se disfraza de "no hay datos" en el frontend).
+// Solo mira funciones que RECIBEN `db` como parámetro (el patrón compartido); los
+// `asegurarTablas()` sin parámetro de cada módulo (llaman a getDb() internamente,
+// se invocan liberalmente) no aplican aquí.
+function chequearMigracionCompartida(contenido) {
+  const problemas = [];
+  const helperRe = /async function (asegurar\w*)\s*\(\s*db\b[^)]*\)\s*{/g;
+  let hm;
+  while ((hm = helperRe.exec(contenido)) !== null) {
+    const nombre = hm[1];
+    const fragmento = contenido.slice(hm.index, hm.index + 1000);
+    if (!/ALTER TABLE/.test(fragmento)) continue;
+    const llamadas = (contenido.match(new RegExp(`\\b${nombre}\\s*\\(\\s*db\\s*\\)`, "g")) || []).length;
+    if (llamadas < 2) {
+      problemas.push(`   ⚠ La migración '${nombre}' (ALTER TABLE, recibe 'db') se llama ${llamadas} vez/veces. Si hay más de un endpoint que lee/escribe esa tabla, TODOS deben llamarla al inicio — si no, alguno puede fallar con "Unknown column" y disfrazarse de "no hay datos" (ver TESTING.md, caso real v2.10.3).`);
+    }
+  }
+  return problemas;
+}
+
 // ─── 2. Balance de llaves y paréntesis ───
 function chequearBalance(contenido) {
   let llaves = 0, parentesis = 0;
@@ -188,6 +213,7 @@ for (const archivo of archivos) {
   const problemas = [
     ...chequearUseBeforeDeclaration(archivo, contenido),
     ...chequearReexportSinBinding(archivo, contenido),
+    ...chequearMigracionCompartida(contenido),
     ...chequearCompilacion(archivo),
   ];
   if (problemas.length > 0) {
