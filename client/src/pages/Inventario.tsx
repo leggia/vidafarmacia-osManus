@@ -45,6 +45,8 @@ export default function Inventario() {
   const [resumen, setResumen] = useState<any>(null);
   const [cargando, setCargando] = useState(false);
   const [busqueda, setBusqueda] = useState("");
+  const [busquedaHistorial, setBusquedaHistorial] = useState("");
+  const [filtroEstadoHistorial, setFiltroEstadoHistorial] = useState<"todos" | "completado" | "en_progreso">("todos");
   const [soloDiferencias, setSoloDiferencias] = useState(false);
   const [filtroClase, setFiltroClase] = useState<string | null>(null);
   const [ajustarStock, setAjustarStock] = useState(true);
@@ -282,12 +284,28 @@ export default function Inventario() {
   }, [items, busqueda, filtroClase, soloDiferencias]);
 
   const guardarProveedor = async (completar: boolean) => {
-    const conteos = items.filter(i => i.fisico !== null).map(i => ({
+    // Los productos con Físico escrito: van con su cantidad real.
+    const contadosExplicitos = items.filter(i => i.fisico !== null).map(i => ({
       articuloId: i.id, nombre: i.nombre, stockSistema: i.stock,
       stockFisico: i.fisico!, diferencia: i.fisico! - i.stock,
       fechaVencimiento: i.vencimiento || null,
       inventarioId: i.inventarioId ?? null,
     }));
+    // Al COMPLETAR: los productos que quedaron en blanco se entienden como
+    // REVISADOS Y COINCIDENTES con el sistema (el flujo real es contar todo
+    // físicamente y solo anotar lo que difiere) — quedan registrados con
+    // diferencia 0 para el respaldo/auditoría, y el inventario avanza al 100%.
+    // Mientras se sigue contando (guardar borrador), NO se asume esto — solo se
+    // guarda lo que ya se marcó, para no dar por completado algo a medio hacer.
+    const confirmadosSinCambio = completar
+      ? items.filter(i => i.fisico === null).map(i => ({
+          articuloId: i.id, nombre: i.nombre, stockSistema: i.stock,
+          stockFisico: i.stock, diferencia: 0,
+          fechaVencimiento: i.vencimiento || null,
+          inventarioId: i.inventarioId ?? null,
+        }))
+      : [];
+    const conteos = [...contadosExplicitos, ...confirmadosSinCambio];
     if (conteos.length === 0) { toast.error("No has contado ningún producto"); return; }
 
     // Confirmación antes de ajustar el stock real (operación que modifica el inventario)
@@ -412,6 +430,19 @@ export default function Inventario() {
     : c === "B" ? "bg-amber-100 text-amber-700 dark:bg-amber-950 dark:text-amber-300"
     : "bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400";
 
+  // Historial siempre accesible: filtro para encontrar una sesión pasada
+  // (soporte para revisiones posteriores) sin depender de scrollear todo.
+  const sesionesFiltradas = useMemo(() => {
+    if (!sesiones) return [];
+    let r = sesiones;
+    if (busquedaHistorial.trim()) {
+      const q = busquedaHistorial.toLowerCase().trim();
+      r = r.filter((s: any) => `${s.nombre} ${s.almacenNombre || ""}`.toLowerCase().includes(q));
+    }
+    if (filtroEstadoHistorial !== "todos") r = r.filter((s: any) => s.estado === filtroEstadoHistorial);
+    return r;
+  }, [sesiones, busquedaHistorial, filtroEstadoHistorial]);
+
   // ─── VISTA: Lista de sesiones ──────────────────────────────
   if (vista === "sesiones") {
     return (
@@ -429,6 +460,21 @@ export default function Inventario() {
           <Button onClick={() => setVista("nueva")} className="gap-2"><Plus className="h-4 w-4" /> Nuevo</Button>
         </div>
 
+        {(sesiones?.length || 0) > 0 && (
+          <div className="flex items-center gap-2">
+            <div className="relative flex-1">
+              <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+              <Input value={busquedaHistorial} onChange={(e) => setBusquedaHistorial(e.target.value)} placeholder="Buscar en el historial (nombre, sucursal)…" className="h-9 text-xs pl-8" />
+            </div>
+            <select value={filtroEstadoHistorial} onChange={(e) => setFiltroEstadoHistorial(e.target.value as any)}
+              className="h-9 px-2 rounded-lg border text-xs bg-background">
+              <option value="todos">Todos</option>
+              <option value="completado">Completados</option>
+              <option value="en_progreso">En progreso</option>
+            </select>
+          </div>
+        )}
+
         {cargandoSesiones ? (
           <div className="flex justify-center py-16"><Loader2 className="h-7 w-7 animate-spin text-primary" /></div>
         ) : errorSesiones ? (
@@ -445,9 +491,14 @@ export default function Inventario() {
             <p className="text-xs text-muted-foreground mb-4">Crea tu primer inventario para empezar</p>
             <Button onClick={() => setVista("nueva")} className="gap-2"><Plus className="h-4 w-4" /> Nuevo inventario</Button>
           </div>
+        ) : sesionesFiltradas.length === 0 ? (
+          <div className="text-center py-16 border border-dashed border-foreground/20 rounded-lg">
+            <Search className="h-10 w-10 mx-auto text-muted-foreground mb-3" />
+            <p className="text-sm font-medium">Sin resultados para ese filtro</p>
+          </div>
         ) : (
           <div className="space-y-2">
-            {sesiones.map((s: any) => {
+            {sesionesFiltradas.map((s: any) => {
               // Progreso sobre el TOTAL de proveedores del sistema
               const totalProv = s.totalProveedores > 0 ? s.totalProveedores : s.proveedoresInventariados;
               const pct = totalProv > 0 ? Math.round((s.proveedoresCompletados / totalProv) * 100) : 0;
@@ -851,7 +902,8 @@ export default function Inventario() {
                         {/* Fila estilo "como la hoja impresa": # · Nombre · Sistema · Físico */}
                         <div className="flex items-center gap-2">
                           {r.numeroLeido != null ? (
-                            <span className="text-[10px] font-black shrink-0 px-1.5 py-0.5 rounded bg-gray-800 text-white" title="Número de fila leído en la hoja impresa">#{r.numeroLeido}</span>
+                            <span className={`text-[10px] font-black shrink-0 px-1.5 py-0.5 rounded text-white ${r.numeroSospechoso ? "bg-amber-600 line-through decoration-2" : "bg-gray-800"}`}
+                              title={r.numeroSospechoso ? "Este número no encaja en la secuencia con sus filas vecinas — probablemente mal leído, no se usó para identificar el producto" : "Número de fila leído en la hoja impresa"}>#{r.numeroLeido}</span>
                           ) : (
                             <span className="text-[10px] font-bold shrink-0 px-1.5 py-0.5 rounded bg-amber-100 text-amber-700" title="No se pudo leer el número de fila">#?</span>
                           )}

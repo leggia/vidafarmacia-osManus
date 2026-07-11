@@ -153,3 +153,27 @@ export function triangularFila(lectura: LecturaFila, catalogo: ProductoNumerado[
     confianza: c.señales.length >= 2 ? "alta" : c.puntaje >= 0.55 ? "media" : "baja",
   }));
 }
+
+// ─── Verificación de secuencia (triangulación ADELANTE-ATRÁS entre filas) ───
+// Los números de fila leídos deben ser NO-DECRECIENTES en el orden de lectura
+// (columna izquierda completa, luego la derecha — así se imprime). Si el número
+// de UNA fila rompe el orden respecto a su vecino ANTERIOR *y también* respecto
+// a su vecino SIGUIENTE (rompe en ambas direcciones), es señal de que ese número
+// puntual se leyó mal — no se descarta la fila entera, solo se deja de confiar en
+// su número como señal aislada (el nombre y la cantidad de sistema siguen
+// aportando). Así ninguna fila "rompe la cadena" de las que la rodean.
+export function numerosSospechosos(leidos: { numero: number | null }[]): boolean[] {
+  return leidos.map((l, i) => {
+    if (l.numero == null) return false;
+    let prev: number | null = null;
+    for (let j = i - 1; j >= 0; j--) { if (leidos[j].numero != null) { prev = leidos[j].numero; break; } }
+    let next: number | null = null;
+    for (let j = i + 1; j < leidos.length; j++) { if (leidos[j].numero != null) { next = leidos[j].numero; break; } }
+    // Solo confiamos en los vecinos como referencia si ELLOS están en orden entre
+    // sí (si el vecino también está mal, no lo usamos para culpar a esta fila).
+    const vecinosConsistentes = prev != null && next != null && prev <= next;
+    if (!vecinosConsistentes) return false;
+    const noEncajaEntreVecinos = (prev != null && l.numero! < prev) || (next != null && l.numero! > next);
+    return noEncajaEntreVecinos;
+  });
+}

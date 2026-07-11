@@ -1130,18 +1130,26 @@ Devuelve JSON:
       // TRIANGULACIÓN: combina número de fila + cantidad de SISTEMA (que YA
       // CONOCEMOS de antemano, la imprimimos nosotros) + nombre — no depende de
       // una sola señal manuscrita/leída. Ver server/domain/emparejar.ts.
-      const { triangularFila } = await import("./domain/emparejar");
+      const { triangularFila, numerosSospechosos } = await import("./domain/emparejar");
       const catalogoNumerado = input.productos
         .filter((p) => p.numero != null && p.stock != null)
         .map((p) => ({ id: p.id, nombre: p.nombre, codigo: p.codigo || null, stock: p.stock!, numero: p.numero! }));
 
-      const resultados = leidos.map((l) => {
-        const cands = triangularFila({ numero: l.numero, nombre: l.nombre, sistema: l.sistema }, catalogoNumerado);
+      // Triangulación ADELANTE-ATRÁS: un número que no encaja entre sus vecinos
+      // (que sí están en orden entre ellos) probablemente se leyó mal — se deja
+      // de usar como señal para ESA fila puntual, sin romper el resto de la
+      // cadena; el nombre y la cantidad de sistema siguen aportando igual.
+      const sospechosos = numerosSospechosos(leidos.map((l) => ({ numero: l.numero })));
+
+      const resultados = leidos.map((l, idx) => {
+        const numeroConfiable = sospechosos[idx] ? null : l.numero;
+        const cands = triangularFila({ numero: numeroConfiable, nombre: l.nombre, sistema: l.sistema }, catalogoNumerado);
         const candidatos = cands.map((c) => ({ id: c.id, nombre: c.nombre, codigo: c.codigo, stock: c.stock, numero: c.numero, confianza: c.confianza, señales: c.señales }));
         const mejor = candidatos[0];
         const sugerido = mejor && mejor.confianza !== "baja" ? { id: mejor.id, nombre: mejor.nombre, confianza: mejor.confianza } : null;
         return {
           numeroLeido: l.numero,
+          numeroSospechoso: sospechosos[idx],
           textoLeido: l.nombre,
           sistemaLeido: l.sistema,
           cantidad: l.fisico,

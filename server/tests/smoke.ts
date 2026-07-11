@@ -7,7 +7,7 @@ import { esControlado } from "../domain/controlados";
 import { normTel } from "../domain/telefono";
 import { expandirBusqueda, principioDeMarca } from "../diccionario-principios";
 import { calcularDescuentosCascada } from "../domain/descuentos";
-import { mejoresCandidatos, triangularFila } from "../domain/emparejar";
+import { mejoresCandidatos, triangularFila, numerosSospechosos } from "../domain/emparejar";
 
 let pasan = 0, fallan = 0;
 function test(nombre: string, fn: () => void) {
@@ -123,6 +123,15 @@ test("las 3 señales de acuerdo → confianza alta con las 3 señales listadas",
   const r = triangularFila({ numero: 45, nombre: "paracetamol 500", sistema: 200 }, CATALOGO_NUM);
   assert.equal(r[0]?.id, 3);
   assert.equal(r[0]?.señales.length, 3);
+});
+test("secuencia con hueco legítimo (no se contó todo) NO se marca sospechosa", () => {
+  const r = numerosSospechosos([{ numero: 10 }, { numero: 11 }, { numero: 17 }, { numero: 30 }, { numero: 31 }]);
+  assert.deepEqual(r, [false, false, false, false, false]);
+});
+test("número que rompe el orden entre sus DOS vecinos (adelante y atrás) → sospechoso", () => {
+  // "17" probablemente debería ser "71" (dígitos invertidos) — queda entre 69 y 71 en la lectura pero no en valor
+  const r = numerosSospechosos([{ numero: 68 }, { numero: 69 }, { numero: 17 }, { numero: 71 }, { numero: 72 }]);
+  assert.deepEqual(r, [false, false, true, false, false]);
 });
 
 // ─── Resultado ───
