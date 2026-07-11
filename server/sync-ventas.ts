@@ -144,11 +144,13 @@ export async function repararDetallesFaltantes(limite = 15): Promise<{ reparadas
   const db = await getDb();
   if (!db) return { reparadas: 0, pendientes: 0 };
 
+  // Anti-join con NOT EXISTS: usa el índice idx_detalle_venta y corta temprano
+  // con el LIMIT. (La versión anterior con LEFT JOIN + GROUP BY agrupaba TODA la
+  // tabla antes de limitar — atascaba la BD en producción.)
   const rs: any = await db.execute(sql`
     SELECT v.id, v.fecha, v.nombreSucursal FROM ventas v
-    LEFT JOIN ventas_detalle d ON d.ventaId = v.id
-    WHERE d.id IS NULL AND v.total > 0
-    GROUP BY v.id, v.fecha, v.nombreSucursal
+    WHERE v.total > 0
+      AND NOT EXISTS (SELECT 1 FROM ventas_detalle d WHERE d.ventaId = v.id)
     LIMIT ${limite + 50}
   `);
   const sinDetalle = Array.isArray(rs) ? rs[0] : rs?.rows ?? rs;

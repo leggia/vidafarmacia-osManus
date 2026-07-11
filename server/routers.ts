@@ -1780,24 +1780,29 @@ const ventasRouter = router({
       const hoy = new Date();
       const am = input?.anioMes || `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, "0")}`;
       const filas = (r: any) => { const x = Array.isArray(r) ? r[0] : r?.rows ?? r; return Array.isArray(x) ? x : []; };
+      // Rango de fechas (usa el índice idx_ventas_fecha; DATE_FORMAT lo anulaba y
+      // hacía full scan — contribuía a colgar la BD chica de producción)
+      const [anioD, mesD] = am.split("-").map(Number);
+      const desde = `${am}-01`;
+      const sigMes = mesD === 12 ? `${anioD + 1}-01-01` : `${anioD}-${String(mesD + 1).padStart(2, "0")}-01`;
 
       const porSucursal = filas(await db.execute(sql`
         SELECT nombreSucursal, COUNT(*) AS n, COALESCE(SUM(total),0) AS monto
-        FROM ventas WHERE DATE_FORMAT(fecha, '%Y-%m') = ${am}
+        FROM ventas WHERE fecha >= ${desde} AND fecha < ${sigMes}
         GROUP BY nombreSucursal ORDER BY monto DESC
       `));
       const porDia = filas(await db.execute(sql`
         SELECT fecha, COUNT(*) AS n, COALESCE(SUM(total),0) AS monto
-        FROM ventas WHERE DATE_FORMAT(fecha, '%Y-%m') = ${am}
+        FROM ventas WHERE fecha >= ${desde} AND fecha < ${sigMes}
         GROUP BY fecha ORDER BY fecha
       `));
       const sinDetalle = filas(await db.execute(sql`
         SELECT COUNT(*) AS n FROM ventas v
-        LEFT JOIN ventas_detalle d ON d.ventaId = v.id
-        WHERE DATE_FORMAT(v.fecha, '%Y-%m') = ${am} AND d.id IS NULL AND v.total > 0
+        WHERE v.fecha >= ${desde} AND v.fecha < ${sigMes} AND v.total > 0
+          AND NOT EXISTS (SELECT 1 FROM ventas_detalle d WHERE d.ventaId = v.id)
       `));
       const totales = filas(await db.execute(sql`
-        SELECT COUNT(*) AS n, COALESCE(SUM(total),0) AS monto FROM ventas WHERE DATE_FORMAT(fecha, '%Y-%m') = ${am}
+        SELECT COUNT(*) AS n, COALESCE(SUM(total),0) AS monto FROM ventas WHERE fecha >= ${desde} AND fecha < ${sigMes}
       `));
 
       // Días del mes transcurridos SIN ninguna venta registrada (sospechoso en una
