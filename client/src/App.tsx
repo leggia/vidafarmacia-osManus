@@ -65,7 +65,7 @@ function Router() {
     return <TiendaClientes />;
   }
 
-  // Rol "regente": asistente + consulta + inventario + asistencia + fotos.
+  // Rol "regente": asistente + consulta + inventario + transferencias + asistencia + fotos.
   if (user?.role === "regente") {
     return (
       <DashboardLayout>
@@ -73,6 +73,8 @@ function Router() {
           <Route path="/" component={Consulta} />
           <Route path="/asistente" component={Asistente} />
           <Route path="/inventario" component={Inventario} />
+          <Route path="/transferencias" component={Transferencias} />
+          <Route path="/transferencias/nueva" component={NuevaTransferencia} />
           <Route path="/fotos" component={FotosProductos} />
           <Route path="/asistencia" component={Asistencia} />
           <Route path="/reservas" component={Reservas} />
