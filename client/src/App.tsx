@@ -27,6 +27,7 @@ import Privacidad from "./pages/Privacidad";
 import Creditos from "./pages/Creditos";
 import Personal from "./pages/Personal";
 import FlujoCaja from "./pages/FlujoCaja";
+import Contingencia from "./pages/Contingencia";
 import { useAuth } from "./_core/hooks/useAuth";
 import { useLocation } from "wouter";
 import { LogOut } from "lucide-react";
@@ -75,6 +76,7 @@ function Router() {
           <Route path="/inventario" component={Inventario} />
           <Route path="/transferencias" component={Transferencias} />
           <Route path="/transferencias/nueva" component={NuevaTransferencia} />
+          <Route path="/contingencia" component={Contingencia} />
           <Route path="/fotos" component={FotosProductos} />
           <Route path="/asistencia" component={Asistencia} />
           <Route path="/reservas" component={Reservas} />
@@ -93,11 +95,15 @@ function Router() {
       <div className="min-h-screen">
         <div className="flex items-center justify-between px-4 h-12 border-b bg-background">
           <span className="text-sm font-bold">VidaFarma</span>
-          <BotonCerrarSesion />
+          <div className="flex items-center gap-4">
+            <a href="/contingencia" className="text-xs font-bold text-red-600">Contingencia</a>
+            <BotonCerrarSesion />
+          </div>
         </div>
         <Switch>
           <Route path="/" component={Consulta} />
           <Route path="/reservas" component={Reservas} />
+          <Route path="/contingencia" component={Contingencia} />
           <Route component={Consulta} />
         </Switch>
       </div>
@@ -125,6 +131,7 @@ function Router() {
         <Route path="/creditos" component={Creditos} />
         <Route path="/personal" component={Personal} />
         <Route path="/flujo-caja" component={FlujoCaja} />
+        <Route path="/contingencia" component={Contingencia} />
         <Route path="/consulta" component={Consulta} />
         <Route path="/asistente" component={Asistente} />
         <Route path="/404" component={NotFound} />

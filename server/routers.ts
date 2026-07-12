@@ -2241,6 +2241,78 @@ const ventasRouter = router({
 const soloFinanzas = (ctx: any) => {
   if (ctx?.user?.role !== "admin" && ctx?.user?.role !== "regente") throw new Error("Solo administrador o regente.");
 };
+
+// ─── MODO CONTINGENCIA (365 caído): ventas locales por sucursal + cierre asistido ───
+const contingenciaRouter = router({
+  estado: protectedProcedure.query(async () => {
+    const { contingencia } = await import("./contingencia");
+    return contingencia.estado();
+  }),
+  activar: protectedProcedure
+    .input(z.object({ motivo: z.string().min(3).max(300) }))
+    .mutation(async ({ input, ctx }) => {
+      soloFinanzas(ctx);
+      const { contingencia } = await import("./contingencia");
+      return contingencia.activar(input.motivo);
+    }),
+  desactivar: protectedProcedure.mutation(async ({ ctx }) => {
+    soloFinanzas(ctx);
+    const { contingencia } = await import("./contingencia");
+    return contingencia.desactivar();
+  }),
+  // Búsqueda offline: la puede usar CUALQUIER rol (incluida la vendedora viewer)
+  buscarProducto: protectedProcedure
+    .input(z.object({ q: z.string().max(120) }))
+    .query(async ({ input }) => {
+      const { contingencia } = await import("./contingencia");
+      return contingencia.buscarProductoOffline(input.q);
+    }),
+  // Registrar venta: cualquier rol logueado — es el corazón de la contingencia
+  registrarVenta: protectedProcedure
+    .input(z.object({
+      sucursal: z.string().min(2).max(120),
+      items: z.array(z.object({
+        articuloId: z.number().nullable().optional(),
+        nombre: z.string().min(1).max(500),
+        cantidad: z.number().min(1).max(10000),
+        precioUnit: z.number().min(0.01).max(1000000),
+      })).min(1).max(60),
+      metodoPago: z.string().max(20).optional(),
+      nota: z.string().max(300).optional(),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      const { contingencia } = await import("./contingencia");
+      const usuario = (ctx as any)?.user?.email || (ctx as any)?.user?.name || `usuario-${(ctx as any)?.user?.id ?? "?"}`;
+      return contingencia.registrarVenta({ ...input, usuario });
+    }),
+  listar: protectedProcedure
+    .input(z.object({ estado: z.string().max(20).optional(), sucursal: z.string().max(120).optional() }).optional())
+    .query(async ({ input }) => {
+      const { contingencia } = await import("./contingencia");
+      return contingencia.listar({ estado: input?.estado, sucursal: input?.sucursal });
+    }),
+  marcarRegistrada: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      soloFinanzas(ctx);
+      const { contingencia } = await import("./contingencia");
+      const por = (ctx as any)?.user?.email || (ctx as any)?.user?.name || "admin";
+      return contingencia.marcarRegistrada(input.id, por);
+    }),
+  anular: protectedProcedure
+    .input(z.object({ id: z.number(), nota: z.string().min(2).max(250) }))
+    .mutation(async ({ input, ctx }) => {
+      soloFinanzas(ctx);
+      const { contingencia } = await import("./contingencia");
+      const por = (ctx as any)?.user?.email || (ctx as any)?.user?.name || "admin";
+      return contingencia.anular(input.id, input.nota, por);
+    }),
+  resumenCierre: protectedProcedure.query(async ({ ctx }) => {
+    soloFinanzas(ctx);
+    const { contingencia } = await import("./contingencia");
+    return contingencia.resumenCierre();
+  }),
+});
 // ─── Apartado personal PRIVADO (solo admin/dueño) ───
 const soloDueno = (ctx: any) => {
   if (ctx?.user?.role !== "admin") throw new Error("Apartado personal: solo el dueño (admin).");
@@ -3347,6 +3419,7 @@ export const appRouter = router({
   gastos: gastosRouter,
   flujoCaja: flujoCajaRouter,
   obligaciones: obligacionesRouter,
+  contingencia: contingenciaRouter,
   fidelizacion: fidelizacionRouter,
   marketing: marketingRouter,
   creditos: creditosRouter,

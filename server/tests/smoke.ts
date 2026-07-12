@@ -8,6 +8,7 @@ import { normTel } from "../domain/telefono";
 import { expandirBusqueda, principioDeMarca } from "../diccionario-principios";
 import { calcularDescuentosCascada } from "../domain/descuentos";
 import { mejoresCandidatos, triangularFila, numerosSospechosos } from "../domain/emparejar";
+import { calcularVenta, validarVenta } from "../domain/contingencia";
 
 let pasan = 0, fallan = 0;
 function test(nombre: string, fn: () => void) {
@@ -132,6 +133,24 @@ test("número que rompe el orden entre sus DOS vecinos (adelante y atrás) → s
   // "17" probablemente debería ser "71" (dígitos invertidos) — queda entre 69 y 71 en la lectura pero no en valor
   const r = numerosSospechosos([{ numero: 68 }, { numero: 69 }, { numero: 17 }, { numero: 71 }, { numero: 72 }]);
   assert.deepEqual(r, [false, false, true, false, false]);
+});
+
+// ─── 7. VENTAS DE CONTINGENCIA (365 caído) ───
+console.log("\nVentas de contingencia:");
+test("calcula subtotales y total con redondeo a 2 decimales", () => {
+  const r = calcularVenta([
+    { nombre: "PARACETAMOL 500MG", cantidad: 3, precioUnit: 1.5 },
+    { nombre: "AMOXICILINA 500MG", cantidad: 2, precioUnit: 4.33 },
+  ]);
+  assert.equal(r.items[0].subtotal, 4.5);
+  assert.equal(r.items[1].subtotal, 8.66);
+  assert.equal(r.total, 13.16);
+});
+test("rechaza venta sin productos, sin precio o con cantidad 0", () => {
+  assert.notEqual(validarVenta([]), null);
+  assert.notEqual(validarVenta([{ nombre: "X", cantidad: 0, precioUnit: 5 }]), null);
+  assert.notEqual(validarVenta([{ nombre: "X", cantidad: 1, precioUnit: 0 }]), null);
+  assert.equal(validarVenta([{ nombre: "X", cantidad: 1, precioUnit: 5 }]), null);
 });
 
 // ─── Resultado ───
