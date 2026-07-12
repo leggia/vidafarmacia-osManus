@@ -1128,6 +1128,38 @@ export const asistenteTools = {
   // 21. RESUMEN EJECUTIVO: el panorama del negocio en una sola consulta.
   // Ventas de hoy, ritmo del mes vs mes anterior al mismo día, pagos pendientes,
   // vencimientos cercanos y cajas abiertas.
+  // Uso y costo del propio asistente (DeepSeek V4 Flash), con hit-rate del caché
+  async usoIA(dias?: number) {
+    const { getDb } = await import("./db");
+    const { sql } = await import("drizzle-orm");
+    const db = await getDb();
+    if (!db) return { error: "Sin BD" };
+    const n = Math.min(Math.max(dias ?? 30, 1), 90);
+    let filasUso: any[] = [];
+    try {
+      const r: any = await db.execute(sql`SELECT fecha, llamadas, hitTokens, missTokens, outTokens FROM llm_uso_diario ORDER BY fecha DESC LIMIT ${n}`);
+      const x = Array.isArray(r) ? r[0] : r?.rows ?? r;
+      filasUso = Array.isArray(x) ? x : [];
+    } catch { return { nota: "Aún no hay registros de uso (empiezan a acumularse desde hoy)." }; }
+    if (filasUso.length === 0) return { nota: "Aún no hay registros de uso (empiezan a acumularse desde hoy)." };
+    const sum = (k: string) => filasUso.reduce((s, f) => s + Number(f[k] || 0), 0);
+    const hit = sum("hitTokens"), miss = sum("missTokens"), out = sum("outTokens"), llamadas = sum("llamadas");
+    const totalIn = hit + miss;
+    const hitRate = totalIn > 0 ? Math.round((hit / totalIn) * 100) : 0;
+    // Tarifas DeepSeek V4 Flash (jul 2026): hit $0.0028/M, miss $0.14/M, salida $0.28/M
+    const costoUSD = (hit * 0.0028 + miss * 0.14 + out * 0.28) / 1_000_000;
+    const costoSinCacheUSD = (totalIn * 0.14 + out * 0.28) / 1_000_000;
+    return {
+      periodo: `últimos ${filasUso.length} día(s) con actividad`,
+      llamadas,
+      tokensEntrada: totalIn, tokensSalida: out,
+      cacheHitRate: `${hitRate}%`,
+      costoEstimado: `$${costoUSD.toFixed(3)} USD`,
+      ahorroPorCache: `$${(costoSinCacheUSD - costoUSD).toFixed(3)} USD`,
+      nota: "Tarifas DeepSeek V4 Flash. El caché se aprovecha manteniendo idénticos el prompt del sistema y las herramientas en cada llamada.",
+    };
+  },
+
   async resumenEjecutivo() {
     const db = await getDb();
     if (!db) return { error: "Sin BD" };

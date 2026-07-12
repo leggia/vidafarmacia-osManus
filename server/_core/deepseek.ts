@@ -82,5 +82,42 @@ export async function invokeDeepSeek(params: DSParams): Promise<DSResult> {
     throw new Error(`DeepSeek invoke failed: ${resp.status} ${resp.statusText} – ${errText}`);
   }
 
-  return (await resp.json()) as DSResult;
+  const resultado = (await resp.json()) as DSResult;
+  // REGISTRO PERSISTENTE del uso (regla del proyecto: todo dato queda en nuestra
+  // BD): acumula por día llamadas, tokens de cache-hit/miss y salida — permite
+  // ver el hit-rate real y el costo estimado del asistente en cualquier momento.
+  registrarUsoLLM(resultado.usage).catch(() => { /* nunca bloquea la respuesta */ });
+  return resultado;
+}
+
+let tablaUsoLista = false;
+async function registrarUsoLLM(usage?: DSResult["usage"]) {
+  if (!usage) return;
+  try {
+    const { getDb } = await import("../db");
+    const { sql } = await import("drizzle-orm");
+    const db = await getDb();
+    if (!db) return;
+    if (!tablaUsoLista) {
+      try {
+        await db.execute(sql.raw(`CREATE TABLE IF NOT EXISTS llm_uso_diario (
+          fecha VARCHAR(10) PRIMARY KEY,
+          llamadas INT NOT NULL DEFAULT 0,
+          hitTokens BIGINT NOT NULL DEFAULT 0,
+          missTokens BIGINT NOT NULL DEFAULT 0,
+          outTokens BIGINT NOT NULL DEFAULT 0
+        )`));
+      } catch { /* existe */ }
+      tablaUsoLista = true;
+    }
+    const hoy = new Date(Date.now() - 4 * 3600 * 1000).toISOString().slice(0, 10); // día Bolivia (UTC-4)
+    const hit = usage.prompt_cache_hit_tokens ?? 0;
+    const miss = usage.prompt_cache_miss_tokens ?? Math.max(0, (usage.prompt_tokens || 0) - hit);
+    const out = usage.completion_tokens || 0;
+    await db.execute(sql`
+      INSERT INTO llm_uso_diario (fecha, llamadas, hitTokens, missTokens, outTokens)
+      VALUES (${hoy}, 1, ${hit}, ${miss}, ${out})
+      ON DUPLICATE KEY UPDATE llamadas = llamadas + 1, hitTokens = hitTokens + ${hit}, missTokens = missTokens + ${miss}, outTokens = outTokens + ${out}
+    `);
+  } catch { /* medición best-effort */ }
 }
