@@ -324,7 +324,7 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     payload.response_format = normalizedResponseFormat;
   }
 
-  const response = await fetch(resolveApiUrl(), {
+  let response = await fetch(resolveApiUrl(), {
     method: "POST",
     headers: {
       "content-type": "application/json",
@@ -332,6 +332,26 @@ export async function invokeLLM(params: InvokeParams): Promise<InvokeResult> {
     },
     body: JSON.stringify(payload),
   });
+
+  // RESILIENCIA: qwen3.6-27b es un modelo "preview" de Groq (puede discontinuarse
+  // sin aviso). Si la petición falla por el modelo (deprecado/no disponible),
+  // reintentar UNA vez con el modelo estable recomendado (openai/gpt-oss-120b) —
+  // mismo proveedor, misma tarifa, sin que nadie tenga que tocar nada. Solo para
+  // el modelo por defecto; si el llamador pidió un modelo explícito, se respeta.
+  if (!response.ok && !model && resolvedModel !== "openai/gpt-oss-120b") {
+    const errText = await response.clone().text().catch(() => "");
+    const esErrorModelo = response.status === 400 || response.status === 404 || /model|decommission|deprecat/i.test(errText);
+    if (esErrorModelo) {
+      console.warn(`[LLM] Modelo ${resolvedModel} falló (${response.status}). Reintentando con openai/gpt-oss-120b.`);
+      const payloadFallback = { ...payload, model: "openai/gpt-oss-120b" } as Record<string, unknown>;
+      delete payloadFallback.reasoning_effort; // gpt-oss usa low/medium/high, no "none"
+      response = await fetch(resolveApiUrl(), {
+        method: "POST",
+        headers: { "content-type": "application/json", authorization: `Bearer ${ENV.groqApiKey}` },
+        body: JSON.stringify(payloadFallback),
+      });
+    }
+  }
 
   if (!response.ok) {
     const errorText = await response.text();
