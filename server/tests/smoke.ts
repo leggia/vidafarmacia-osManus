@@ -9,6 +9,7 @@ import { expandirBusqueda, principioDeMarca } from "../diccionario-principios";
 import { calcularDescuentosCascada } from "../domain/descuentos";
 import { mejoresCandidatos, triangularFila, numerosSospechosos } from "../domain/emparejar";
 import { calcularVenta, validarVenta } from "../domain/contingencia";
+import { evaluarPrecio } from "../domain/compras";
 
 let pasan = 0, fallan = 0;
 function test(nombre: string, fn: () => void) {
@@ -151,6 +152,34 @@ test("rechaza venta sin productos, sin precio o con cantidad 0", () => {
   assert.notEqual(validarVenta([{ nombre: "X", cantidad: 0, precioUnit: 5 }]), null);
   assert.notEqual(validarVenta([{ nombre: "X", cantidad: 1, precioUnit: 0 }]), null);
   assert.equal(validarVenta([{ nombre: "X", cantidad: 1, precioUnit: 5 }]), null);
+});
+
+// ─── 8. INTELIGENCIA DE COMPRAS ───
+console.log("\nInteligencia de compras:");
+test("precio dentro de ±0.5% del histórico → 'igual' (no hay que revisar)", () => {
+  const r = evaluarPrecio(10.02, 10.00, null);
+  assert.equal(r.estado, "igual");
+});
+test("precio 15% más caro que el histórico → 'subio' con el % correcto", () => {
+  const r = evaluarPrecio(11.5, 10.00, null);
+  assert.equal(r.estado, "subio");
+  assert.equal(r.diffPct, 15);
+});
+test("precio más barato que el histórico → 'bajo'", () => {
+  const r = evaluarPrecio(9.00, 10.00, null);
+  assert.equal(r.estado, "bajo");
+});
+test("sin referencia (producto nunca comprado) → 'nuevo'", () => {
+  const r = evaluarPrecio(10.00, null, null);
+  assert.equal(r.estado, "nuevo");
+});
+test("costo nuevo deja margen bajo (<20%) contra el precio de venta → alerta", () => {
+  const r = evaluarPrecio(9.00, 10.00, 10.00); // venta 10, costo 9 → margen 10%
+  assert.equal(r.alertaMargen, true);
+});
+test("margen sano (>=20%) → sin alerta", () => {
+  const r = evaluarPrecio(7.00, 10.00, 10.00); // margen 30%
+  assert.equal(r.alertaMargen, false);
 });
 
 // ─── Resultado ───

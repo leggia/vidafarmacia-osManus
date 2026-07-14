@@ -37,6 +37,15 @@ const purchasesRouter = router({
     return db.listPurchases(ctx.user.id);
   }),
 
+  // INTELIGENCIA DE PRECIOS: compara cada precio de la factura contra la
+  // referencia (última compra propia > costo del sistema) y el margen de venta.
+  compararPrecios: protectedProcedure
+    .input(z.object({ items: z.array(z.object({ productName: z.string(), unitCost: z.number() })).min(1).max(200) }))
+    .mutation(async ({ input }) => {
+      const { compararPreciosCompra } = await import("./inteligencia-compras");
+      return compararPreciosCompra(input.items);
+    }),
+
   uploadAndExtract: protectedProcedure
     .input(
       z.object({
@@ -412,6 +421,11 @@ INSTRUCCIONES GENERALES:
             syncMessage = `Compra registrada en inventarios365.com (Ingreso ID: ${syncResult.ingresoId})`;
             syncIngresoId = syncResult.ingresoId;
             await db.updatePurchaseSyncStatus(purchaseId, "completed");
+            // Alimentar la referencia de precios propia (inteligencia de compras)
+            try {
+              const { registrarPreciosCompra } = await import("./inteligencia-compras");
+              await registrarPreciosCompra(itemsLimpios as any[], input.supplier || "");
+            } catch { /* no bloquea */ }
             if (syncResult.productosNoEncontrados && syncResult.productosNoEncontrados.length > 0) {
               syncMessage += ` | Productos no encontrados: ${syncResult.productosNoEncontrados.map((p: any) => p.nombre).join(", ")}`;
             }
@@ -446,6 +460,11 @@ INSTRUCCIONES GENERALES:
       // 1. Confirmar la compra en BD inmediatamente
       const purchase = await db.getPurchaseById(input.id);
       const result = await db.confirmPurchase(input.id, ctx.user.id);
+      // Alimentar la referencia de precios propia (inteligencia de compras)
+      try {
+        const { registrarPreciosCompra } = await import("./inteligencia-compras");
+        await registrarPreciosCompra((purchase?.items as any[]) || [], (purchase as any)?.supplier || "");
+      } catch { /* no bloquea */ }
 
       // 2. Sincronizar con inventarios365.com DIRECTAMENTE (await) — Cloud Run cancela setImmediate
       let syncSuccess2 = false;

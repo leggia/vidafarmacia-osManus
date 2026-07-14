@@ -188,6 +188,10 @@ export default function NuevaCompra() {
   const [modalExito, setModalExito] = useState<{ mensaje: string; ingresoId?: string } | null>(null);
   const [modalError, setModalError] = useState<{ mensaje: string } | null>(null);
   const [showExpiry, setShowExpiry] = useState(false);
+  // Inteligencia de precios: por cada producto, si se mantiene/subió/bajó vs la
+  // última compra propia (o el costo del sistema), y el margen contra la venta.
+  const [comparacionPrecios, setComparacionPrecios] = useState<Map<string, any>>(new Map());
+  const compararPrecios = trpc.purchases.compararPrecios.useMutation();
   const [receiptType, setReceiptType] = useState<"BOLETA" | "FACTURA">("FACTURA");
   const [almacenNombre, setAlmacenNombre] = useState("ALMACEN PRINCIPAL");
   const [productosNoEncontrados, setProductosNoEncontrados] = useState<ProductoNoEncontrado[]>([]);
@@ -407,6 +411,16 @@ export default function NuevaCompra() {
         if (mappedItems.some((i: any) => i.expiryDate)) {
           setShowExpiry(true);
         }
+        // Inteligencia de precios: compara cada costo contra la referencia
+        // conocida — así no hay que revisar manualmente los que se mantienen.
+        compararPrecios.mutate(
+          { items: mappedItems.map((i: any) => ({ productName: i.productName || "", unitCost: i.unitCost || 0 })) },
+          { onSuccess: (r: any) => {
+              const m = new Map<string, any>();
+              for (const it of r.items) m.set(it.productName, it);
+              setComparacionPrecios(m);
+            } }
+        );
             if (result.supplier) {
               setSupplier(result.supplier);
               setSupplierOriginal(result.supplier);
@@ -1040,6 +1054,24 @@ export default function NuevaCompra() {
               </div>
             </CardHeader>
             <CardContent>
+              {/* Resumen de inteligencia de precios: de un vistazo, si hace falta revisar algo */}
+              {comparacionPrecios.size > 0 && (() => {
+                const vals = Array.from(comparacionPrecios.values());
+                const igual = vals.filter((v: any) => v.estado === "igual").length;
+                const subio = vals.filter((v: any) => v.estado === "subio").length;
+                const bajo = vals.filter((v: any) => v.estado === "bajo").length;
+                const nuevo = vals.filter((v: any) => v.estado === "nuevo").length;
+                const alertas = vals.filter((v: any) => v.alertaMargen).length;
+                return (
+                  <div className="mb-3 p-2.5 rounded-lg bg-muted/50 border text-xs flex flex-wrap gap-x-3 gap-y-1">
+                    {igual > 0 && <span className="text-emerald-700 font-bold">✓ {igual} sin cambio</span>}
+                    {subio > 0 && <span className="text-red-600 font-bold">▲ {subio} subieron</span>}
+                    {bajo > 0 && <span className="text-sky-600 font-bold">▼ {bajo} bajaron</span>}
+                    {nuevo > 0 && <span className="text-sky-700 font-bold">● {nuevo} nuevo(s)</span>}
+                    {alertas > 0 && <span className="text-red-700 font-bold">⚠ {alertas} con margen bajo</span>}
+                  </div>
+                );
+              })()}
               {items.length > 0 ? (
                 <div className="space-y-2">
                   {/* Items (cada uno como tarjeta, nombre completo visible) */}
@@ -1058,6 +1090,25 @@ export default function NuevaCompra() {
                         <span className="absolute right-2 top-1/2 -translate-y-1/2 text-green-500 text-sm font-bold">✓</span>
                       )}
                     </div>
+                    {/* Inteligencia de precios: ✓ mismo precio (no revisar) / ▲▼ cambió / ● nuevo, + alerta de margen */}
+                    {(() => {
+                      const c = comparacionPrecios.get(item.productName);
+                      if (!c) return null;
+                      if (c.estado === "nuevo") {
+                        return <p className="text-[11px] font-bold text-sky-700">● Producto nuevo — sin historial, revisa el precio y catalógalo bien</p>;
+                      }
+                      if (c.estado === "igual") {
+                        return <p className="text-[11px] font-bold text-emerald-700">✓ Mismo precio de siempre — no hace falta revisar</p>;
+                      }
+                      const flecha = c.estado === "subio" ? "▲" : "▼";
+                      const color = c.estado === "subio" ? "text-red-600" : "text-sky-600";
+                      return (
+                        <p className={`text-[11px] font-bold ${color}`}>
+                          {flecha} {c.estado === "subio" ? "Subió" : "Bajó"} {Math.abs(c.diffPct)}% vs. {c.fuenteReferencia === "compra_anterior" ? "tu última compra" : "el costo del sistema"} (Bs {c.referencia?.toFixed(2)})
+                          {c.alertaMargen && <span className="text-red-700"> · ⚠ margen bajo ({c.margenPct}%)</span>}
+                        </p>
+                      );
+                    })()}
                     {/* Campos: cantidad, costo, vencimiento, subtotal, acciones */}
                     <div className="flex items-end gap-2 flex-wrap">
                       <div className="flex-1 min-w-[70px]">
