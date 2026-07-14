@@ -72,6 +72,10 @@ export default function Reportes() {
   });
 
   // Diagnóstico de completitud del mes + rescate (ventas faltantes / sin detalle)
+  // Tendencias y alertas proactivas (semana vs semana + serie 6 meses)
+  const [verTendencias, setVerTendencias] = useState(false);
+  const tendencias = trpc.ventas.tendencias.useQuery();
+
   const [verDiagnostico, setVerDiagnostico] = useState(false);
   const anioMesActual = new Date().toISOString().slice(0, 7);
   const diagnostico = trpc.ventas.diagnosticoMes.useQuery({ anioMes: anioMesActual }, { enabled: verDiagnostico });
@@ -156,6 +160,50 @@ export default function Reportes() {
             {sincronizar.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <RefreshCw className="h-3.5 w-3.5" />}
             Actualizar
           </button>
+        </div>
+
+        {/* ─── Tendencias y alertas proactivas ─── */}
+        <div className="rounded-xl border bg-card p-3">
+          <button onClick={() => setVerTendencias(!verTendencias)} className="w-full flex items-center justify-between text-xs font-bold">
+            <span>📈 Tendencias y alertas {tendencias.data?.resumen?.hayAlertas && !verTendencias && <span className="text-red-600">(¡hay avisos!)</span>}</span>
+            <span className="text-muted-foreground">{verTendencias ? "▲" : "▼"}</span>
+          </button>
+          {verTendencias && (
+            <div className="mt-3 space-y-3 text-xs">
+              {tendencias.isLoading ? <p className="text-muted-foreground">Comparando semanas…</p> : tendencias.data && !("error" in tendencias.data) ? (
+                <>
+                  {tendencias.data.resumen.mensajes.map((m: string, i: number) => (
+                    <p key={i} className="p-2 rounded-lg bg-red-50 dark:bg-red-950/20 border border-red-200 text-red-700 font-bold">⚠ {m}</p>
+                  ))}
+                  {!tendencias.data.resumen.hayAlertas && (
+                    <p className="text-emerald-700 font-bold">✓ Sin caídas ni subidas fuera de lo normal esta semana.</p>
+                  )}
+                  <div>
+                    <p className="font-bold text-muted-foreground mb-1">Esta semana vs. la anterior, por sucursal</p>
+                    <div className="space-y-1">
+                      {tendencias.data.semana.porSucursal.map((s: any) => (
+                        <div key={s.sucursal} className="flex items-center justify-between">
+                          <span>{s.sucursal}</span>
+                          <span className={`font-bold ${s.direccion === "bajo" ? "text-red-600" : s.direccion === "subio" ? "text-emerald-700" : "text-muted-foreground"}`}>
+                            Bs {s.montoActual.toLocaleString("es-BO")} {s.cambioPct != null && `(${s.cambioPct > 0 ? "+" : ""}${s.cambioPct}%)`}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                  <div>
+                    <p className="font-bold text-muted-foreground mb-1">Últimos 6 meses (total farmacia)</p>
+                    <ResponsiveContainer width="100%" height={140}>
+                      <BarChart data={tendencias.data.historicoMensual.map((m: any) => ({ mes: m.anioMes.slice(5), monto: m.monto }))}>
+                        <XAxis dataKey="mes" tick={{ fontSize: 10 }} />
+                        <Bar dataKey="monto" radius={[4, 4, 0, 0]} fill="#0ea5e9" />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </>
+              ) : <p className="text-red-600">No se pudo calcular.</p>}
+            </div>
+          )}
         </div>
 
         {/* ─── Diagnóstico de completitud de datos (ventas faltantes / sin detalle) ─── */}

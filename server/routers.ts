@@ -1792,6 +1792,12 @@ const cacheRentabilidadSucursal = new Map<string, { data: any; expira: number }>
 const RENTABILIDAD_TTL = 10 * 60 * 1000;
 
 const ventasRouter = router({
+  // Tendencias y alertas proactivas (semana actual vs anterior + serie 6 meses)
+  tendencias: protectedProcedure.query(async () => {
+    const { tendencias } = await import("./tendencias");
+    return tendencias();
+  }),
+
   // Resumen de UN mes (meses cerrados: del cache, al toque)
   resumenMensual: protectedProcedure
     .input(z.object({ anioMes: z.string().max(7), forzar: z.boolean().optional() }))

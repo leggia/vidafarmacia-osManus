@@ -505,9 +505,6 @@ Company of One — siempre el mejor modelo, se paga solo lo usado, cero mantenim
 - Hábito de las vendedoras: registrar el teléfono del cliente en 365 al facturar.
 
 **🔲 Pendiente — construible ahora:**
-- Finanzas — proyecciones de flujo de caja y alertas automáticas de margen bajo.
-- Inteligencia de negocio — panel de tendencias visual y alertas proactivas ("las
-  ventas de esta semana bajaron X% vs la pasada").
 - Legal — registro de dispensación de controlados en mostrador.
 - Testing — entorno de staging antes de producción.
 - Migrar el lector de facturas de compras de Groq a un modelo de visión vigente.

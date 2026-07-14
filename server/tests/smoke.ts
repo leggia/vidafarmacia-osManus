@@ -10,6 +10,7 @@ import { calcularDescuentosCascada } from "../domain/descuentos";
 import { mejoresCandidatos, triangularFila, numerosSospechosos } from "../domain/emparejar";
 import { calcularVenta, validarVenta } from "../domain/contingencia";
 import { evaluarPrecio } from "../domain/compras";
+import { compararPeriodo } from "../domain/tendencias";
 
 let pasan = 0, fallan = 0;
 function test(nombre: string, fn: () => void) {
@@ -180,6 +181,24 @@ test("costo nuevo deja margen bajo (<20%) contra el precio de venta → alerta",
 test("margen sano (>=20%) → sin alerta", () => {
   const r = evaluarPrecio(7.00, 10.00, 10.00); // margen 30%
   assert.equal(r.alertaMargen, false);
+});
+
+// ─── 9. TENDENCIAS Y ALERTAS PROACTIVAS ───
+console.log("\nTendencias:");
+test("caída de 20% vs. semana anterior → alerta, dirección 'bajo'", () => {
+  const r = compararPeriodo(800, 1000);
+  assert.equal(r.direccion, "bajo");
+  assert.equal(r.alerta, true);
+  assert.equal(r.cambioPct, -20);
+});
+test("cambio chico (5%) → sin alerta (no es ruido)", () => {
+  const r = compararPeriodo(1050, 1000);
+  assert.equal(r.alerta, false);
+  assert.equal(r.direccion, "subio");
+});
+test("sin ventas el período anterior → 'sin_datos', nunca alerta falsa", () => {
+  const r = compararPeriodo(500, 0);
+  assert.equal(r.alerta, false);
 });
 
 // ─── Resultado ───
