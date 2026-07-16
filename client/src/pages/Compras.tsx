@@ -247,6 +247,13 @@ export default function Compras() {
                           <span className="truncate max-w-sm">{p.syncError}</span>
                         </p>
                       )}
+                      {/* Precios que no quedaron aplicados en 365 (tras verificar y reintentar) */}
+                      {p.preciosFallidos && (
+                        <p className="text-xs text-red-700 mt-0.5 flex items-center gap-1 font-bold">
+                          <AlertCircle className="h-3 w-3 flex-shrink-0" />
+                          <span className="truncate max-w-sm">Precio de venta sin aplicar: {p.preciosFallidos}</span>
+                        </p>
+                      )}
                     </div>
                   </div>
 
@@ -262,19 +269,21 @@ export default function Compras() {
                     </div>
                     <StatusBadge status={p.status} syncError={p.syncError} />
 
-                    {/* SOLO PRECIOS: cuando 365 aplicó unos precios sí y otros no.
-                        No crea otro ingreso (re-sincronizar sí lo haría). */}
-                    {p.status !== "draft" && (
+                    {/* Reparar precios: SOLO aparece si la sincronización dejó
+                        algún precio sin aplicar. En el uso normal no se ve — la
+                        compra sincroniza todo junto (ingreso + costos + precios
+                        verificados) y este botón no hace falta. */}
+                    {p.preciosFallidos && (
                       <Button
                         size="sm"
                         variant="outline"
                         onClick={() => handleAplicarPrecios(p)}
                         disabled={aplicandoId === p.id}
-                        title="Volver a aplicar en 365 SOLO los precios de venta guardados de esta compra. No crea otro ingreso."
-                        className="gap-1 text-xs uppercase tracking-wider font-semibold border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                        title={`Precios que no quedaron en 365: ${p.preciosFallidos}. Los vuelve a aplicar (sin crear otro ingreso).`}
+                        className="gap-1 text-xs uppercase tracking-wider font-semibold border-red-300 text-red-700 hover:bg-red-50"
                       >
                         {aplicandoId === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3" />}
-                        Precios
+                        Corregir precios
                       </Button>
                     )}
 

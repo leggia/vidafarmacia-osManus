@@ -106,6 +106,7 @@ export async function listPurchases(userId: number) {
       syncError: purchases.syncError,
       syncAttempts: purchases.syncAttempts,
       syncIngresoId: purchases.syncIngresoId,
+      preciosFallidos: purchases.preciosFallidos,
     })
     .from(purchases)
     .leftJoin(branches, eq(purchases.branchId, branches.id))
@@ -505,12 +506,17 @@ export async function updatePurchaseSyncStatus(
   purchaseId: number,
   status: "completed" | "sync_error",
   errorMsg?: string,
-  ingresoId?: number
+  ingresoId?: number,
+  preciosFallidos?: string[]
 ) {
   const db = await getDb();
   if (!db) return;
 
   const cambios: any = { status: status as any, syncError: errorMsg || null };
+  // Qué precios quedaron sin aplicar (tras verificar y reintentar). Se guarda
+  // SIEMPRE que se sepa — incluida la lista vacía, que significa "todo quedó bien"
+  // y hace desaparecer el aviso de reparación.
+  if (preciosFallidos != null) cambios.preciosFallidos = preciosFallidos.length > 0 ? preciosFallidos.join(", ") : null;
   // Guardar el ID del ingreso de 365: identifica qué registro creó esta compra
   // (imprescindible para re-sincronizar sin dejar duplicados invisibles).
   if (ingresoId != null && !isNaN(Number(ingresoId))) cambios.syncIngresoId = Number(ingresoId);

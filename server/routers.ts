@@ -90,7 +90,7 @@ const purchasesRouter = router({
       }
 
       if (r?.success) {
-        await db.updatePurchaseSyncStatus(input.id, "completed", undefined, r.ingresoId);
+        await db.updatePurchaseSyncStatus(input.id, "completed", undefined, r.ingresoId, r.preciosVentaFallidos || []);
         try {
           const { registrarPreciosCompra } = await import("./inteligencia-compras");
           await registrarPreciosCompra((compra.items as any[]) || [], compra.supplier || "");
@@ -129,6 +129,17 @@ const purchasesRouter = router({
       }
       const { inventarios365 } = await import("./inventarios365");
       const r = await inventarios365.aplicarPreciosVenta(items, compra.supplier || "");
+      // Dejar registrado el resultado: si ya no falla ninguno, el aviso de
+      // reparación desaparece solo de la lista de compras.
+      try {
+        const { getDb } = await import("./db");
+        const { sql } = await import("drizzle-orm");
+        const dbx = await getDb();
+        if (dbx) {
+          const val = r.fallidos.length > 0 ? r.fallidos.join(", ") : null;
+          await dbx.execute(sql`UPDATE purchases SET preciosFallidos = ${val} WHERE id = ${input.id}`);
+        }
+      } catch { /* no bloquea */ }
       const partes: string[] = [];
       if (r.aplicados.length > 0) partes.push(`✅ ${r.aplicados.length} precio(s) ya correcto(s) en 365`);
       if (r.fallidos.length > 0) partes.push(`❌ ${r.fallidos.length} NO se aplicaron: ${r.fallidos.join(", ")}`);
@@ -523,7 +534,7 @@ INSTRUCCIONES GENERALES:
             syncSuccess = true;
             syncMessage = `Compra registrada en inventarios365.com (Ingreso ID: ${syncResult.ingresoId})`;
             syncIngresoId = syncResult.ingresoId;
-            await db.updatePurchaseSyncStatus(purchaseId, "completed", undefined, syncResult.ingresoId);
+            await db.updatePurchaseSyncStatus(purchaseId, "completed", undefined, syncResult.ingresoId, syncResult.preciosVentaFallidos || []);
             // Alimentar la referencia de precios propia (inteligencia de compras)
             try {
               const { registrarPreciosCompra } = await import("./inteligencia-compras");
@@ -600,7 +611,7 @@ INSTRUCCIONES GENERALES:
             syncSuccess2 = true;
             syncMessage2 = `Compra registrada en inventarios365.com (Ingreso ID: ${syncResult.ingresoId})`;
             syncIngresoId2 = syncResult.ingresoId;
-            await db.updatePurchaseSyncStatus(purchaseId, "completed", undefined, syncResult.ingresoId);
+            await db.updatePurchaseSyncStatus(purchaseId, "completed", undefined, syncResult.ingresoId, syncResult.preciosVentaFallidos || []);
           } else {
             syncSuccess2 = false;
             syncMessage2 = syncResult.message;

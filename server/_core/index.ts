@@ -266,6 +266,15 @@ async function startServer() {
             console.log("[DB] Columna syncIngresoId agregada");
           }
         } catch { /* ya existe */ }
+        try {
+          const { getDb } = await import("../db");
+          const { sql } = await import("drizzle-orm");
+          const dbConn = await getDb();
+          if (dbConn) {
+            await dbConn.execute(sql.raw("ALTER TABLE purchases ADD COLUMN preciosFallidos TEXT"));
+            console.log("[DB] Columna preciosFallidos agregada");
+          }
+        } catch { /* ya existe */ }
         // Agregar columna sucursalFija a trabajadores (para sueldos por sucursal)
         try {
           const { getDb } = await import("../db");

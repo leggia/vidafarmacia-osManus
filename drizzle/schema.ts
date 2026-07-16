@@ -70,6 +70,11 @@ export const purchases = mysqlTable("purchases", {
   // exactamente cuál borrar en 365 antes de reintentar — sin él, los duplicados
   // son indistinguibles.
   syncIngresoId: int("syncIngresoId"),
+  // Nombres de los productos cuyo PRECIO DE VENTA no quedó aplicado en 365 tras
+  // la sincronización (ya con verificación y reintentos). Si está vacío, la
+  // compra quedó completa. Sirve para mostrar la reparación SOLO cuando hace
+  // falta, en vez de tener un botón de precios suelto siempre visible.
+  preciosFallidos: text("preciosFallidos"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
