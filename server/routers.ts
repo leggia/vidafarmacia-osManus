@@ -139,12 +139,18 @@ const purchasesRouter = router({
         noEncontrados.push({ producto: u.productName, precioEsperado: u.precioVenta });
       }
       incorrectos.sort((a, b) => (b.fecha || "").localeCompare(a.fecha || ""));
+      // Rango real revisado: desde la compra más antigua con precio editado hasta
+      // la más reciente — para saber exactamente qué período cubre la auditoría.
+      const fechas = items.map((it: any) => String(it.fecha).slice(0, 10)).filter(Boolean).sort();
       return {
         total: ultimos.length,
         correctos,
         incorrectos,
         noEncontrados,
         sinVerificar: 0,
+        desde: fechas[0] || null,
+        hasta: fechas[fechas.length - 1] || null,
+        comprasRevisadas: new Set(items.map((it: any) => Number(it.purchaseId))).size,
       };
     }),
 

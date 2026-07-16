@@ -99,6 +99,16 @@ Verificar manualmente cuando se toca la tienda o los permisos:
      inventario): 365 puede responder 200 OK sin haber aplicado nada.
   3. El orden importa: lo más delicado (el precio) se aplica y verifica **al
      final**, después de cualquier operación que pueda tocarlo.
+  4. **Nunca escribir el cache local con un valor "esperado"**: hacerlo antes de
+     confirmar que 365 lo aplicó hace que la app muestre un precio que 365 no
+     tiene (el usuario ve el precio nuevo en la lista y el viejo en 365, y no
+     entiende nada). El cache se refresca solo DESPUÉS de verificar.
+
+  **Puntos que escriben precios en 365** (revisar los tres al tocar precios):
+  `registrarCompra` (PASO 3 venta / 3b costo / 3c verificación),
+  `actualizarPrecioCosto` y la acción `cambiarPrecioVenta` del asistente. Las
+  TRANSFERENCIAS no tocan precios (verificado). Todas usan el mismo motor
+  `verificarYReintentarPrecios`.
 
 ## Smoke tests (lógica crítica, sin BD)
 

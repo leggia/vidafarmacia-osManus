@@ -75,14 +75,24 @@ async function proponer(tipo: string, params: any, resumen: string) {
 // ─── Ejecutores reales por tipo ───
 async function ejecutarCambioPrecio(params: any) {
   const { inventarios365 } = await import("./inventarios365");
-  const ok = await inventarios365.actualizarPrecioVenta(num(params.idArticulo), num(params.nuevoPrecio));
+  const idArt = num(params.idArticulo);
+  const precio = num(params.nuevoPrecio);
+  const ok = await inventarios365.actualizarPrecioVenta(idArt, precio);
   if (!ok) throw new Error("365 rechazó la actualización tras 3 intentos");
-  // Refrescar el cache local para que las consultas muestren el precio nuevo
+  // VERIFICAR releyendo de 365 (y reintentar si no quedó). El precio es delicado:
+  // 365 puede responder OK sin aplicar nada. Antes se daba por hecho y ADEMÁS se
+  // escribía el precio nuevo en el cache local — así la app mostraba un precio que
+  // 365 no tenía (el síntoma de "lo veo en la lista pero no en 365").
+  const v = await inventarios365.verificarYReintentarPrecios([{ id: idArt, precio, nombre: String(params.nombreProducto) }]);
+  if (v.fallidos.length > 0) {
+    throw new Error(`365 aceptó la petición pero el precio de "${params.nombreProducto}" NO quedó aplicado (se reintentó varias veces). Revísalo directamente en inventarios365.`);
+  }
+  // Solo ahora, con el cambio CONFIRMADO en 365, se refresca el cache local
   try {
     const db = await getDb();
-    if (db) await db.execute(sql`UPDATE productos_cache SET precioUno = ${num(params.nuevoPrecio)} WHERE nombre = ${String(params.nombreProducto)}`);
+    if (db) await db.execute(sql`UPDATE productos_cache SET precioUno = ${precio} WHERE nombre = ${String(params.nombreProducto)}`);
   } catch { /* cache se refresca solo después */ }
-  return `Precio de "${params.nombreProducto}" actualizado a Bs ${params.nuevoPrecio} en 365`;
+  return `Precio de "${params.nombreProducto}" actualizado a Bs ${params.nuevoPrecio} en 365 (verificado)`;
 }
 
 async function ejecutarMarcarPagado(params: any) {

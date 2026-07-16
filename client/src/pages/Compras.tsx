@@ -86,7 +86,11 @@ export default function Compras() {
   // AUDITORÍA DE PRECIOS: revisa TODOS los precios editados contra 365 y dice
   // cuáles no quedaron — sin buscar a mano.
   const [verAuditoria, setVerAuditoria] = useState(false);
-  const auditoria = trpc.purchases.auditarPrecios.useQuery(undefined, { enabled: verAuditoria, refetchOnWindowFocus: false });
+  const [auditDesde, setAuditDesde] = useState("");
+  const auditoria = trpc.purchases.auditarPrecios.useQuery(
+    { desde: auditDesde || undefined },
+    { enabled: verAuditoria, refetchOnWindowFocus: false }
+  );
   const corregirAuditados = trpc.purchases.corregirPreciosAuditados.useMutation({
     onSuccess: (r: any) => {
       if (r.ok) toast.success(r.mensaje, { duration: 10000 });
@@ -250,6 +254,26 @@ export default function Compras() {
               <p className="text-xs text-red-600 py-2">{(auditoria.data as any).error}</p>
             ) : auditoria.data ? (
               <div className="space-y-3">
+                {/* Período revisado + selector para acotar */}
+                <div className="flex flex-wrap items-center gap-2 text-xs">
+                  <span className="text-muted-foreground">Revisar desde:</span>
+                  <input
+                    type="date"
+                    value={auditDesde}
+                    onChange={(e) => setAuditDesde(e.target.value)}
+                    className="h-8 px-2 rounded border bg-background text-xs"
+                  />
+                  {auditDesde && (
+                    <button onClick={() => setAuditDesde("")} className="text-xs font-bold text-muted-foreground underline">
+                      todo el historial
+                    </button>
+                  )}
+                  {auditoria.data.desde && (
+                    <span className="px-2 py-1 rounded bg-muted/60 font-medium">
+                      📅 Revisado: {auditoria.data.desde} → {auditoria.data.hasta} · {auditoria.data.comprasRevisadas} compra(s)
+                    </span>
+                  )}
+                </div>
                 <div className="flex flex-wrap gap-2 text-xs">
                   <span className="px-2 py-1 rounded bg-muted font-bold">{auditoria.data.total} producto(s) con precio editado</span>
                   <span className="px-2 py-1 rounded bg-emerald-50 text-emerald-700 font-bold">✅ {auditoria.data.correctos} correcto(s)</span>
