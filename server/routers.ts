@@ -37,6 +37,69 @@ const purchasesRouter = router({
     return db.listPurchases(ctx.user.id);
   }),
 
+  // BUSCAR compras por proveedor, número de factura o NOMBRE DE PRODUCTO. Lo
+  // último es la clave: permite encontrar en qué facturas entró un producto para
+  // revisar/corregir su precio. Devuelve además los ítems que coinciden, con el
+  // precio de venta que se editó, para verlo sin abrir la compra.
+  buscar: protectedProcedure
+    .input(z.object({ q: z.string().max(120), soloConPreciosFallidos: z.boolean().optional() }))
+    .query(async ({ input, ctx }) => {
+      const { getDb } = await import("./db");
+      const { sql } = await import("drizzle-orm");
+      const dbx = await getDb();
+      if (!dbx) return [];
+      const q = input.q.trim();
+      const filas = (r: any) => { const x = Array.isArray(r) ? r[0] : r?.rows ?? r; return Array.isArray(x) ? x : []; };
+      const like = `%${q.replace(/\s+/g, "%")}%`;
+
+      let cond = sql`p.userId = ${ctx.user.id}`;
+      if (q) {
+        cond = sql`${cond} AND (
+          p.supplier LIKE ${like}
+          OR p.receiptNumber LIKE ${like}
+          OR EXISTS (SELECT 1 FROM purchase_items i WHERE i.purchaseId = p.id AND (i.productName LIKE ${like} OR i.nombreFactura LIKE ${like}))
+        )`;
+      }
+      if (input.soloConPreciosFallidos) cond = sql`${cond} AND p.preciosFallidos IS NOT NULL`;
+
+      const compras = filas(await dbx.execute(sql`
+        SELECT p.id, p.receiptNumber, p.supplier, p.status, p.totalAmount, p.createdAt,
+               p.syncError, p.syncIngresoId, p.preciosFallidos, b.name AS branchName
+        FROM purchases p LEFT JOIN branches b ON b.id = p.branchId
+        WHERE ${cond}
+        ORDER BY p.createdAt DESC LIMIT 40
+      `));
+      if (compras.length === 0) return [];
+
+      // Traer los ítems que coinciden con la búsqueda (para ver el precio editado)
+      const ids = compras.map((c: any) => Number(c.id));
+      let itemsPorCompra = new Map<number, any[]>();
+      if (q) {
+        const items = filas(await dbx.execute(sql`
+          SELECT purchaseId, productName, quantity, unitCost, precioVenta
+          FROM purchase_items
+          WHERE purchaseId IN (${sql.join(ids.map((i) => sql`${i}`), sql`, `)})
+            AND (productName LIKE ${like} OR nombreFactura LIKE ${like})
+          LIMIT 200
+        `));
+        for (const it of items) {
+          const arr = itemsPorCompra.get(Number(it.purchaseId)) || [];
+          arr.push({
+            productName: it.productName,
+            cantidad: Number(it.quantity) || 0,
+            costo: Number(it.unitCost) || 0,
+            precioVenta: it.precioVenta != null ? Number(it.precioVenta) : null,
+          });
+          itemsPorCompra.set(Number(it.purchaseId), arr);
+        }
+      }
+      return compras.map((c: any) => ({
+        ...c,
+        totalAmount: Number(c.totalAmount) || 0,
+        itemsCoincidentes: itemsPorCompra.get(Number(c.id)) || [],
+      }));
+    }),
+
   // REINTENTAR la sincronización de una compra YA GUARDADA, usando sus datos tal
   // como quedaron (incluidos los precios editados a mano) — sin volver a cargar
   // la factura ni re-editar nada. Resuelve: "falló la sincronización y tuve que

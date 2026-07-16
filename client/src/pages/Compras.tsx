@@ -5,7 +5,7 @@ import { Badge } from "@/components/ui/badge";
 import {
   Plus, CheckCircle2, Image as ImageIcon, Loader2,
   RefreshCw, AlertCircle, ExternalLink, Package, Zap, Trash2, Pencil,
-  Eye, ChevronDown, ChevronUp, Calendar
+  Eye, ChevronDown, ChevronUp, Calendar, Search
 } from "lucide-react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
@@ -14,7 +14,18 @@ import { useState, useEffect } from "react";
 export default function Compras() {
   const [, setLocation] = useLocation();
   const utils = trpc.useUtils();
-  const { data: purchases, isLoading } = trpc.purchases.list.useQuery();
+  const { data: purchasesAll, isLoading: isLoadingAll } = trpc.purchases.list.useQuery();
+  // Buscador: por proveedor, N° de factura o NOMBRE DE PRODUCTO — para encontrar
+  // en qué facturas entró un producto y revisar/corregir su precio.
+  const [busqueda, setBusqueda] = useState("");
+  const [soloFallidos, setSoloFallidos] = useState(false);
+  const buscando = busqueda.trim().length >= 2 || soloFallidos;
+  const { data: resultados, isLoading: isLoadingBusqueda } = trpc.purchases.buscar.useQuery(
+    { q: busqueda.trim(), soloConPreciosFallidos: soloFallidos },
+    { enabled: buscando }
+  );
+  const purchases = buscando ? resultados : purchasesAll;
+  const isLoading = buscando ? isLoadingBusqueda : isLoadingAll;
   const [confirmingId, setConfirmingId] = useState<number | null>(null);
   const [retryingAll, setRetryingAll] = useState(false);
   const [expandidaId, setExpandidaId] = useState<number | null>(null);
@@ -206,6 +217,34 @@ export default function Compras() {
         </div>
       )}
 
+      {/* Buscador: proveedor, N° de factura o NOMBRE DE PRODUCTO */}
+      <div className="flex gap-2">
+        <div className="relative flex-1">
+          <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+          <input
+            value={busqueda}
+            onChange={(e) => setBusqueda(e.target.value)}
+            placeholder="Buscar por proveedor, N° de factura o producto…"
+            className="w-full h-10 pl-9 pr-3 rounded-lg border text-sm bg-background"
+          />
+        </div>
+        <Button
+          variant={soloFallidos ? "default" : "outline"}
+          onClick={() => setSoloFallidos(!soloFallidos)}
+          className="gap-1 text-xs uppercase tracking-wider font-semibold shrink-0"
+          title="Mostrar solo las compras que dejaron algún precio de venta sin aplicar en 365"
+        >
+          <AlertCircle className="h-3.5 w-3.5" />
+          Precios pendientes
+        </Button>
+      </div>
+      {buscando && (
+        <p className="text-xs text-muted-foreground">
+          {isLoading ? "Buscando…" : `${purchases?.length || 0} compra(s) encontrada(s)`}
+          {busqueda.trim() && " · se muestran los productos que coinciden con su precio editado"}
+        </p>
+      )}
+
       {isLoading ? (
         <div className="space-y-3">
           {[1, 2, 3, 4].map((i) => (
@@ -240,6 +279,23 @@ export default function Compras() {
                         {p.receiptNumber || `Compra #${p.id}`} — {p.branchName || "Central"}
                         {p.itemCount ? ` — ${p.itemCount} productos` : ""}
                       </p>
+                      {/* Productos que coinciden con la búsqueda, con su precio
+                          editado — para revisar sin abrir la compra. */}
+                      {p.itemsCoincidentes?.length > 0 && (
+                        <div className="mt-1 space-y-0.5">
+                          {p.itemsCoincidentes.map((it: any, i: number) => (
+                            <p key={i} className="text-[11px] text-foreground/80 flex items-center gap-1.5">
+                              <Package className="h-3 w-3 flex-shrink-0 text-muted-foreground" />
+                              <span className="truncate">
+                                {it.productName} · {it.cantidad}u · costo Bs {it.costo.toFixed(2)}
+                                {it.precioVenta != null
+                                  ? <span className="font-bold text-emerald-700"> · venta editada Bs {it.precioVenta.toFixed(2)}</span>
+                                  : <span className="text-muted-foreground"> · sin precio de venta editado</span>}
+                              </span>
+                            </p>
+                          ))}
+                        </div>
+                      )}
                       {/* Error de sincronización */}
                       {p.syncError && (
                         <p className="text-xs text-orange-700 mt-0.5 flex items-center gap-1">
