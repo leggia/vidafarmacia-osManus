@@ -585,6 +585,50 @@ class Inventarios365Service {
     return false;
   }
 
+  /**
+   * Aplicar SOLO precios de venta a una lista de productos, SIN registrar ningún
+   * ingreso. Sirve para corregir los precios que 365 no aplicó en una compra ya
+   * sincronizada — reintentar la compra completa crearía un ingreso DUPLICADO
+   * (365 no permite borrarlos por API), y aquí solo se tocan los precios.
+   * Verifica releyendo: informa cuáles quedaron y cuáles no.
+   */
+  async aplicarPreciosVenta(items: Array<{ nombre: string; precioVenta: number }>, proveedor?: string): Promise<{
+    aplicados: string[]; fallidos: string[]; noEncontrados: string[];
+  }> {
+    const aplicados: string[] = [], fallidos: string[] = [], noEncontrados: string[] = [];
+    const paraVerificar: { id: number; precio: number; nombre: string }[] = [];
+    for (const it of items) {
+      if (!it.nombre || !(it.precioVenta > 0)) continue;
+      const articulo = await this.buscarArticulo(it.nombre, undefined, proveedor);
+      if (!articulo) { noEncontrados.push(it.nombre); continue; }
+      const actual = parseFloat(String(articulo.precio_uno || 0)) || 0;
+      if (Math.abs(actual - it.precioVenta) <= 0.01) { aplicados.push(articulo.nombre); continue; } // ya está bien
+      const ok = await this.actualizarPrecioVenta(articulo.id, it.precioVenta);
+      if (ok) paraVerificar.push({ id: articulo.id, precio: it.precioVenta, nombre: articulo.nombre });
+      else fallidos.push(articulo.nombre);
+      await new Promise((r) => setTimeout(r, 150)); // no saturar 365
+    }
+    // Verificar de verdad (releer), no confiar en la respuesta
+    if (paraVerificar.length > 0) {
+      try {
+        const data = await this.get<any>(`/articulo/listarArticulo?buscar=&criterio=todos&idProveedor=`);
+        const lista = data?.articulos?.data ?? data?.articulos ?? data?.data ?? [];
+        const porId = new Map((Array.isArray(lista) ? lista : []).map((a: any) => [Number(a.id), a]));
+        for (const p of paraVerificar) {
+          const a = porId.get(Number(p.id));
+          const precioEn365 = a ? parseFloat(String(a.precio_uno || 0)) || 0 : NaN;
+          if (!a || Math.abs(precioEn365 - p.precio) > 0.01) fallidos.push(p.nombre);
+          else aplicados.push(p.nombre);
+        }
+      } catch {
+        // Sin verificación no afirmamos éxito ni fracaso: se listan como aplicados
+        // "sin confirmar" para no mentir en ninguna dirección.
+        for (const p of paraVerificar) aplicados.push(p.nombre);
+      }
+    }
+    return { aplicados, fallidos, noEncontrados };
+  }
+
   /** Obtener un artículo por su id (busca en el listado). */
   async obtenerArticuloPorId(idarticulo: number): Promise<any | null> {
     try {
@@ -612,7 +656,18 @@ class Inventarios365Service {
           id: idarticulo,
           precio_uno: precioUno,
         });
-        console.log(`[Inventarios365] Precio actualizado: artículo ${idarticulo} → ${precioUno} Bs (intento ${intento})`, JSON.stringify(respData).substring(0, 80));
+        // NO basta con que no lance excepción: 365 puede responder 200 OK con un
+        // error DENTRO del cuerpo (producto bloqueado, precio rechazado…). Si no
+        // se revisa, el precio "se actualiza" en silencio sin cambiar nada — era
+        // la causa de "en la lista se ve el precio nuevo pero en 365 no cambió".
+        const err = respData?.error ?? respData?.errors ?? null;
+        const okExplicito = respData?.success === true || respData?.ok === true;
+        const fallo = !!err || respData?.success === false || respData?.ok === false;
+        if (fallo) {
+          console.warn(`[Inventarios365] 365 rechazó el precio del artículo ${idarticulo}:`, JSON.stringify(respData).substring(0, 150));
+          return false; // rechazo explícito: reintentar no ayuda
+        }
+        console.log(`[Inventarios365] Precio actualizado: artículo ${idarticulo} → ${precioUno} Bs (intento ${intento}${okExplicito ? ", confirmado" : ""})`, JSON.stringify(respData).substring(0, 80));
         return true;
       } catch (error: any) {
         console.warn(`[Inventarios365] Intento ${intento}/${MAX_INTENTOS} falló para artículo ${idarticulo}:`, error?.message);
@@ -1479,6 +1534,27 @@ class Inventarios365Service {
         if (preciosVentaFallidos.length > 0) {
           console.warn(`[Inventarios365] PRECIOS DE VENTA NO ACTUALIZADOS: ${preciosVentaFallidos.join(", ")}`);
         }
+        // VERIFICACIÓN REAL (mismo criterio que el reintento de ajustes de
+        // inventario): no confiamos en la respuesta de 365 — releemos los precios
+        // y comprobamos cuáles quedaron de verdad. Así un fallo silencioso deja de
+        // ser invisible: el que no cambió se reporta con su precio actual.
+        try {
+          const data = await this.get<any>(`/articulo/listarArticulo?buscar=&criterio=todos&idProveedor=`);
+          const lista = data?.articulos?.data ?? data?.articulos ?? data?.data ?? [];
+          const porId = new Map((Array.isArray(lista) ? lista : []).map((a: any) => [Number(a.id), a]));
+          for (const p of preciosActualizar) {
+            if (preciosVentaFallidos.includes(p.nombre)) continue; // ya reportado
+            const actual = porId.get(Number(p.id));
+            if (!actual) continue; // no se pudo verificar: no afirmar que falló
+            const precioEn365 = parseFloat(String(actual.precio_uno || 0)) || 0;
+            if (Math.abs(precioEn365 - p.precio) > 0.01) {
+              preciosVentaFallidos.push(p.nombre);
+              console.warn(`[Inventarios365] VERIFICACIÓN: "${p.nombre}" debía quedar en ${p.precio} pero en 365 está en ${precioEn365}`);
+            }
+          }
+        } catch (e: any) {
+          console.warn("[Inventarios365] No se pudo verificar los precios actualizados:", e?.message);
+        }
       }
 
       // Paso 3b: Actualizar precios de COSTO que cambiaron con la compra
@@ -1506,9 +1582,14 @@ class Inventarios365Service {
       }
 
       const advertencias =
-        erroresArticulos.length > 0
+        (erroresArticulos.length > 0
           ? ` (Artículos no encontrados: ${erroresArticulos.join(", ")})`
-          : "";
+          : "") +
+        // Los precios que 365 NO aplicó deben verse SIEMPRE en el mensaje, no
+        // solo en los logs: si no, el usuario cree que quedaron todos.
+        (preciosVentaFallidos.length > 0
+          ? ` ⚠ PRECIO DE VENTA NO APLICADO en ${preciosVentaFallidos.length}: ${preciosVentaFallidos.join(", ")} — revísalos en 365.`
+          : "");
 
       return {
         success: true,

@@ -72,6 +72,24 @@ export default function Compras() {
     }
   };
 
+  // APLICAR SOLO PRECIOS: corrige los precios de venta que 365 no aplicó, SIN
+  // crear otro ingreso (re-sincronizar duplicaría la compra en 365).
+  const aplicarPrecios = trpc.purchases.aplicarPreciosVenta.useMutation();
+  const [aplicandoId, setAplicandoId] = useState<number | null>(null);
+  const handleAplicarPrecios = async (p: any) => {
+    setAplicandoId(p.id);
+    try {
+      const r: any = await aplicarPrecios.mutateAsync({ id: p.id });
+      if (r.ok) toast.success(r.mensaje, { duration: 9000 });
+      else toast.error(r.mensaje, { duration: 12000 });
+      await utils.purchases.list.invalidate();
+    } catch (e: any) {
+      toast.error("No se pudo aplicar los precios: " + (e?.message || ""));
+    } finally {
+      setAplicandoId(null);
+    }
+  };
+
   // RE-SINCRONIZAR una compra usando sus datos ya guardados (con los precios
   // editados a mano). Si ya estaba sincronizada, el backend pide confirmación
   // porque 365 creará OTRO ingreso — el viejo hay que borrarlo allá a mano.
@@ -243,6 +261,22 @@ export default function Compras() {
                       </p>
                     </div>
                     <StatusBadge status={p.status} syncError={p.syncError} />
+
+                    {/* SOLO PRECIOS: cuando 365 aplicó unos precios sí y otros no.
+                        No crea otro ingreso (re-sincronizar sí lo haría). */}
+                    {p.status !== "draft" && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleAplicarPrecios(p)}
+                        disabled={aplicandoId === p.id}
+                        title="Volver a aplicar en 365 SOLO los precios de venta guardados de esta compra. No crea otro ingreso."
+                        className="gap-1 text-xs uppercase tracking-wider font-semibold border-emerald-300 text-emerald-700 hover:bg-emerald-50"
+                      >
+                        {aplicandoId === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <Zap className="h-3 w-3" />}
+                        Precios
+                      </Button>
+                    )}
 
                     {/* RE-SINCRONIZAR: usa los datos YA GUARDADOS (incluidos los
                         precios editados a mano) — no hay que volver a cargar la

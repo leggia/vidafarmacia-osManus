@@ -98,10 +98,46 @@ const purchasesRouter = router({
         let msg = `Sincronizada en 365 (Ingreso #${r.ingresoId}).`;
         if (yaSincronizada) msg += ` ⚠ El ingreso anterior #${compra.syncIngresoId} sigue en 365 — bórralo ahí si no lo hiciste, o quedará duplicado.`;
         if (r.productosNoEncontrados?.length > 0) msg += ` Productos no encontrados: ${r.productosNoEncontrados.map((p: any) => p.nombre).join(", ")}.`;
-        return { ok: true, ingresoId: r.ingresoId, mensaje: msg };
+        // Precios que 365 NO aplicó: se avisan explícitamente (antes solo iban al
+        // log del servidor, así que parecía que se habían cambiado todos).
+        if (r.preciosVentaFallidos?.length > 0) {
+          msg += ` ⚠ El precio de venta NO se aplicó en ${r.preciosVentaFallidos.length} producto(s): ${r.preciosVentaFallidos.join(", ")}. Revísalos en 365 y vuelve a intentar.`;
+        }
+        return { ok: true, ingresoId: r.ingresoId, mensaje: msg, preciosVentaFallidos: r.preciosVentaFallidos || [] };
       }
       await db.updatePurchaseSyncError(input.id, r?.message || "Error");
       return { ok: false, mensaje: `No se pudo sincronizar: ${r?.message || "error"}. Tus datos y precios editados siguen guardados — puedes reintentar.` };
+    }),
+
+  // APLICAR SOLO LOS PRECIOS DE VENTA de una compra ya sincronizada, SIN crear
+  // otro ingreso. Es la herramienta correcta cuando 365 aplicó unos precios sí y
+  // otros no: re-sincronizar la compra entera duplicaría el ingreso (365 no
+  // permite borrarlos por API); esto solo corrige los precios. Verifica releyendo.
+  aplicarPreciosVenta: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .mutation(async ({ input }) => {
+      const compra: any = await db.getPurchaseById(input.id);
+      if (!compra) throw new Error("No se encontró la compra.");
+      const items = (compra.items || [])
+        .map((it: any) => ({
+          nombre: it.productName || it.nombre || "",
+          precioVenta: (() => { const v = Number(it.precioVenta); return isNaN(v) || v <= 0 ? 0 : v; })(),
+        }))
+        .filter((i: any) => i.nombre && i.precioVenta > 0);
+      if (items.length === 0) {
+        return { ok: false, mensaje: "Esta compra no tiene precios de venta editados guardados — no hay nada que aplicar." };
+      }
+      const { inventarios365 } = await import("./inventarios365");
+      const r = await inventarios365.aplicarPreciosVenta(items, compra.supplier || "");
+      const partes: string[] = [];
+      if (r.aplicados.length > 0) partes.push(`✅ ${r.aplicados.length} precio(s) ya correcto(s) en 365`);
+      if (r.fallidos.length > 0) partes.push(`❌ ${r.fallidos.length} NO se aplicaron: ${r.fallidos.join(", ")}`);
+      if (r.noEncontrados.length > 0) partes.push(`⚠ ${r.noEncontrados.length} no encontrado(s) en 365: ${r.noEncontrados.join(", ")}`);
+      return {
+        ok: r.fallidos.length === 0 && r.noEncontrados.length === 0,
+        mensaje: partes.join(" · ") || "Sin cambios.",
+        aplicados: r.aplicados.length, fallidos: r.fallidos, noEncontrados: r.noEncontrados,
+      };
     }),
 
   // INTELIGENCIA DE PRECIOS: compara cada precio de la factura contra la
