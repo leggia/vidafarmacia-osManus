@@ -72,6 +72,32 @@ export default function Compras() {
     }
   };
 
+  // RE-SINCRONIZAR una compra usando sus datos ya guardados (con los precios
+  // editados a mano). Si ya estaba sincronizada, el backend pide confirmación
+  // porque 365 creará OTRO ingreso — el viejo hay que borrarlo allá a mano.
+  const reintentarSync = trpc.purchases.reintentarSync.useMutation();
+  const [reintentandoId, setReintentandoId] = useState<number | null>(null);
+  const handleReintentar = async (p: any) => {
+    setReintentandoId(p.id);
+    try {
+      let r: any = await reintentarSync.mutateAsync({ id: p.id });
+      if (r.requiereConfirmacion) {
+        const ok = window.confirm(
+          `${r.mensaje}\n\n¿Ya borraste el Ingreso #${r.ingresoIdPrevio} en inventarios365 y quieres continuar?`
+        );
+        if (!ok) { setReintentandoId(null); return; }
+        r = await reintentarSync.mutateAsync({ id: p.id, forzar: true });
+      }
+      if (r.ok) toast.success(r.mensaje, { duration: 9000 });
+      else toast.error(r.mensaje, { duration: 9000 });
+      await utils.purchases.list.invalidate();
+    } catch (e: any) {
+      toast.error("No se pudo re-sincronizar: " + (e?.message || ""));
+    } finally {
+      setReintentandoId(null);
+    }
+  };
+
   // Reintentar sincronización para todas las compras con error
   const handleRetryAll = async () => {
     const withErrors = (purchases || []).filter(
@@ -87,8 +113,11 @@ export default function Compras() {
     let fail = 0;
     for (const p of withErrors) {
       try {
-        const result = await confirmMutation.mutateAsync({ id: p.id });
-        if (result.syncSuccess) ok++;
+        // Usa reintentarSync (no confirm): recupera los precios de venta editados
+        // que quedaron guardados. Estas ya fallaron, así que no hay ingreso previo
+        // en 365 que pueda duplicarse — forzar es seguro aquí.
+        const result: any = await reintentarSync.mutateAsync({ id: p.id, forzar: true });
+        if (result.ok) ok++;
         else fail++;
       } catch {
         fail++;
@@ -214,6 +243,26 @@ export default function Compras() {
                       </p>
                     </div>
                     <StatusBadge status={p.status} syncError={p.syncError} />
+
+                    {/* RE-SINCRONIZAR: usa los datos YA GUARDADOS (incluidos los
+                        precios editados a mano) — no hay que volver a cargar la
+                        factura ni re-editar. Para las ya sincronizadas avisa
+                        primero, porque 365 crea OTRO ingreso (no permite borrar
+                        por API) y el viejo hay que borrarlo allá. */}
+                    {p.status !== "draft" && (
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleReintentar(p)}
+                        disabled={reintentandoId === p.id}
+                        title={p.syncIngresoId ? `Ya sincronizada (Ingreso #${p.syncIngresoId})` : "Reintentar sincronización con 365"}
+                        className={`gap-1 text-xs uppercase tracking-wider font-semibold ${p.syncError ? "border-orange-400 text-orange-700 hover:bg-orange-50" : ""}`}
+                      >
+                        {reintentandoId === p.id ? <Loader2 className="h-3 w-3 animate-spin" /> : <RefreshCw className="h-3 w-3" />}
+                        {p.syncError ? "Reintentar" : "Re-sincronizar"}
+                      </Button>
+                    )}
+
 
                     {/* Continuar borrador (editar) */}
                     {p.status === "draft" && (

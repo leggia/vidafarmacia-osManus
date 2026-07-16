@@ -254,6 +254,18 @@ async function startServer() {
             console.log("[DB] Columna nombreFactura agregada");
           }
         } catch { /* ya existe */ }
+        // Agregar columna syncIngresoId a purchases (para re-sincronizar compras:
+        // identifica QUÉ ingreso de 365 creó cada compra). Va aquí, en el
+        // arranque, porque la consultan varios módulos — lección v2.22.1.
+        try {
+          const { getDb } = await import("../db");
+          const { sql } = await import("drizzle-orm");
+          const dbConn = await getDb();
+          if (dbConn) {
+            await dbConn.execute(sql.raw("ALTER TABLE purchases ADD COLUMN syncIngresoId INT"));
+            console.log("[DB] Columna syncIngresoId agregada");
+          }
+        } catch { /* ya existe */ }
         // Agregar columna sucursalFija a trabajadores (para sueldos por sucursal)
         try {
           const { getDb } = await import("../db");

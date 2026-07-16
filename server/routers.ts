@@ -37,6 +37,73 @@ const purchasesRouter = router({
     return db.listPurchases(ctx.user.id);
   }),
 
+  // REINTENTAR la sincronización de una compra YA GUARDADA, usando sus datos tal
+  // como quedaron (incluidos los precios editados a mano) — sin volver a cargar
+  // la factura ni re-editar nada. Resuelve: "falló la sincronización y tuve que
+  // rehacer todos los precios".
+  // `forzar` permite re-sincronizar una compra que YA se sincronizó (para
+  // corregir una carga doble o con precio equivocado). OJO: 365 no permite borrar
+  // ingresos por API, así que re-sincronizar CREA UN INGRESO NUEVO — el viejo hay
+  // que borrarlo a mano en 365. Por eso devolvemos su ID y avisamos antes.
+  reintentarSync: protectedProcedure
+    .input(z.object({ id: z.number(), forzar: z.boolean().optional(), almacenNombre: z.string().max(120).optional() }))
+    .mutation(async ({ input }) => {
+      const compra: any = await db.getPurchaseById(input.id);
+      if (!compra) throw new Error("No se encontró la compra.");
+      const yaSincronizada = compra.syncIngresoId != null;
+      if (yaSincronizada && !input.forzar) {
+        return {
+          ok: false,
+          requiereConfirmacion: true,
+          ingresoIdPrevio: compra.syncIngresoId,
+          mensaje: `Esta compra YA está sincronizada en 365 (Ingreso #${compra.syncIngresoId}). Volver a sincronizarla CREARÁ OTRO ingreso — 365 no permite borrar ingresos desde la API. Primero borra el Ingreso #${compra.syncIngresoId} en inventarios365, y recién entonces confirma el reintento.`,
+        };
+      }
+
+      const items = (compra.items || []).map((it: any) => ({
+        nombre: it.productName || it.nombre || "Producto sin nombre",
+        cantidad: Number(it.quantity) || 0,
+        precio: Number(it.unitCost) || 0, // costo EDITADO A MANO, ya guardado
+        fechaVencimiento: it.expiryDate || null,
+        // CLAVE: el precio de VENTA editado se guarda en la columna precioVenta.
+        // El reintento anterior NO lo enviaba → por eso "el que se subió no tenía
+        // el precio editado". Ahora se recupera tal cual quedó guardado.
+        nuevoPrecioVenta: (() => { const v = Number(it.precioVenta ?? it.nuevoPrecioVenta); return isNaN(v) || v <= 0 ? null : v; })(),
+      }));
+      if (items.length === 0) throw new Error("La compra no tiene productos guardados.");
+
+      const { inventarios365 } = await import("./inventarios365");
+      let r: any;
+      try {
+        r = await inventarios365.registrarCompra({
+          proveedor: compra.supplier || "",
+          tipoComprobante: compra.receiptType || "BOLETA",
+          numComprobante: compra.receiptNumber || String(compra.id),
+          almacenNombre: input.almacenNombre || "principal",
+          items,
+          total: Number(compra.totalAmount) || 0,
+        });
+      } catch (e: any) {
+        const msg = e?.message || "Error desconocido";
+        await db.updatePurchaseSyncError(input.id, msg);
+        return { ok: false, mensaje: `No se pudo sincronizar: ${msg}. Tus datos y precios editados siguen guardados — puedes reintentar.` };
+      }
+
+      if (r?.success) {
+        await db.updatePurchaseSyncStatus(input.id, "completed", undefined, r.ingresoId);
+        try {
+          const { registrarPreciosCompra } = await import("./inteligencia-compras");
+          await registrarPreciosCompra((compra.items as any[]) || [], compra.supplier || "");
+        } catch { /* no bloquea */ }
+        let msg = `Sincronizada en 365 (Ingreso #${r.ingresoId}).`;
+        if (yaSincronizada) msg += ` ⚠ El ingreso anterior #${compra.syncIngresoId} sigue en 365 — bórralo ahí si no lo hiciste, o quedará duplicado.`;
+        if (r.productosNoEncontrados?.length > 0) msg += ` Productos no encontrados: ${r.productosNoEncontrados.map((p: any) => p.nombre).join(", ")}.`;
+        return { ok: true, ingresoId: r.ingresoId, mensaje: msg };
+      }
+      await db.updatePurchaseSyncError(input.id, r?.message || "Error");
+      return { ok: false, mensaje: `No se pudo sincronizar: ${r?.message || "error"}. Tus datos y precios editados siguen guardados — puedes reintentar.` };
+    }),
+
   // INTELIGENCIA DE PRECIOS: compara cada precio de la factura contra la
   // referencia (última compra propia > costo del sistema) y el margen de venta.
   compararPrecios: protectedProcedure
@@ -420,7 +487,7 @@ INSTRUCCIONES GENERALES:
             syncSuccess = true;
             syncMessage = `Compra registrada en inventarios365.com (Ingreso ID: ${syncResult.ingresoId})`;
             syncIngresoId = syncResult.ingresoId;
-            await db.updatePurchaseSyncStatus(purchaseId, "completed");
+            await db.updatePurchaseSyncStatus(purchaseId, "completed", undefined, syncResult.ingresoId);
             // Alimentar la referencia de precios propia (inteligencia de compras)
             try {
               const { registrarPreciosCompra } = await import("./inteligencia-compras");
@@ -478,6 +545,10 @@ INSTRUCCIONES GENERALES:
             cantidad: Number(item.quantity) || 1,
             precio: parseFloat(String(item.unitCost || item.unit_cost || 0)),
             fechaVencimiento: item.expiryDate || null,
+            // El precio de VENTA editado a mano queda guardado en la columna
+            // precioVenta. Antes NO se enviaba aquí, así que al reintentar la
+            // sincronización el producto llegaba a 365 SIN el precio editado.
+            nuevoPrecioVenta: (() => { const v = Number(item.precioVenta); return isNaN(v) || v <= 0 ? null : v; })(),
           }));
           console.log(`[Sync] Iniciando sincronización directa para compra #${purchaseId}`);
           const syncResult = await inventarios365.registrarCompra({
@@ -493,7 +564,7 @@ INSTRUCCIONES GENERALES:
             syncSuccess2 = true;
             syncMessage2 = `Compra registrada en inventarios365.com (Ingreso ID: ${syncResult.ingresoId})`;
             syncIngresoId2 = syncResult.ingresoId;
-            await db.updatePurchaseSyncStatus(purchaseId, "completed");
+            await db.updatePurchaseSyncStatus(purchaseId, "completed", undefined, syncResult.ingresoId);
           } else {
             syncSuccess2 = false;
             syncMessage2 = syncResult.message;

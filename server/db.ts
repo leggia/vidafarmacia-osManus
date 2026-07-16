@@ -105,6 +105,7 @@ export async function listPurchases(userId: number) {
       branchName: branches.name,
       syncError: purchases.syncError,
       syncAttempts: purchases.syncAttempts,
+      syncIngresoId: purchases.syncIngresoId,
     })
     .from(purchases)
     .leftJoin(branches, eq(purchases.branchId, branches.id))
@@ -503,18 +504,17 @@ export async function getPurchaseWithItems(purchaseId: number) {
 export async function updatePurchaseSyncStatus(
   purchaseId: number,
   status: "completed" | "sync_error",
-  errorMsg?: string
+  errorMsg?: string,
+  ingresoId?: number
 ) {
   const db = await getDb();
   if (!db) return;
 
-  await db
-    .update(purchases)
-    .set({
-      status: status as any,
-      syncError: errorMsg || null,
-    })
-    .where(eq(purchases.id, purchaseId));
+  const cambios: any = { status: status as any, syncError: errorMsg || null };
+  // Guardar el ID del ingreso de 365: identifica qué registro creó esta compra
+  // (imprescindible para re-sincronizar sin dejar duplicados invisibles).
+  if (ingresoId != null && !isNaN(Number(ingresoId))) cambios.syncIngresoId = Number(ingresoId);
+  await db.update(purchases).set(cambios).where(eq(purchases.id, purchaseId));
 }
 
 // ─── Get Purchase By Id (alias) ───

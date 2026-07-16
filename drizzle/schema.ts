@@ -64,6 +64,12 @@ export const purchases = mysqlTable("purchases", {
   extractedData: json("extractedData"), // Raw AI extraction result
   syncError: text("syncError"),
   syncAttempts: int("syncAttempts").default(0),
+  // ID del "ingreso" creado en inventarios365 al sincronizar esta compra. Se
+  // guarda para saber QUÉ registro de 365 le corresponde: si hay que
+  // re-sincronizar (se subió dos veces, o con un precio mal), este ID dice
+  // exactamente cuál borrar en 365 antes de reintentar — sin él, los duplicados
+  // son indistinguibles.
+  syncIngresoId: int("syncIngresoId"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });
