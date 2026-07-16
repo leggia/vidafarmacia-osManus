@@ -83,6 +83,20 @@ export default function Compras() {
     }
   };
 
+  // AUDITORÍA DE PRECIOS: revisa TODOS los precios editados contra 365 y dice
+  // cuáles no quedaron — sin buscar a mano.
+  const [verAuditoria, setVerAuditoria] = useState(false);
+  const auditoria = trpc.purchases.auditarPrecios.useQuery(undefined, { enabled: verAuditoria, refetchOnWindowFocus: false });
+  const corregirAuditados = trpc.purchases.corregirPreciosAuditados.useMutation({
+    onSuccess: (r: any) => {
+      if (r.ok) toast.success(r.mensaje, { duration: 10000 });
+      else toast.error(r.mensaje, { duration: 14000 });
+      auditoria.refetch();
+      utils.purchases.list.invalidate();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   // APLICAR SOLO PRECIOS: corrige los precios de venta que 365 no aplicó, SIN
   // crear otro ingreso (re-sincronizar duplicaría la compra en 365).
   const aplicarPrecios = trpc.purchases.aplicarPreciosVenta.useMutation();
@@ -216,6 +230,83 @@ export default function Compras() {
           </span>
         </div>
       )}
+
+      {/* AUDITORÍA DE PRECIOS: revisa TODOS los precios editados contra 365 */}
+      <div className="rounded-lg border bg-card p-3">
+        <button onClick={() => setVerAuditoria(!verAuditoria)} className="w-full flex items-center justify-between text-sm font-bold">
+          <span className="flex items-center gap-2">
+            <Zap className="h-4 w-4 text-primary" />
+            Auditar precios de venta en 365
+          </span>
+          <span className="text-muted-foreground text-xs">{verAuditoria ? "▲" : "▼"}</span>
+        </button>
+        {verAuditoria && (
+          <div className="mt-3 text-sm">
+            {auditoria.isLoading ? (
+              <p className="text-xs text-muted-foreground py-3 flex items-center gap-2">
+                <Loader2 className="h-3.5 w-3.5 animate-spin" /> Comparando todos los precios editados contra inventarios365…
+              </p>
+            ) : auditoria.data && "error" in auditoria.data ? (
+              <p className="text-xs text-red-600 py-2">{(auditoria.data as any).error}</p>
+            ) : auditoria.data ? (
+              <div className="space-y-3">
+                <div className="flex flex-wrap gap-2 text-xs">
+                  <span className="px-2 py-1 rounded bg-muted font-bold">{auditoria.data.total} producto(s) con precio editado</span>
+                  <span className="px-2 py-1 rounded bg-emerald-50 text-emerald-700 font-bold">✅ {auditoria.data.correctos} correcto(s)</span>
+                  {auditoria.data.incorrectos.length > 0 && (
+                    <span className="px-2 py-1 rounded bg-red-50 text-red-700 font-bold">❌ {auditoria.data.incorrectos.length} mal en 365</span>
+                  )}
+                  {auditoria.data.noEncontrados.length > 0 && (
+                    <span className="px-2 py-1 rounded bg-amber-50 text-amber-700 font-bold">⚠ {auditoria.data.noEncontrados.length} no encontrado(s)</span>
+                  )}
+                </div>
+
+                {auditoria.data.incorrectos.length === 0 ? (
+                  <p className="text-xs text-emerald-700 font-bold">✓ Todos los precios editados están correctos en 365.</p>
+                ) : (
+                  <>
+                    <div className="border rounded-lg divide-y max-h-72 overflow-y-auto">
+                      {auditoria.data.incorrectos.map((x: any, i: number) => (
+                        <div key={i} className="p-2 text-xs flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <p className="font-bold truncate">{x.producto}</p>
+                            <p className="text-muted-foreground truncate">
+                              {x.proveedor || "—"} · {x.factura || `Compra #${x.purchaseId}`} · {x.fecha}
+                            </p>
+                          </div>
+                          <div className="text-right shrink-0">
+                            <p className="text-red-700 font-bold">en 365: Bs {x.precioEn365.toFixed(2)}</p>
+                            <p className="text-emerald-700 font-bold">debe ser: Bs {x.precioEsperado.toFixed(2)}</p>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                    <Button
+                      onClick={() => corregirAuditados.mutate({
+                        productos: auditoria.data!.incorrectos.map((x: any) => ({ nombreEn365: x.nombreEn365, precioEsperado: x.precioEsperado })),
+                      })}
+                      disabled={corregirAuditados.isPending}
+                      className="w-full gap-2 font-bold"
+                    >
+                      {corregirAuditados.isPending ? <Loader2 className="h-4 w-4 animate-spin" /> : <Zap className="h-4 w-4" />}
+                      {corregirAuditados.isPending ? "Corrigiendo en 365…" : `Corregir los ${auditoria.data.incorrectos.length} precios en 365`}
+                    </Button>
+                  </>
+                )}
+
+                {auditoria.data.noEncontrados.length > 0 && (
+                  <p className="text-[11px] text-amber-700">
+                    No encontrados en 365 (revísalos a mano): {auditoria.data.noEncontrados.map((x: any) => x.producto).join(", ")}
+                  </p>
+                )}
+                <p className="text-[10px] text-muted-foreground">
+                  Compara el ÚLTIMO precio editado de cada producto contra el precio real de 365. Si compraste un producto varias veces, solo cuenta el más reciente.
+                </p>
+              </div>
+            ) : null}
+          </div>
+        )}
+      </div>
 
       {/* Buscador: proveedor, N° de factura o NOMBRE DE PRODUCTO */}
       <div className="flex gap-2">

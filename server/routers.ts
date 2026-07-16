@@ -37,6 +37,108 @@ const purchasesRouter = router({
     return db.listPurchases(ctx.user.id);
   }),
 
+  // AUDITORÍA DE PRECIOS: revisa TODOS los precios de venta editados en el
+  // historial de compras y compara cada uno contra el precio REAL de 365. Sin
+  // buscar a mano: dice exactamente cuáles no quedaron aplicados.
+  // Clave: si un producto se compró varias veces, solo vale el precio MÁS
+  // RECIENTE (un precio viejo pisado por una compra nueva no es un error).
+  auditarPrecios: protectedProcedure
+    .input(z.object({ desde: z.string().max(10).optional() }).optional())
+    .query(async ({ input, ctx }) => {
+      const { getDb } = await import("./db");
+      const { sql } = await import("drizzle-orm");
+      const dbx = await getDb();
+      if (!dbx) return { error: "Sin BD" };
+      const filas = (r: any) => { const x = Array.isArray(r) ? r[0] : r?.rows ?? r; return Array.isArray(x) ? x : []; };
+
+      // 1. Todos los ítems con precio de venta editado (de compras sincronizadas)
+      let cond = sql`p.userId = ${ctx.user.id} AND i.precioVenta IS NOT NULL AND i.precioVenta > 0 AND p.status = 'completed'`;
+      if (input?.desde) cond = sql`${cond} AND DATE(p.createdAt) >= ${input.desde}`;
+      const items = filas(await dbx.execute(sql`
+        SELECT i.id AS itemId, i.purchaseId, i.productName, i.precioVenta,
+               DATE(p.createdAt) AS fecha, p.supplier, p.receiptNumber
+        FROM purchase_items i INNER JOIN purchases p ON p.id = i.purchaseId
+        WHERE ${cond}
+        ORDER BY p.createdAt DESC LIMIT 3000
+      `));
+      if (items.length === 0) return { total: 0, correctos: 0, incorrectos: [], noEncontrados: [], sinVerificar: 0 };
+
+      // 2. Quedarse con el ÚLTIMO precio editado por producto (lógica pura testeada)
+      const { ultimoPrecioPorProducto } = await import("./domain/compras");
+      const datosPorClave = new Map<string, any>();
+      const paraFiltrar = items.map((it: any) => {
+        const clave = String(it.productName).trim().toLowerCase();
+        if (!datosPorClave.has(clave)) datosPorClave.set(clave, it);
+        return {
+          productName: String(it.productName), precioVenta: Number(it.precioVenta),
+          fecha: String(it.fecha).slice(0, 10), purchaseId: Number(it.purchaseId), itemId: Number(it.itemId),
+        };
+      });
+      const ultimos = ultimoPrecioPorProducto(paraFiltrar);
+
+      // 3. Leer el catálogo REAL de 365 UNA sola vez (no una llamada por producto)
+      const { inventarios365 } = await import("./inventarios365");
+      const catalogo = await inventarios365.listarTodosArticulos();
+      if (catalogo.length === 0) {
+        return { error: "No se pudo leer el catálogo de inventarios365 para comparar. Intenta de nuevo en un momento." };
+      }
+
+      // 4. Emparejar por nombre (difuso, tolera diferencias) y comparar precios
+      const { mejoresCandidatos } = await import("./domain/emparejar");
+      const nombres365 = catalogo.map((a: any) => String(a.nombre || ""));
+      const porNombre365 = new Map(catalogo.map((a: any) => [String(a.nombre || ""), a]));
+      const incorrectos: any[] = [];
+      const noEncontrados: any[] = [];
+      let correctos = 0;
+
+      for (const u of ultimos) {
+        const cands = mejoresCandidatos(u.productName, nombres365, 1);
+        const mejor = cands[0];
+        if (!mejor || mejor.confianza === "baja") {
+          noEncontrados.push({ producto: u.productName, precioEsperado: u.precioVenta });
+          continue;
+        }
+        const art: any = porNombre365.get(mejor.nombre);
+        const precio365 = parseFloat(String(art?.precio_uno || 0)) || 0;
+        if (Math.abs(precio365 - u.precioVenta) <= 0.01) { correctos++; continue; }
+        const info = datosPorClave.get(u.productName.trim().toLowerCase()) || {};
+        incorrectos.push({
+          producto: u.productName,
+          nombreEn365: mejor.nombre,
+          precioEsperado: u.precioVenta,
+          precioEn365: precio365,
+          fecha: u.fecha,
+          purchaseId: u.purchaseId,
+          proveedor: info.supplier || null,
+          factura: info.receiptNumber || null,
+        });
+      }
+      incorrectos.sort((a, b) => (b.fecha || "").localeCompare(a.fecha || ""));
+      return {
+        total: ultimos.length,
+        correctos,
+        incorrectos,
+        noEncontrados,
+        sinVerificar: 0,
+      };
+    }),
+
+  // CORREGIR EN LOTE los precios que la auditoría encontró mal. Solo toca precios
+  // (no crea ingresos), verifica releyendo y reintenta — mismo motor que las
+  // compras.
+  corregirPreciosAuditados: protectedProcedure
+    .input(z.object({ productos: z.array(z.object({ nombreEn365: z.string(), precioEsperado: z.number() })).min(1).max(300) }))
+    .mutation(async ({ input }) => {
+      const { inventarios365 } = await import("./inventarios365");
+      const items = input.productos.map((p) => ({ nombre: p.nombreEn365, precioVenta: p.precioEsperado }));
+      const r = await inventarios365.aplicarPreciosVenta(items);
+      const partes: string[] = [];
+      if (r.aplicados.length > 0) partes.push(`✅ ${r.aplicados.length} corregido(s)`);
+      if (r.fallidos.length > 0) partes.push(`❌ ${r.fallidos.length} no se pudo: ${r.fallidos.slice(0, 8).join(", ")}${r.fallidos.length > 8 ? "…" : ""}`);
+      if (r.noEncontrados.length > 0) partes.push(`⚠ ${r.noEncontrados.length} no encontrado(s) en 365`);
+      return { ok: r.fallidos.length === 0, mensaje: partes.join(" · ") || "Sin cambios.", ...r };
+    }),
+
   // BUSCAR compras por proveedor, número de factura o NOMBRE DE PRODUCTO. Lo
   // último es la clave: permite encontrar en qué facturas entró un producto para
   // revisar/corregir su precio. Devuelve además los ítems que coinciden, con el

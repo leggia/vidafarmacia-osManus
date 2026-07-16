@@ -676,6 +676,21 @@ class Inventarios365Service {
     return { aplicados, fallidos: pendientes.map((p) => p.nombre) };
   }
 
+  /**
+   * Catálogo COMPLETO de artículos con sus precios actuales (una sola llamada).
+   * Para auditar precios sin hacer una petición por producto.
+   */
+  async listarTodosArticulos(): Promise<any[]> {
+    try {
+      const data = await this.get<any>(`/articulo/listarArticulo?buscar=&criterio=todos&idProveedor=`);
+      const lista = data?.articulos?.data ?? data?.articulos ?? data?.data ?? [];
+      return Array.isArray(lista) ? lista : [];
+    } catch (e: any) {
+      console.warn("[Inventarios365] listarTodosArticulos falló:", e?.message);
+      return [];
+    }
+  }
+
   /** Obtener un artículo por su id (busca en el listado). */
   async obtenerArticuloPorId(idarticulo: number): Promise<any | null> {
     try {

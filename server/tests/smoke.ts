@@ -9,7 +9,7 @@ import { expandirBusqueda, principioDeMarca } from "../diccionario-principios";
 import { calcularDescuentosCascada } from "../domain/descuentos";
 import { mejoresCandidatos, triangularFila, numerosSospechosos } from "../domain/emparejar";
 import { calcularVenta, validarVenta } from "../domain/contingencia";
-import { evaluarPrecio } from "../domain/compras";
+import { evaluarPrecio, ultimoPrecioPorProducto } from "../domain/compras";
 import { compararPeriodo } from "../domain/tendencias";
 import { construirLibro, resumenPeriodo, rangoTrimestre } from "../domain/psicotropicos";
 
@@ -182,6 +182,29 @@ test("costo nuevo deja margen bajo (<20%) contra el precio de venta → alerta",
 test("margen sano (>=20%) → sin alerta", () => {
   const r = evaluarPrecio(7.00, 10.00, 10.00); // margen 30%
   assert.equal(r.alertaMargen, false);
+});
+test("auditoría: de varias compras del mismo producto, vale el precio MÁS RECIENTE", () => {
+  const r = ultimoPrecioPorProducto([
+    { productName: "PARACETAMOL 500MG", precioVenta: 5, fecha: "2026-01-10", purchaseId: 1 },
+    { productName: "PARACETAMOL 500MG", precioVenta: 6, fecha: "2026-07-10", purchaseId: 2 },
+    { productName: "AMOXICILINA 500MG", precioVenta: 12, fecha: "2026-03-01", purchaseId: 3 },
+  ]);
+  assert.equal(r.length, 2);
+  const para = r.find((x) => x.productName.startsWith("PARACETAMOL"));
+  assert.equal(para?.precioVenta, 6); // el de julio, no el de enero
+});
+test("auditoría: mismo día → gana la carga más reciente (id mayor)", () => {
+  const r = ultimoPrecioPorProducto([
+    { productName: "IBUPROFENO 400", precioVenta: 8, fecha: "2026-07-10", purchaseId: 1, itemId: 10 },
+    { productName: "IBUPROFENO 400", precioVenta: 9, fecha: "2026-07-10", purchaseId: 2, itemId: 20 },
+  ]);
+  assert.equal(r[0].precioVenta, 9);
+});
+test("auditoría: ignora los que no tienen precio de venta editado", () => {
+  const r = ultimoPrecioPorProducto([
+    { productName: "X", precioVenta: 0, fecha: "2026-07-10", purchaseId: 1 },
+  ]);
+  assert.equal(r.length, 0);
 });
 
 // ─── 9. TENDENCIAS Y ALERTAS PROACTIVAS ───
