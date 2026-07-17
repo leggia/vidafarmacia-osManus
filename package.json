@@ -1,7 +1,11 @@
 {
-  "name": "vidafarmacia-os",
-  "type": "module",
+  "name": "vidafarma-os",
+  "version": "2.32.0",
+  "description": "VidaFarma OS — sistema de gestión para farmacia (inventario, compras, ventas, finanzas y asistente IA). Cochabamba, Bolivia.",
+  "author": "Luis Omar Tuco Tito <leggia@vidafarma.bo> (Técnico Superior en Sistemas Informáticos)",
   "license": "MIT",
+  "private": true,
+  "type": "module",
   "scripts": {
     "dev": "NODE_ENV=development tsx watch server/_core/index.ts",
     "build": "vite build && esbuild server/_core/index.ts --platform=node --packages=external --bundle --format=esm --outdir=dist",
@@ -118,10 +122,8 @@
       "tailwindcss>nanoid": "3.3.7"
     }
   },
-  "description": "VidaFarma OS - Sistema de gesti\u00f3n de inventario y compras para farmacias",
   "engines": {
     "node": ">=20.0.0",
     "pnpm": ">=10.0.0"
-  },
-  "version": "2.31.0"
+  }
 }

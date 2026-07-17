@@ -1,6 +1,6 @@
 ---
 name: vidafarma
-description: Conocimiento del proyecto VidaFarma (app web de gestión para una farmacia en Cochabamba, Bolivia, dueño Luis/leggia). Úsalo SIEMPRE que Luis pida trabajar en VidaFarma, su farmacia, el repo vidafarmacia-osManus, el asistente con DeepSeek, el módulo de compras/inventario/reportes/gastos, la integración con inventarios365, o cualquier tarea de código en este proyecto. Contiene credenciales de recuperación, comandos de compilación, endpoints reales de 365, lecciones críticas, las herramientas del asistente y estructura de archivos. Consúltalo al inicio de cada sesión de VidaFarma porque el entorno se reinicia y se pierde el contexto.
+description: Conocimiento del proyecto VidaFarma (app web de gestión para una farmacia en Cochabamba, Bolivia, dueño Luis/leggia). Úsalo SIEMPRE que Luis pida trabajar en VidaFarma, su farmacia, el repo vidafarma-os, el asistente con DeepSeek, el módulo de compras/inventario/reportes/gastos, la integración con inventarios365, o cualquier tarea de código en este proyecto. Contiene credenciales de recuperación, comandos de compilación, endpoints reales de 365, lecciones críticas, las herramientas del asistente y estructura de archivos. Consúltalo al inicio de cada sesión de VidaFarma porque el entorno se reinicia y se pierde el contexto.
 ---
 
 # VidaFarma — Conocimiento del proyecto
@@ -9,9 +9,9 @@ App web Node.js/TypeScript (React + tRPC + Drizzle/MySQL) para gestión de una f
 
 ## Recuperación rápida del entorno (se REINICIA)
 
-cd /tmp && rm -rf vidafarma-repo && git clone https://leggia:TOKEN@github.com/leggia/vidafarmacia-osManus.git vidafarma-repo && cd vidafarma-repo && git config user.email "leggia@vidafarma.bo" && git config user.name "leggia"
+cd /tmp && rm -rf vidafarma-repo && git clone https://leggia:TOKEN@github.com/leggia/vidafarma-os.git vidafarma-repo && cd vidafarma-repo && git config user.email "leggia@vidafarma.bo" && git config user.name "leggia"
 
-- Dir: /tmp/vidafarma-repo. Repo: github.com/leggia/vidafarmacia-osManus.
+- Dir: /tmp/vidafarma-repo. Repo: github.com/leggia/vidafarma-os.
 - Producción: https://vidafarmacia-osmanus-production.up.railway.app
 - Deploy: push a main -> Railway auto. MySQL en Railway.
 - Token GitHub: pedir a Luis el actual (no inventar). Al push filtrar: sed 's/ghp_[A-Za-z0-9]*/ghp_***/g'.

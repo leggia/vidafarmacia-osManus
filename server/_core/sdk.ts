@@ -1,6 +1,6 @@
 /**
  * SDK de autenticación — VidaFarma OS
- * Reemplaza el SDK de Manus con autenticación JWT local.
+ * SDK propio con autenticación JWT local (sin dependencias externas).
  * Sin dependencias externas de OAuth.
  */
 

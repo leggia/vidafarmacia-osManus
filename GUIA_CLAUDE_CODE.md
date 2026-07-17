@@ -32,7 +32,7 @@ Plan Pro es suficiente para Remote Control.
 - En la terminal, ve a donde quieras guardar el proyecto, por ejemplo:
   ```
   cd C:\
-  git clone https://github.com/leggia/vidafarmacia-osManus.git vidafarma
+  git clone https://github.com/leggia/vidafarma-os.git vidafarma
   cd vidafarma
   ```
   (Te pedirá tu usuario y token de GitHub la primera vez.)

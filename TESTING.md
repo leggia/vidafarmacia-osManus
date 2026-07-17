@@ -150,7 +150,7 @@ producción. Se activa solo con la variable de entorno, sin tocar código.
 
 **Pasos en Railway (esto lo hace Luis — Claude Code no tiene acceso a Railway):**
 1. En el proyecto de Railway, crear un nuevo servicio ("New Service" → "GitHub Repo",
-   mismo repo `vidafarmacia-osManus`, rama `main`).
+   mismo repo `vidafarma-os`, rama `main`).
 2. Agregar una base de datos MySQL NUEVA para ese servicio (para que las ventas y
    compras de prueba no se mezclen con las reales) — Railway la conecta sola vía
    variable `DATABASE_URL` si se usa su plugin de MySQL.

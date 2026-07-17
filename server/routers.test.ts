@@ -16,7 +16,7 @@ function createAuthContext(): {
     openId: "test-user-001",
     email: "luis@vidafarma.com",
     name: "Luis Omar Tuco",
-    loginMethod: "manus",
+    loginMethod: "google",
     role: "admin",
     createdAt: new Date(),
     updatedAt: new Date(),

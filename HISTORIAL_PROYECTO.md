@@ -1,13 +1,16 @@
-# Historial del proyecto VidaFarma
+# Historial del proyecto VidaFarma OS
 
 Resumen de lo construido y aprendido. Para que cualquier sesión de Claude (chat o Claude Code) retome el contexto rápido.
+
+**Desarrollo y diseño:** Luis Omar Tuco Tito — Técnico Superior en Sistemas Informáticos.
+_(Autoría del proyecto. Es información interna: NO se muestra en la app ni en la tienda de clientes.)_
 
 ## Qué es VidaFarma
 
 App web (Node.js/TypeScript, React, tRPC, Drizzle/MySQL) de gestión para una farmacia en Cochabamba, Bolivia. Dueño: Luis (GitHub `leggia`). Se integra con **inventarios365** (sistema externo Laravel/PHP que Luis paga, usado para facturación fiscal SIN/SFE, login de vendedores y caja). VidaFarma construye todo lo demás: compras, inventario, reportes, gastos, asistencia/sueldos y un asistente conversacional.
 
 - Producción: https://vidafarmacia-osmanus-production.up.railway.app
-- Repo: https://github.com/leggia/vidafarmacia-osManus
+- Repo: https://github.com/leggia/vidafarma-os
 - Deploy: push a `main` → GitHub Actions → Railway (auto). MySQL en Railway.
 
 ## Módulos construidos

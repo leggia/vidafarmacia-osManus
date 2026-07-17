@@ -1,5 +1,5 @@
 /**
- * Sistema de autenticación simple (reemplaza OAuth de Manus)
+ * Sistema de autenticación propio con JWT (ya no depende de servicios externos)
  * Login con usuario y contraseña local
  */
 import { COOKIE_NAME, ONE_YEAR_MS } from "@shared/const";

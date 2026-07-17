@@ -1,5 +1,5 @@
 /**
- * Almacenamiento local (reemplaza el storage proxy de Manus)
+ * Almacenamiento local propio (sin proxy externo)
  * Guarda archivos en /uploads dentro del proyecto
  */
 

@@ -12,11 +12,11 @@ Para restaurar todo de una vez (reemplazar `TOKEN` por el token vigente que el u
 
 ```bash
 cd /tmp && rm -rf vidafarma-repo && \
-git clone https://github.com/leggia/vidafarmacia-osManus.git vidafarma-repo && \
+git clone https://github.com/leggia/vidafarma-os.git vidafarma-repo && \
 cd vidafarma-repo && \
 git config user.email "leggia@vidafarma.bo" && \
 git config user.name "leggia" && \
-git remote set-url origin https://leggia:TOKEN@github.com/leggia/vidafarmacia-osManus.git && \
+git remote set-url origin https://leggia:TOKEN@github.com/leggia/vidafarma-os.git && \
 echo "✅ Entorno restaurado. Versión actual:" && \
 cat package.json | python3 -c "import json,sys; print(json.load(sys.stdin)['version'])"
 ```
@@ -30,7 +30,7 @@ cat package.json | python3 -c "import json,sys; print(json.load(sys.stdin)['vers
 
 | Dato | Valor |
 |------|-------|
-| Repo | https://github.com/leggia/vidafarmacia-osManus |
+| Repo | https://github.com/leggia/vidafarma-os |
 | Directorio de trabajo | `/tmp/vidafarma-repo` |
 | App en producción | https://vidafarmacia-osmanus-production.up.railway.app |
 | Sistema integrado | https://vidafarmacia.inventarios365.com (login: superadmin/superadmin) |
