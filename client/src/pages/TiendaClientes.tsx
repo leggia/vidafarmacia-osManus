@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { Home, Search, Receipt, Gift, ShoppingCart, Bell, User } from "lucide-react";
+import { Home, Search, Receipt, Gift, ShoppingCart, User } from "lucide-react";
 import { trpc } from "@/lib/trpc";
 
 /**
@@ -74,6 +74,13 @@ export default function TiendaClientes() {
   const { data: recompra } = trpc.tienda.recompra.useQuery(undefined, { enabled: esCliente, staleTime: 60000 });
   const { data: puntos } = trpc.tienda.misPuntos.useQuery(undefined, { enabled: esCliente, staleTime: 60000 });
   const [verMisReservas, setVerMisReservas] = useState(false);
+  const [verCuenta, setVerCuenta] = useState(false);
+  const cerrarSesion = trpc.auth.logout.useMutation({ onSuccess: () => window.location.reload() });
+  // Pedidos "activos" = los que el cliente todavía espera (pendiente o lista para
+  // recoger). Es el número que importa mostrar en el icono.
+  const pedidosActivos = (misReservas?.reservas || []).filter(
+    (r: any) => r.estado === "pendiente" || r.estado === "lista"
+  ).length;
   const [pagoActivo, setPagoActivo] = useState<any>(null);
   const reservar = trpc.tienda.reservar.useMutation();
   const iniciarPago = trpc.tienda.iniciarPago.useMutation();
@@ -197,31 +204,45 @@ export default function TiendaClientes() {
 
   return (
     <div className="min-h-screen bg-white pb-28">
-      {/* Barra superior FIJA (sticky) estilo CVS */}
+      {/* Barra superior FIJA. Cada icono tiene UNA función propia y distinta:
+          Cuenta · Mis pedidos · Carrito. (Antes el usuario y la campana abrían
+          los dos lo mismo, y el carrito vacío era un clic muerto sin respuesta.) */}
       <div className="sticky top-0 z-30 bg-white/95 backdrop-blur border-b border-gray-100">
         <div className="max-w-lg mx-auto px-4 h-14 flex items-center justify-between">
           <img src="/vidafarma-logo.png" alt="VidaFarma" className="h-8 w-auto" />
           <div className="flex items-center gap-1">
+            {/* 1. CUENTA — inicia sesión, o abre tu panel (puntos, cerrar sesión) */}
             {esCliente ? (
-              <button onClick={() => setVerMisReservas(true)}
-                className="w-10 h-10 rounded-full flex items-center justify-center text-gray-600 active:scale-90" title="Mi cuenta">
+              <button onClick={() => setVerCuenta(true)}
+                className="w-10 h-10 rounded-full flex items-center justify-center text-gray-600 active:scale-90"
+                aria-label="Mi cuenta" title="Mi cuenta">
                 <User className="w-5 h-5" />
               </button>
             ) : (
               <a href="/api/oauth/google/cliente"
-                className="w-10 h-10 rounded-full flex items-center justify-center text-gray-600 active:scale-90" title="Iniciar sesión">
-                <User className="w-5 h-5" />
+                className="h-9 px-3 rounded-full flex items-center gap-1.5 text-xs font-bold text-emerald-700 bg-emerald-50 active:scale-95"
+                aria-label="Iniciar sesión" title="Iniciar sesión">
+                <User className="w-4 h-4" /> Entrar
               </a>
             )}
+
+            {/* 2. MIS PEDIDOS — el estado de tus reservas (antes era una campana,
+                   que significa "notificaciones" y confundía) */}
             <button onClick={() => esCliente ? setVerMisReservas(true) : (window.location.href = "/api/oauth/google/cliente")}
-              className="w-10 h-10 rounded-full flex items-center justify-center text-gray-600 active:scale-90 relative" title="Mis reservas">
-              <Bell className="w-5 h-5" />
-              {(misReservas?.reservas?.filter((r: any) => r.estado === "pendiente" || r.estado === "lista").length || 0) > 0 && (
-                <span className="absolute top-1.5 right-1.5 w-2.5 h-2.5 rounded-full bg-red-500 border-2 border-white" />
+              className="w-10 h-10 rounded-full flex items-center justify-center text-gray-600 active:scale-90 relative"
+              aria-label="Mis pedidos" title="Mis pedidos">
+              <Receipt className="w-5 h-5" />
+              {pedidosActivos > 0 && (
+                <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-sky-600 text-white text-[10px] font-black flex items-center justify-center">
+                  {pedidosActivos}
+                </span>
               )}
             </button>
-            <button onClick={() => carrito.length > 0 && setVerCarrito(true)}
-              className="w-10 h-10 rounded-full flex items-center justify-center text-gray-600 active:scale-90 relative" title="Carrito">
+
+            {/* 3. CARRITO — siempre responde: si está vacío, lo dice (no se queda mudo) */}
+            <button onClick={() => setVerCarrito(true)}
+              className="w-10 h-10 rounded-full flex items-center justify-center text-gray-600 active:scale-90 relative"
+              aria-label={totalItems > 0 ? `Carrito con ${totalItems} producto(s)` : "Carrito vacío"} title="Carrito">
               <ShoppingCart className="w-5 h-5" />
               {totalItems > 0 && (
                 <span className="absolute -top-0.5 -right-0.5 min-w-[18px] h-[18px] px-1 rounded-full bg-emerald-600 text-white text-[10px] font-black flex items-center justify-center">
@@ -446,10 +467,68 @@ export default function TiendaClientes() {
       )}
 
       {/* Carrito + checkout */}
+      {/* PANEL DE CUENTA — la función que le faltaba al icono de usuario:
+          antes abría lo mismo que "Mis pedidos". Aquí van los datos del cliente,
+          sus puntos y el cierre de sesión. */}
+      {verCuenta && (
+        <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50" onClick={() => setVerCuenta(false)}>
+          <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-md p-6" onClick={e => e.stopPropagation()}>
+            <div className="flex items-center gap-3 pb-4 border-b border-gray-100">
+              <div className="w-12 h-12 rounded-full bg-emerald-100 flex items-center justify-center">
+                <User className="w-6 h-6 text-emerald-700" />
+              </div>
+              <div className="min-w-0">
+                <p className="font-black text-gray-900 truncate">{yo?.name || "Mi cuenta"}</p>
+                {yo?.email && <p className="text-xs text-gray-500 truncate">{yo.email}</p>}
+              </div>
+            </div>
+
+            {puntos && (
+              <div className="my-4 p-4 rounded-2xl bg-gradient-to-br from-emerald-50 to-sky-50 border border-emerald-100">
+                <p className="text-xs font-bold text-emerald-800 uppercase tracking-wide">Tus puntos</p>
+                <p className="text-3xl font-black text-emerald-700">{(puntos as any).puntos ?? 0}</p>
+                {(puntos as any).faltanParaVale > 0 ? (
+                  <p className="text-[11px] text-gray-600">
+                    Te faltan <b>{(puntos as any).faltanParaVale}</b> puntos para un vale de Bs {(puntos as any).valorVale}.
+                  </p>
+                ) : (
+                  <p className="text-[11px] font-bold text-emerald-700">🎉 ¡Ya tienes un vale disponible! Reclámalo en la sucursal.</p>
+                )}
+                {(puntos as any).vales > 0 && (
+                  <p className="text-[11px] text-gray-600 mt-0.5">Vales ganados: <b>{(puntos as any).vales}</b></p>
+                )}
+              </div>
+            )}
+
+            <button onClick={() => { setVerCuenta(false); setVerMisReservas(true); }}
+              className="w-full h-12 rounded-2xl bg-gray-50 text-gray-900 font-bold text-sm flex items-center justify-between px-4 active:scale-[0.98] mb-2">
+              <span className="flex items-center gap-2"><Receipt className="w-4 h-4" /> Mis pedidos</span>
+              {pedidosActivos > 0 && <span className="text-xs font-black text-sky-700">{pedidosActivos} activo(s)</span>}
+            </button>
+
+            <button onClick={() => cerrarSesion.mutate()} disabled={cerrarSesion.isPending}
+              className="w-full h-12 rounded-2xl border border-gray-200 text-gray-600 font-bold text-sm flex items-center justify-center active:scale-[0.98] disabled:opacity-50">
+              {cerrarSesion.isPending ? "Cerrando…" : "Cerrar sesión"}
+            </button>
+          </div>
+        </div>
+      )}
+
       {verCarrito && (
         <div className="fixed inset-0 bg-black/50 flex items-end sm:items-center justify-center z-50" onClick={() => setVerCarrito(false)}>
           <div className="bg-white rounded-t-3xl sm:rounded-3xl w-full max-w-md p-6 max-h-[90vh] overflow-y-auto" onClick={e => e.stopPropagation()}>
             <h3 className="font-black text-lg text-gray-900 mb-3">Tu carrito</h3>
+            {carrito.length === 0 && (
+              <div className="text-center py-10">
+                <ShoppingCart className="w-12 h-12 mx-auto text-gray-300 mb-3" />
+                <p className="text-sm font-bold text-gray-900">Tu carrito está vacío</p>
+                <p className="text-xs text-gray-500 mb-4">Busca un medicamento y agrégalo para reservarlo.</p>
+                <button onClick={() => setVerCarrito(false)}
+                  className="h-11 px-5 rounded-full bg-emerald-600 text-white text-sm font-black active:scale-95">
+                  Buscar productos
+                </button>
+              </div>
+            )}
             {carrito.map(i => (
               <div key={i.nombre} className="flex items-center gap-2 py-2 border-b border-gray-100">
                 <div className="flex-1 min-w-0">
