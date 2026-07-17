@@ -1,4 +1,4 @@
-import { useState, useCallback, useRef } from "react";
+import { useState, useCallback, useRef, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -55,6 +55,20 @@ export default function NuevaTransferencia() {
   const emparejar = trpc.transfers.emparejar.useMutation();
   const dictarLista = trpc.transfers.dictarLista.useMutation();
   const [buscandoFila, setBuscandoFila] = useState<number | null>(null);
+  // BÚSQUEDA EN VIVO: se busca mientras se escribe (sin botón), con un respiro de
+  // 300ms para no consultar en cada tecla. Muestra el stock del ORIGEN de una vez.
+  const [filaActiva, setFilaActiva] = useState<number | null>(null);
+  const [textoBusqueda, setTextoBusqueda] = useState("");
+  const [textoDebounced, setTextoDebounced] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setTextoDebounced(textoBusqueda), 300);
+    return () => clearTimeout(t);
+  }, [textoBusqueda]);
+  const sucursalOrigenNombre = (branchesData || []).find((b: any) => String(b.id) === fromBranchId)?.name || "";
+  const { data: sugerencias, isFetching: buscandoVivo } = trpc.transfers.buscarConStock.useQuery(
+    { q: textoDebounced, sucursalOrigen: sucursalOrigenNombre || undefined },
+    { enabled: textoDebounced.trim().length >= 2 && filaActiva !== null }
+  );
   // Dictado por voz: grabar → Whisper → productos+cantidades → mismo emparejado
   const [grabando, setGrabando] = useState(false);
   const [procesandoVoz, setProcesandoVoz] = useState(false);
@@ -104,6 +118,30 @@ export default function NuevaTransferencia() {
   const elegirCandidato = (idx: number, nombre: string) => {
     setItems(prev => prev.map((p, i) => i === idx ? { ...p, productName: nombre, confianza: "elegido", candidatos: undefined } : p));
   };
+  // STOCK DEL ORIGEN: se verifica ANTES de transferir. Si algún producto no
+  // alcanza, 365 rechazaría la transferencia — mejor detectarlo aquí y ofrecer
+  // ajustar el origen (caso real: el stock físico está, pero el sistema dice menos).
+  const stockOrigen = trpc.transfers.stockDeProductos.useQuery(
+    { sucursalOrigen: sucursalOrigenNombre, nombres: items.map((i) => i.productName).filter(Boolean) },
+    { enabled: !!sucursalOrigenNombre && items.length > 0 && items.some((i) => i.productName?.trim()) }
+  );
+  const faltantes = (items || [])
+    .map((it) => {
+      const s = (stockOrigen.data?.stock || {})[it.productName];
+      if (s == null) return null;
+      const necesita = Number(it.quantity) || 0;
+      return s < necesita ? { nombre: it.productName, hay: s, necesita, falta: necesita - s } : null;
+    })
+    .filter(Boolean) as any[];
+  const ajustarOrigen = trpc.transfers.ajustarStockOrigen.useMutation({
+    onSuccess: (r: any) => {
+      if (r.ok) toast.success(r.mensaje, { duration: 9000 });
+      else toast.error(r.mensaje, { duration: 10000 });
+      stockOrigen.refetch();
+    },
+    onError: (e) => toast.error(e.message),
+  });
+
   const createTransfer = trpc.transfers.create.useMutation();
 
   const handleFileSelect = useCallback(
@@ -478,24 +516,55 @@ export default function NuevaTransferencia() {
                       className="grid grid-cols-12 gap-2 items-center py-1"
                     >
                       <div className="col-span-8">
-                        <div className="flex gap-1.5 items-center">
+                        <div className="flex gap-1.5 items-center relative">
                           <Input
                             value={item.productName}
-                            onChange={(e) =>
-                              updateItem(idx, "productName", e.target.value)
-                            }
+                            onChange={(e) => {
+                              updateItem(idx, "productName", e.target.value);
+                              // Buscar EN VIVO: sin botón, como el resto de la app
+                              setFilaActiva(idx);
+                              setTextoBusqueda(e.target.value);
+                            }}
+                            onFocus={() => { setFilaActiva(idx); setTextoBusqueda(item.productName || ""); }}
                             className="text-sm h-9"
-                            placeholder="Nombre del medicamento"
+                            placeholder="Escribe el medicamento…"
+                            autoComplete="off"
                           />
+                          {buscandoVivo && filaActiva === idx && (
+                            <Loader2 className="absolute right-12 h-3.5 w-3.5 animate-spin text-muted-foreground" />
+                          )}
                           <button
                             type="button"
                             onClick={() => buscarEnCatalogo(idx)}
                             disabled={buscandoFila === idx}
-                            title="Buscar en el catálogo"
+                            title="Emparejar esta fila con el catálogo"
                             className="shrink-0 h-9 w-9 rounded-lg bg-emerald-50 border border-emerald-200 text-emerald-700 text-sm disabled:opacity-50"
                           >
                             {buscandoFila === idx ? "…" : "🔍"}
                           </button>
+                          {/* Sugerencias en vivo CON el stock del origen: se ve al
+                              instante si alcanza para transferir. */}
+                          {filaActiva === idx && (sugerencias?.productos?.length || 0) > 0 && item.productName?.trim().length >= 2 && (
+                            <div className="absolute top-10 left-0 right-11 z-30 bg-white dark:bg-card border rounded-xl shadow-lg max-h-56 overflow-y-auto">
+                              {sugerencias!.productos.map((p: any) => {
+                                const falta = p.stockOrigen != null && p.stockOrigen < (item.quantity || 1);
+                                return (
+                                  <button key={p.nombre} type="button"
+                                    onClick={() => { elegirCandidato(idx, p.nombre); setFilaActiva(null); setTextoBusqueda(""); }}
+                                    className="w-full text-left px-3 py-2 text-xs hover:bg-muted flex items-center justify-between gap-2">
+                                    <span className="truncate">{p.nombre}</span>
+                                    {p.stockOrigen == null ? (
+                                      <span className="text-[10px] text-muted-foreground shrink-0">sin dato</span>
+                                    ) : (
+                                      <span className={`text-[10px] font-bold shrink-0 ${falta ? "text-red-600" : "text-emerald-700"}`}>
+                                        {p.stockOrigen} en origen
+                                      </span>
+                                    )}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
                         </div>
                         {item.confianza && (
                           <div className="mt-1 space-y-1">
@@ -567,6 +636,42 @@ export default function NuevaTransferencia() {
               )}
             </CardContent>
           </Card>
+
+          {/* STOCK INSUFICIENTE EN EL ORIGEN: 365 rechazaría la transferencia.
+              Se avisa ANTES de confirmar y se ofrece ajustar el origen (el caso
+              real es que el producto está físicamente pero el sistema dice menos). */}
+          {faltantes.length > 0 && (
+            <div className="mt-4 p-3 rounded-lg bg-red-50 dark:bg-red-950/20 border border-red-300">
+              <p className="text-xs font-black text-red-800 dark:text-red-300 mb-1">
+                ⚠ {faltantes.length} producto(s) sin stock suficiente en {sucursalOrigenNombre}
+              </p>
+              <ul className="text-[11px] text-red-700 dark:text-red-400 space-y-0.5 mb-2">
+                {faltantes.map((f: any, i: number) => (
+                  <li key={i}>
+                    • <b>{f.nombre}</b>: hay {f.hay}, necesitas {f.necesita} <b>(faltan {f.falta})</b>
+                  </li>
+                ))}
+              </ul>
+              <Button
+                onClick={() => {
+                  const detalle = faltantes.map((f: any) => `${f.nombre}: ${f.hay} → ${f.necesita}`).join("\n");
+                  if (!window.confirm(`Se ajustará el stock de ${sucursalOrigenNombre} en inventarios365 para poder transferir:\n\n${detalle}\n\nHazlo solo si el producto SÍ está físicamente en la sucursal y el sistema está desactualizado.\n\n¿Confirmas?`)) return;
+                  ajustarOrigen.mutate({
+                    sucursalOrigen: sucursalOrigenNombre,
+                    productos: faltantes.map((f: any) => ({ nombre: f.nombre, cantidadNecesaria: f.necesita })),
+                  });
+                }}
+                disabled={ajustarOrigen.isPending}
+                className="w-full gap-2 bg-red-600 hover:bg-red-700 text-white text-xs font-bold uppercase tracking-wider"
+              >
+                {ajustarOrigen.isPending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : null}
+                {ajustarOrigen.isPending ? "Ajustando stock…" : `Ajustar stock en ${sucursalOrigenNombre} para poder transferir`}
+              </Button>
+              <p className="text-[10px] text-red-600 dark:text-red-500 mt-1.5">
+                Sube el stock del origen a lo necesario y queda registrado como ajuste de inventario. Si el producto NO está físicamente, corrige la cantidad a transferir.
+              </p>
+            </div>
+          )}
 
           {items.length > 0 && (
             <div className="flex justify-end gap-3 mt-4">

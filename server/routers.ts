@@ -1122,6 +1122,133 @@ Devuelve SOLO este JSON:
       return { items, textoDictado: texto };
     }),
 
+  // BÚSQUEDA EN VIVO con el STOCK DEL ALMACÉN DE ORIGEN. Es una query (no una
+  // mutation) para poder buscar mientras se escribe, sin botón. Devuelve el stock
+  // real de cada candidato en el origen: así se ve de entrada si alcanza para
+  // transferir, en vez de descubrirlo cuando 365 rechaza la operación.
+  buscarConStock: protectedProcedure
+    .input(z.object({ q: z.string().max(200), sucursalOrigen: z.string().max(150).optional() }))
+    .query(async ({ input }) => {
+      const q = input.q.trim();
+      if (q.length < 2) return { productos: [] };
+      const { getDb } = await import("./db");
+      const { sql } = await import("drizzle-orm");
+      const dbx = await getDb();
+      if (!dbx) return { productos: [] };
+      // Catálogo local (rápido, no depende de 365 para sugerir nombres)
+      const r: any = await dbx.execute(sql.raw(`SELECT nombre FROM productos_cache WHERE precioUno >= 0`));
+      const f = Array.isArray(r) ? r[0] : r?.rows ?? r;
+      const catalogo: string[] = (Array.isArray(f) ? f : []).map((x: any) => String(x.nombre));
+      const { mejoresCandidatos } = await import("./domain/emparejar");
+      const candidatos = mejoresCandidatos(q, catalogo, 6);
+      if (candidatos.length === 0) return { productos: [] };
+
+      // Stock real del ORIGEN (cache 60s: buscar mientras se escribe no debe
+      // castigar a 365 con una llamada por tecla).
+      let stockPorNombre = new Map<string, { stock: number; id: number }>();
+      const { resolverAlmacen } = await import("./asistente-acciones");
+      const almacen = input.sucursalOrigen ? resolverAlmacen(input.sucursalOrigen) : null;
+      if (almacen) {
+        try {
+          const { obtenerStockAlmacen } = await import("./stock-cache");
+          const { lista } = await obtenerStockAlmacen(almacen.id, { ttlSeg: 60, fallbackCache: true });
+          stockPorNombre = new Map(lista.map((p: any) => [String(p.nombre), { stock: Number(p.stock) || 0, id: Number(p.id) }]));
+        } catch { /* sin stock: se devuelven igual los nombres */ }
+      }
+      return {
+        productos: candidatos.map((c) => {
+          const s = stockPorNombre.get(c.nombre);
+          return {
+            nombre: c.nombre,
+            confianza: c.confianza,
+            stockOrigen: s ? s.stock : null, // null = no se pudo leer el stock
+            articuloId: s ? s.id : null,
+          };
+        }),
+      };
+    }),
+
+  // STOCK del origen para una lista de productos concreta (los de la
+  // transferencia). Permite avisar ANTES de confirmar si alguno no alcanza, en
+  // vez de que 365 rechace la operación al final.
+  stockDeProductos: protectedProcedure
+    .input(z.object({ sucursalOrigen: z.string().max(150), nombres: z.array(z.string().max(500)).max(60) }))
+    .query(async ({ input }) => {
+      const { resolverAlmacen } = await import("./asistente-acciones");
+      const almacen = resolverAlmacen(input.sucursalOrigen);
+      if (!almacen || input.nombres.length === 0) return { stock: {} as Record<string, number> };
+      try {
+        const { obtenerStockAlmacen } = await import("./stock-cache");
+        const { lista } = await obtenerStockAlmacen(almacen.id, { ttlSeg: 60, fallbackCache: true });
+        const porNombre = new Map(lista.map((p: any) => [String(p.nombre), Number(p.stock) || 0]));
+        const stock: Record<string, number> = {};
+        for (const n of input.nombres) {
+          const v = porNombre.get(n);
+          if (v != null) stock[n] = v; // ausente = no se encontró: no se afirma nada
+        }
+        return { stock, almacen: almacen.nombre };
+      } catch {
+        return { stock: {} as Record<string, number> };
+      }
+    }),
+
+  // AJUSTAR EL STOCK DEL ORIGEN cuando no alcanza para la transferencia.
+  // Caso real: el stock físico está en el estante, pero el sistema dice menos —
+  // sin corregirlo, 365 rechaza la transferencia. Esto sube el stock del origen
+  // al valor necesario (mismo mecanismo que un ajuste de inventario, motivo
+  // "Ajuste periódico"), VERIFICANDO antes contra el stock real y dejando
+  // registro. No inventa nada: solo cubre la diferencia que falta.
+  ajustarStockOrigen: protectedProcedure
+    .input(z.object({
+      sucursalOrigen: z.string().max(150),
+      productos: z.array(z.object({ nombre: z.string().max(500), cantidadNecesaria: z.number().min(1) })).min(1).max(60),
+    }))
+    .mutation(async ({ input, ctx }) => {
+      if (ctx?.user?.role !== "admin" && ctx?.user?.role !== "regente") {
+        throw new Error("Solo administrador o regente puede ajustar stock.");
+      }
+      const { resolverAlmacen } = await import("./asistente-acciones");
+      const almacen = resolverAlmacen(input.sucursalOrigen);
+      if (!almacen) throw new Error(`No reconozco la sucursal de origen "${input.sucursalOrigen}".`);
+      const { obtenerStockAlmacen } = await import("./stock-cache");
+      // SIEMPRE en vivo: nunca ajustar stock con datos de cache.
+      const { lista } = await obtenerStockAlmacen(almacen.id, { ttlSeg: 0, fallbackCache: false });
+      const porNombre = new Map(lista.map((p: any) => [String(p.nombre), p]));
+
+      const ajustes: any[] = [];
+      const noEncontrados: string[] = [];
+      const yaAlcanzaban: string[] = [];
+      for (const p of input.productos) {
+        const art: any = porNombre.get(p.nombre);
+        if (!art) { noEncontrados.push(p.nombre); continue; }
+        const actual = Number(art.stock) || 0;
+        if (actual >= p.cantidadNecesaria) { yaAlcanzaban.push(p.nombre); continue; }
+        ajustes.push({
+          productoId: art.id, inventarioId: art.inventarioId ?? null,
+          stockAnterior: actual, stockReal: p.cantidadNecesaria, fechaVencimiento: null,
+          _nombre: p.nombre, _falta: p.cantidadNecesaria - actual,
+        });
+      }
+      if (ajustes.length === 0) {
+        return { ok: true, ajustados: 0, yaAlcanzaban, noEncontrados, mensaje: noEncontrados.length > 0 ? `No encontré en el origen: ${noEncontrados.join(", ")}` : "Todos los productos ya tienen stock suficiente." };
+      }
+      const { inventarios365 } = await import("./inventarios365");
+      const r = await inventarios365.ajustarInventario({
+        almacenId: almacen.id,
+        motivoId: 2,
+        ajustes: ajustes.map(({ productoId, inventarioId, stockAnterior, stockReal, fechaVencimiento }) => ({ productoId, inventarioId, stockAnterior, stockReal, fechaVencimiento })),
+      });
+      const detalle = ajustes.map((a) => `${a._nombre}: ${a.stockAnterior} → ${a.stockReal} (+${a._falta})`).join(" · ");
+      return {
+        ok: r.ok,
+        ajustados: r.ok ? ajustes.length : 0,
+        yaAlcanzaban, noEncontrados,
+        mensaje: r.ok
+          ? `Stock del origen ajustado en ${ajustes.length} producto(s): ${detalle}. Ya puedes transferir.`
+          : `No se pudo ajustar: ${r.mensaje}`,
+      };
+    }),
+
   // Emparejar los nombres extraídos de la lista MANUSCRITA contra el catálogo real.
   // Resuelve el problema de la letra variable de cada trabajadora: la visión
   // transcribe con errores y este endpoint devuelve, por ítem, los candidatos del

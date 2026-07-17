@@ -138,7 +138,7 @@ const ALMACENES_ACCION: { id: number; nombre: string; alias: string[] }[] = [
   { id: 3, nombre: "Almacén Lanza", alias: ["lanza"] },
   { id: 4, nombre: "Almacén Cobol", alias: ["cobol", "sucursal cobol", "casa matriz cobol", "cob"] },
 ];
-function resolverAlmacen(sucursal: string): { id: number; nombre: string } | null {
+export function resolverAlmacen(sucursal: string): { id: number; nombre: string } | null {
   const s = sucursal.toLowerCase().trim();
   const encontrado = ALMACENES_ACCION.find(al => al.alias.some(x => s.includes(x) || x.includes(s)));
   return encontrado ? { id: encontrado.id, nombre: encontrado.nombre } : null;
