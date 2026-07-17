@@ -702,7 +702,16 @@ export default function NuevaCompra() {
 
   // Un producto está emparejado si su nombre actual existe como clave en productosEmparejados
   // (productosEmparejados mapea nombreSistema → nombreFactura)
+  // Un ítem está emparejado si tiene VÍNCULO REAL con un producto del sistema
+  // (articuloId), o si su nombre está en el mapa del emparejado automático.
+  // Antes solo miraba el mapa por NOMBRE, y eso rompía el flujo real de trabajo:
+  // al unir dos lotes del mismo producto (o dos presentaciones en una sola línea)
+  // se edita el nombre, y al agregar un producto que la factura no trajo el nombre
+  // nace vacío — en ambos casos el nombre dejaba de estar en el mapa, el ítem
+  // quedaba "sin emparejar" para siempre y la sincronización se bloqueaba sin
+  // forma de destrabarla. El articuloId no cambia aunque se edite el nombre.
   const itemEmparejado = (item: ExtractedItem) =>
+    (item.articuloId != null && item.articuloId > 0) ||
     productosEmparejados[item.productName] !== undefined;
   const todosEmparejados = items.length > 0 && items.every(itemEmparejado);
   const cantidadSinEmparejar = items.filter(it => !itemEmparejado(it)).length;
@@ -1112,11 +1121,11 @@ export default function NuevaCompra() {
                       <Input
                         value={item.productName}
                         onChange={(e) => updateItem(idx, "productName", e.target.value)}
-                        className={`text-sm h-9 w-full ${productosEmparejados[item.productName] !== undefined ? "border-green-500 bg-green-50 dark:bg-green-950 pr-7" : ""}`}
+                        className={`text-sm h-9 w-full ${itemEmparejado(item) ? "border-green-500 bg-green-50 dark:bg-green-950 pr-7" : "border-amber-400"}`}
                         placeholder="Nombre del producto"
                         title={productosEmparejados[item.productName] ? `Factura original: ${productosEmparejados[item.productName]}` : ""}
                       />
-                      {productosEmparejados[item.productName] !== undefined && (
+                      {itemEmparejado(item) && (
                         <span className="absolute right-2 top-1/2 -translate-y-1/2 text-green-500 text-sm font-bold">✓</span>
                       )}
                     </div>
@@ -1638,7 +1647,7 @@ export default function NuevaCompra() {
               <Button
                 onClick={() => handleSubmit(true)}
                 disabled={isSubmitting || !todosEmparejados}
-                title={!todosEmparejados ? `Faltan ${cantidadSinEmparejar} producto(s) por emparejar` : ""}
+                title={!todosEmparejados ? `Faltan ${cantidadSinEmparejar} producto(s) por emparejar con el sistema. Usa el buscador (🔍) en la fila marcada en ámbar para vincularlo, o elimínalo si no corresponde.` : ""}
                 className="gap-2 uppercase tracking-wider text-xs font-semibold bg-green-700 hover:bg-green-800 text-white disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {isSubmitting ? (
