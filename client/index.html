@@ -1,12 +1,51 @@
 <!doctype html>
-<html lang="en">
+<html lang="es-BO">
 
   <head>
     <meta charset="UTF-8" />
     <meta
       name="viewport"
       content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-    <title>VidaFarma-OS: Sistema de Gestión de Inventario y Transferencias</title>
+
+    <!-- ─── SEO ───────────────────────────────────────────────────────────────
+      El título y la descripción son lo que ve un cliente en Google: hablan de la
+      FARMACIA (lo que la gente busca), no del sistema interno.
+      Ojo: para una farmacia local, la mayor parte del tráfico viene del perfil de
+      Google Business (el mapa), no de estas etiquetas. Esto complementa, no
+      reemplaza. -->
+    <title>VidaFarma — Farmacia en Cochabamba | Medicamentos y reservas online</title>
+    <meta
+      name="description"
+      content="Farmacia VidaFarma en Cochabamba, Bolivia. Consulta precios y disponibilidad de medicamentos en línea y reserva para recoger en la sucursal más cercana. 4 sucursales para atenderte." />
+    <meta name="robots" content="index, follow" />
+
+    <!-- Open Graph: así se ve el enlace al compartirlo por WhatsApp o Facebook -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="VidaFarma" />
+    <meta property="og:locale" content="es_BO" />
+    <meta property="og:title" content="VidaFarma — Farmacia en Cochabamba" />
+    <meta
+      property="og:description"
+      content="Consulta precios y disponibilidad de medicamentos, y reserva para recoger en tu sucursal más cercana." />
+    <meta property="og:image" content="/vidafarma-logo.png" />
+    <meta name="twitter:card" content="summary" />
+
+    <!-- Datos estructurados: le dicen a Google que esto es una FARMACIA de
+      Cochabamba. Es lo que habilita los resultados enriquecidos locales.
+      ⚠ PENDIENTE (solo Luis puede completarlo con datos reales): agregar
+      "address", "telephone" y "openingHours" de cada sucursal. Sin datos reales
+      NO se inventan: un dato falso aquí es peor que no ponerlo. -->
+    <script type="application/ld+json">
+      {
+        "@context": "https://schema.org",
+        "@type": "Pharmacy",
+        "name": "VidaFarma",
+        "description": "Farmacia con 4 sucursales en Cochabamba, Bolivia. Consulta de precios y reserva de medicamentos en línea.",
+        "areaServed": { "@type": "City", "name": "Cochabamba", "addressCountry": "BO" },
+        "currenciesAccepted": "BOB"
+      }
+    </script>
+
     <!-- PWA -->
     <link rel="manifest" href="/manifest.json" />
     <meta name="theme-color" content="#15803d" />

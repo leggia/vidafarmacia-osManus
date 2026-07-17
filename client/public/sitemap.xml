@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Solo páginas PÚBLICAS. Ojo: la raíz "/" es el login del sistema interno, no
+     la tienda — la entrada pública real es /tienda.
+     Al migrar a un dominio propio, cambiar la URL base aquí y en robots.txt. -->
+<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
+  <url>
+    <loc>https://vidafarmacia-osmanus-production.up.railway.app/tienda</loc>
+    <changefreq>daily</changefreq>
+    <priority>1.0</priority>
+  </url>
+  <url>
+    <loc>https://vidafarmacia-osmanus-production.up.railway.app/privacidad</loc>
+    <changefreq>yearly</changefreq>
+    <priority>0.3</priority>
+  </url>
+</urlset>

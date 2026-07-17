@@ -1,0 +1,30 @@
+# VidaFarma — Solo la tienda de clientes debe aparecer en buscadores.
+# Las páginas internas (inventario, compras, finanzas, personal) NO se indexan:
+# no son para el público y no aportan nada en Google.
+User-agent: *
+Allow: /$
+Allow: /tienda
+Allow: /privacidad
+
+Disallow: /compras
+Disallow: /inventario
+Disallow: /transferencias
+Disallow: /reportes
+Disallow: /gastos
+Disallow: /creditos
+Disallow: /flujo-caja
+Disallow: /personal
+Disallow: /tareas
+Disallow: /historial
+Disallow: /marketing
+Disallow: /fidelizacion
+Disallow: /asistente
+Disallow: /psicotropicos
+Disallow: /dispensacion
+Disallow: /contactos
+Disallow: /contingencia
+Disallow: /asistencia
+Disallow: /fotos
+Disallow: /api/
+
+Sitemap: https://vidafarmacia-osmanus-production.up.railway.app/sitemap.xml
