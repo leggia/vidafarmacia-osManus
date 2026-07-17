@@ -202,6 +202,10 @@ export default function NuevaCompra() {
   // Detección de psicotrópicos en la factura (alerta para registrarlos en el libro)
   const [psicoDetectados, setPsicoDetectados] = useState<any[]>([]);
   const detectarPsico = trpc.psico.detectarEnCompra.useMutation();
+  // APRENDIZAJE DE DESCUENTOS: avisa si este proveedor está dando menos descuento
+  // del que suele dar en cada producto.
+  const [alertasDescuento, setAlertasDescuento] = useState<any[]>([]);
+  const analizarDescuentos = trpc.purchases.analizarDescuentos.useMutation();
   const [receiptType, setReceiptType] = useState<"BOLETA" | "FACTURA">("FACTURA");
   const [almacenNombre, setAlmacenNombre] = useState("ALMACEN PRINCIPAL");
   const [productosNoEncontrados, setProductosNoEncontrados] = useState<ProductoNoEncontrado[]>([]);
@@ -418,6 +422,15 @@ export default function NuevaCompra() {
                 // Se conserva para poder sugerir el precio/cantidad que cuadra.
                 subtotalFactura: subtotalConDesc,
                 descuentoLinea: i.descuento ?? null,
+                // % de descuento comercial de la línea. Se calcula sobre el precio
+                // de LISTA (subtotal + descuento = lista × cantidad), que es la
+                // base sobre la que el laboratorio aplica su porcentaje.
+                pctDescuento: (() => {
+                  const desc = Number(i.descuento) || 0;
+                  const sub = Number(i.subtotal) || 0;
+                  const bruto = sub + desc;
+                  return bruto > 0 ? Math.round((desc / bruto) * 1000) / 10 : 0;
+                })(),
                 nombreFacturaOriginal: i.productName,
                 expiryDate: convertExpiryDate(i.expiryDate) || null,
               };
@@ -441,6 +454,16 @@ export default function NuevaCompra() {
           { items: mappedItems.map((i: any) => ({ productName: i.productName || "", quantity: i.quantity || 0 })) },
           { onSuccess: (r: any) => setPsicoDetectados(Array.isArray(r) ? r : []) }
         );
+        // ¿Este proveedor está dando el descuento de siempre? (aprende con cada compra)
+        if (supplier?.trim()) {
+          analizarDescuentos.mutate(
+            {
+              proveedor: supplier.trim(),
+              items: mappedItems.map((i: any) => ({ nombre: i.productName || "", pctDescuento: Number(i.pctDescuento) || 0 })),
+            },
+            { onSuccess: (r: any) => setAlertasDescuento(r?.alertas || []) }
+          );
+        }
             if (result.supplier) {
               setSupplier(result.supplier);
               setSupplierOriginal(result.supplier);
@@ -542,6 +565,7 @@ export default function NuevaCompra() {
           nombreFactura: (i as any).nombreFacturaOriginal || productosEmparejados[i.productName] || i.productName,
           nuevoPrecioVenta: (i.nuevoPrecioVenta != null && i.nuevoPrecioVenta !== i.precioVentaSistema) ? i.nuevoPrecioVenta : null,
           precioVenta: i.nuevoPrecioVenta ?? i.precioVentaSistema ?? null,
+            pctDescuento: (i as any).pctDescuento ?? null,
         })),
         imageUrl: uploadAndExtract.data?.imageUrl || null,
         imageKey: uploadAndExtract.data?.imageKey || null,
@@ -608,6 +632,7 @@ export default function NuevaCompra() {
             expiryDate: i.expiryDate || null,
             nuevoPrecioVenta: (i.nuevoPrecioVenta != null && i.nuevoPrecioVenta !== i.precioVentaSistema) ? i.nuevoPrecioVenta : null,
           precioVenta: i.nuevoPrecioVenta ?? i.precioVentaSistema ?? null,
+            pctDescuento: (i as any).pctDescuento ?? null,
           })),
           imageUrl: uploadAndExtract.data?.imageUrl || null,
           imageKey: uploadAndExtract.data?.imageKey || null,
@@ -1083,6 +1108,26 @@ export default function NuevaCompra() {
               </div>
             </CardHeader>
             <CardContent>
+              {/* APRENDIZAJE: ¿este proveedor está dando el descuento de siempre? */}
+              {alertasDescuento.length > 0 && (
+                <div className="mb-3 p-3 rounded-lg bg-amber-50 dark:bg-amber-950/20 border border-amber-300">
+                  <p className="text-xs font-black text-amber-900 dark:text-amber-300 mb-1">
+                    💰 {alertasDescuento.length} producto(s) con un descuento distinto al habitual de {supplier}
+                  </p>
+                  <ul className="text-[11px] space-y-0.5">
+                    {alertasDescuento.map((a: any, i: number) => (
+                      <li key={i} className={a.peor ? "text-red-700 dark:text-red-400 font-bold" : "text-emerald-700 dark:text-emerald-400"}>
+                        {a.peor ? "▼" : "▲"} {a.producto}: ahora <b>{a.pctActual}%</b> · normalmente <b>{a.pctTipico}%</b>
+                        {a.peor ? ` (te dan ${Math.abs(a.diferencia)} puntos MENOS)` : ` (${a.diferencia} puntos más)`}
+                        <span className="text-muted-foreground"> · visto {a.vecesObservado}×</span>
+                      </li>
+                    ))}
+                  </ul>
+                  <p className="text-[10px] text-amber-700 dark:text-amber-500 mt-1.5">
+                    Basado en tus compras anteriores a este proveedor. Si el descuento bajó, conviene reclamarlo antes de confirmar.
+                  </p>
+                </div>
+              )}
               {/* ALERTA: llegaron psicotrópicos en esta factura → registrar en el libro legal */}
               {psicoDetectados.length > 0 && (
                 <div className="mb-3 p-3 rounded-lg bg-violet-50 dark:bg-violet-950/20 border border-violet-300">

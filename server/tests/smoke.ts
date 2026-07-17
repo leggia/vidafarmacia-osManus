@@ -11,6 +11,7 @@ import { mejoresCandidatos, triangularFila, numerosSospechosos } from "../domain
 import { calcularVenta, validarVenta } from "../domain/contingencia";
 import { evaluarPrecio, ultimoPrecioPorProducto } from "../domain/compras";
 import { sugerenciaCuadre } from "../../shared/cuadre";
+import { descuentoTipico, evaluarDescuento } from "../../shared/descuentos";
 import { compararPeriodo } from "../domain/tendencias";
 import { construirLibro, resumenPeriodo, rangoTrimestre } from "../domain/psicotropicos";
 
@@ -220,6 +221,27 @@ test("cuadre: tolera 2 centavos de redondeo del proveedor", () => {
 });
 test("cuadre: sin total de factura (producto agregado a mano) → sin sugerencia", () => {
   assert.equal(sugerenciaCuadre(5, 10, null), null);
+});
+// ─── Descuentos por proveedor ───
+test("descuento típico usa MEDIANA, no promedio (una promo puntual no lo distorsiona)", () => {
+  // 20,20,20 habitual + una promo del 50% → la mediana sigue siendo 20
+  assert.equal(descuentoTipico([20, 20, 50, 20]), 20);
+});
+test("alerta si el proveedor da MENOS descuento del habitual", () => {
+  const a = evaluarDescuento("PARACETAMOL", 10, [25, 25, 24]);
+  assert.equal(a?.peor, true);
+  assert.equal(a?.pctTipico, 25);
+  assert.equal(a?.diferencia, -15);
+});
+test("avisa también si da MÁS de lo habitual (peor=false)", () => {
+  const a = evaluarDescuento("X", 30, [20, 20]);
+  assert.equal(a?.peor, false);
+});
+test("no alerta por diferencias chicas (<5 puntos) — evita ruido", () => {
+  assert.equal(evaluarDescuento("X", 22, [20, 20, 21]), null);
+});
+test("no alerta sin patrón suficiente (1 sola compra previa)", () => {
+  assert.equal(evaluarDescuento("X", 5, [25]), null);
 });
 test("auditoría: ignora los que no tienen precio de venta editado", () => {
   const r = ultimoPrecioPorProducto([

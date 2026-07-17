@@ -184,6 +184,27 @@ const purchasesRouter = router({
       return { ok: fallidos.length === 0, mensaje: partes.join(" · ") || "Sin cambios.", aplicados, fallidos, noEncontrados };
     }),
 
+  // APRENDIZAJE DE DESCUENTOS: analiza los descuentos de la factura recién leída
+  // contra lo que ese proveedor SUELE dar en cada producto, y avisa si viene con
+  // menos de lo habitual (plata que se perdería sin que nadie lo note).
+  analizarDescuentos: protectedProcedure
+    .input(z.object({
+      proveedor: z.string().max(255),
+      items: z.array(z.object({ nombre: z.string(), pctDescuento: z.number() })).max(200),
+    }))
+    .mutation(async ({ input }) => {
+      const { descuentosProveedor } = await import("./descuentos-proveedor");
+      return descuentosProveedor.analizar(input.proveedor, input.items);
+    }),
+
+  // Descuentos típicos aprendidos de un proveedor (para consultarlos)
+  descuentosDe: protectedProcedure
+    .input(z.object({ proveedor: z.string().max(255) }))
+    .query(async ({ input }) => {
+      const { descuentosProveedor } = await import("./descuentos-proveedor");
+      return descuentosProveedor.resumen(input.proveedor);
+    }),
+
   // BUSCAR compras por proveedor, número de factura o NOMBRE DE PRODUCTO. Lo
   // último es la clave: permite encontrar en qué facturas entró un producto para
   // revisar/corregir su precio. Devuelve además los ítems que coinciden, con el
@@ -664,6 +685,8 @@ INSTRUCCIONES GENERALES:
             expiryDate: z.string().nullable().optional(),
             nuevoPrecioVenta: z.number().nullable().optional(),
             precioVenta: z.number().nullable().optional(),
+            // % de descuento comercial de la línea (para aprender el patrón del proveedor)
+            pctDescuento: z.number().nullable().optional(),
           })
         ),
         imageUrl: z.string().nullable().optional(),
@@ -676,9 +699,11 @@ INSTRUCCIONES GENERALES:
       const status = input.confirmDirectly ? "completed" : "draft";
       // Sanitizar items: dar defaults seguros a valores inválidos para que un
       // producto creado a medias no rompa la operación.
-      const itemsLimpios = (input.items || []).map((it) => ({
+      const itemsLimpios = (input.items || []).map((it: any) => ({
         productName: (it.productName && String(it.productName).trim()) || "Producto sin nombre",
         nombreFactura: it.nombreFactura ?? null,
+        // % de descuento comercial de la línea: alimenta el aprendizaje por proveedor
+        pctDescuento: (() => { const v = Number(it.pctDescuento); return isNaN(v) || v < 0 ? 0 : v; })(),
         quantity: Number(it.quantity) || 0,
         unitCost: Number(it.unitCost) || 0,
         subtotal: Number(it.subtotal) || (Number(it.quantity) || 0) * (Number(it.unitCost) || 0),
@@ -749,6 +774,17 @@ INSTRUCCIONES GENERALES:
             try {
               const { registrarPreciosCompra } = await import("./inteligencia-compras");
               await registrarPreciosCompra(itemsLimpios as any[], input.supplier || "");
+            } catch { /* no bloquea */ }
+            // APRENDER los descuentos de este proveedor: con cada compra el sistema
+            // afina qué descuento suele dar en cada producto, para avisar cuando
+            // una factura venga con menos de lo habitual.
+            try {
+              const { descuentosProveedor } = await import("./descuentos-proveedor");
+              await descuentosProveedor.registrar(
+                input.supplier || "",
+                (itemsLimpios as any[]).map((it: any) => ({ nombre: it.productName || "", pctDescuento: Number(it.pctDescuento) || 0 })),
+                purchaseId
+              );
             } catch { /* no bloquea */ }
             if (syncResult.productosNoEncontrados && syncResult.productosNoEncontrados.length > 0) {
               syncMessage += ` | Productos no encontrados: ${syncResult.productosNoEncontrados.map((p: any) => p.nombre).join(", ")}`;
