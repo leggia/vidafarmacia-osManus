@@ -480,6 +480,21 @@ async function startServer() {
         } catch (e) {
           console.warn("[Startup] Error creando tablas de ventas:", e);
         }
+        // CACHE DE PRODUCTOS (precios): estas dos llamadas EXISTÍAN pero NADIE las
+        // invocaba — el cache solo se refrescaba si alguien tocaba el botón de
+        // "limpiar cache" a mano. Por eso la app podía mostrar un precio viejo
+        // (365 en 112.5 y la app en 108) durante días.
+        // inicializar() refresca si está realmente vencido; programar… deja la
+        // recarga periódica corriendo.
+        try {
+          const { productosCache } = await import("../productos-cache");
+          const edad = await productosCache.edadMinutos();
+          console.log(`[Startup] Cache de productos: ${edad == null ? "vacío" : `${edad} min de antigüedad`}`);
+          await productosCache.inicializar();
+          productosCache.programarActualizacionAutomatica();
+        } catch (e) {
+          console.warn("[Startup] Error inicializando cache de productos:", e);
+        }
       }, 10000); // 10s después de arrancar, sin prisa
     }
   });

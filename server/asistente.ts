@@ -267,14 +267,39 @@ export const asistenteTools = {
       };
     }
 
-    // 1-3 coincidencias: mostrar detalle completo
+    // 1-3 coincidencias: detalle completo, con el precio VERIFICADO contra 365.
+    // El precio es un dato delicado: no se responde desde el cache local sin
+    // comprobarlo. (Caso real: 365 tenía 112.5 y el cache 108 — el cache llevaba
+    // días sin refrescar y el asistente afirmaba el precio viejo como si fuera
+    // cierto.) Una consulta puntual de precio justifica una llamada a 365.
+    let preciosReales = new Map<string, number>();
+    let fuente = "cache local";
+    try {
+      const { inventarios365 } = await import("./inventarios365");
+      const catalogo = await inventarios365.listarTodosArticulos(); // 1 sola llamada
+      if (catalogo.length > 0) {
+        preciosReales = new Map(catalogo.map((a: any) => [String(a.nombre), parseFloat(String(a.precio_uno || 0)) || 0]));
+        fuente = "inventarios365 (en vivo)";
+      }
+    } catch { /* si 365 no responde, se usa el cache y se declara su antigüedad */ }
+
+    const { productosCache } = await import("./productos-cache");
+    const edad = await productosCache.edadMinutos();
+    const desactualizado = fuente === "cache local" && edad != null && edad > 120;
+
     return {
-      productos: r.map((p: any) => ({
-        nombre: p.nombre, ...(incluirCodigo ? { codigo: p.codigo } : {}),
-        precioVenta: `Bs ${fmtBs(p.precioUno)}`,
-        precioCosto: `Bs ${fmtBs(p.precioCostoUnid)}`,
-        proveedor: p.nombreProveedor || "no especificado",
-      })),
+      productos: r.map((p: any) => {
+        const real = preciosReales.get(String(p.nombre));
+        const precio = real != null && real > 0 ? real : Number(p.precioUno);
+        return {
+          nombre: p.nombre, ...(incluirCodigo ? { codigo: p.codigo } : {}),
+          precioVenta: `Bs ${fmtBs(precio)}`,
+          precioCosto: `Bs ${fmtBs(p.precioCostoUnid)}`,
+          proveedor: p.nombreProveedor || "no especificado",
+        };
+      }),
+      fuentePrecio: fuente,
+      ...(desactualizado ? { advertencia: `⚠ No se pudo consultar inventarios365; este precio sale de una copia local de hace ${edad} minutos y puede estar desactualizado. Verifícalo en 365 antes de cobrarlo.` } : {}),
       nota: "El stock en tiempo real se consulta en inventarios365, no está en estos datos.",
     };
   },

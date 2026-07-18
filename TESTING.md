@@ -109,6 +109,23 @@ Verificar manualmente cuando se toca la tienda o los permisos:
   `actualizarPrecioCosto` y la acción `cambiarPrecioVenta` del asistente. Las
   TRANSFERENCIAS no tocan precios (verificado). Todas usan el mismo motor
   `verificarYReintentarPrecios`.
+- **Un cache que nunca se refresca** (v2.37.0, precios viejos en toda la app):
+  `productos_cache` mostraba Bs 108 cuando 365 tenía Bs 112.5 — en la tienda de
+  clientes, en el panel de admin y en el asistente. Tres fallos encadenados:
+  1. `inicializar()` y `programarActualizacionAutomatica()` **existían pero nadie
+     las llamaba**: el cache solo se refrescaba si alguien tocaba a mano el botón
+     de limpiar cache. Escribir la función no basta — hay que enchufarla.
+  2. La antigüedad se guardaba en una **variable en memoria**, que se pierde en
+     cada reinicio (y Railway reinicia en cada deploy). Al reiniciar se
+     **INVENTABA** `ultimaActualizacion = ahora − 12h`: un cache de semanas se
+     daba por fresco. Nunca inventar una marca de tiempo: leerla de la BD
+     (`MAX(updatedAt)`), que es el único dato real.
+  3. TTL de 24h para un dato que cambia el mismo día (una compra mueve el precio).
+  **Reglas que quedan:** (a) todo dato cacheado necesita su edad REAL persistida y
+  consultable; (b) si un dato es delicado (precio), verificarlo contra la fuente
+  antes de afirmarlo, y si no se puede, **declarar su antigüedad** en vez de
+  presentarlo como verdad; (c) `setInterval` NO sobrevive a los reinicios: no es
+  garantía de nada por sí solo.
 
 ## Smoke tests (lógica crítica, sin BD)
 

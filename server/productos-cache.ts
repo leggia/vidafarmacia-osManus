@@ -8,26 +8,48 @@ import { productosCache as productosCacheTable } from "../drizzle/schema";
 import { eq, like, sql } from "drizzle-orm";
 import { inventarios365, ArticuloAPI } from "./inventarios365";
 
-const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 horas
+// 2 horas, no 24: el precio es un dato delicado y cambia el mismo día (una
+// compra o un cambio manual en 365 lo mueve). Un cache de 24h mostraba precios
+// viejos a los clientes en la tienda. La recarga completa es barata comparada
+// con cobrar un precio equivocado.
+const CACHE_TTL_MS = 2 * 60 * 60 * 1000;
 let ultimaActualizacion: number = 0;
 let actualizando = false;
 
 class ProductosCacheService {
 
   async estaDesactualizado(): Promise<boolean> {
-    if (ultimaActualizacion === 0) {
-      // Verificar si hay datos en la base de datos
-      try {
-        const db = await getDb();
-        if (!db) return true;
-        const count = await db.select({ count: sql<number>`count(*)` }).from(productosCacheTable);
-        if (count[0]?.count === 0) return true;
-        ultimaActualizacion = Date.now() - (CACHE_TTL_MS / 2); // Asume que fue hace 12h
-      } catch {
-        return true;
-      }
+    // La edad del cache se lee de la BD (columna updatedAt), NO de una variable en
+    // memoria: esa se pierde en CADA reinicio, y Railway reinicia en cada deploy.
+    // Antes, al reiniciar se INVENTABA "se actualizó hace 12h" — con lo cual un
+    // cache de semanas se daba por fresco y la app mostraba precios viejos.
+    try {
+      const db = await getDb();
+      if (!db) return true;
+      const r: any = await db.execute(sql`SELECT MAX(updatedAt) AS ultima, COUNT(*) AS total FROM productos_cache`);
+      const f = Array.isArray(r) ? r[0] : r?.rows ?? r;
+      const fila = (Array.isArray(f) ? f : [])[0];
+      if (!fila || Number(fila.total) === 0) return true; // vacío: hay que llenarlo
+      if (!fila.ultima) return true; // sin fecha: no se puede afirmar que esté fresco
+      const edadMs = Date.now() - new Date(fila.ultima).getTime();
+      ultimaActualizacion = Date.now() - edadMs; // edad REAL, no inventada
+      return edadMs > CACHE_TTL_MS;
+    } catch {
+      return true; // ante la duda, refrescar: un precio viejo es peor que una consulta de más
     }
-    return Date.now() - ultimaActualizacion > CACHE_TTL_MS;
+  }
+
+  /** Edad real del cache en minutos (null si está vacío o no se pudo leer). */
+  async edadMinutos(): Promise<number | null> {
+    try {
+      const db = await getDb();
+      if (!db) return null;
+      const r: any = await db.execute(sql`SELECT MAX(updatedAt) AS ultima FROM productos_cache`);
+      const f = Array.isArray(r) ? r[0] : r?.rows ?? r;
+      const ultima = (Array.isArray(f) ? f : [])[0]?.ultima;
+      if (!ultima) return null;
+      return Math.round((Date.now() - new Date(ultima).getTime()) / 60000);
+    } catch { return null; }
   }
 
   async actualizar(forzar = false): Promise<void> {
@@ -189,7 +211,8 @@ class ProductosCacheService {
   }
 
   programarActualizacionAutomatica(): void {
-    console.log("[Cache] Actualización automática cada 24 horas");
+    const horas = Math.round(CACHE_TTL_MS / 3600000);
+    console.log(`[Cache] Actualización automática de productos cada ${horas}h`);
     setInterval(() => {
       this.actualizar(true).catch(console.error);
     }, CACHE_TTL_MS);
