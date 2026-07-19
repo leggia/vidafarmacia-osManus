@@ -640,8 +640,11 @@ export default function Inventario() {
                         {p.nombre}
                       </button>
                     ))}
-                    {todosProveedores != null && faltantes.length === 0 && (
+                    {todosProveedores != null && todosProveedores.length > 0 && faltantes.length === 0 && (
                       <span className="text-[10px] text-emerald-700 font-bold">✓ Todos los proveedores están inventariados</span>
+                    )}
+                    {todosProveedores != null && todosProveedores.length === 0 && (
+                      <span className="text-[10px] text-amber-700 font-bold">No se pudo cargar la lista de proveedores de 365 — reintenta en un momento (no significa que hayas terminado).</span>
                     )}
                   </div>
                 </div>

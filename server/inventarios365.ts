@@ -961,16 +961,24 @@ class Inventarios365Service {
     try {
       for (let page = 1; page <= maxPaginas; page++) {
         const data = await this.get<any>(`/proveedor?page=${page}&buscar=&criterio=todos`);
-        const arr = data?.personas ?? data?.proveedores?.data ?? data?.data ?? [];
+        // 365 devuelve `personas` como ARRAY o como objeto paginado {data:[...]}
+        // según la versión del endpoint — hay que aceptar ambos formatos.
+        const personasRaw = data?.personas;
+        const arr = Array.isArray(personasRaw) ? personasRaw
+          : Array.isArray(personasRaw?.data) ? personasRaw.data
+          : data?.proveedores?.data ?? data?.data ?? [];
         if (!Array.isArray(arr) || arr.length === 0) break;
         for (const p of arr) {
-          const id = String(p.id ?? "");
-          const nombre = String(p.nombre ?? p.razonSocial ?? p.razon_social ?? p.nombreProveedor ?? "").trim();
+          const id = String(p.id ?? p.idpersona ?? p.id_proveedor ?? p.idProveedor ?? "");
+          const nombre = String(p.nombre ?? p.razonSocial ?? p.razon_social ?? p.nombre_completo ?? p.nombreProveedor ?? p.persona ?? "").trim();
           if (!id || !nombre || vistos.has(id)) continue;
           vistos.add(id);
           resultado.push({ id, nombre });
         }
-        const total = Number(data?.pagination?.total ?? 0);
+        const pag = data?.pagination ?? {};
+        const lastPage = Number(pag.last_page ?? pag.lastPage ?? 0);
+        if (lastPage > 0 && page >= lastPage) break;
+        const total = Number(pag.total ?? 0);
         if (total > 0 && resultado.length >= total) break;
         await new Promise((r) => setTimeout(r, 80));
       }
