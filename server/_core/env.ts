@@ -40,4 +40,9 @@ export const ENV = {
 
   // IA — DeepSeek API (para el asistente)
   deepseekApiKey: requireEnv("DEEPSEEK_API_KEY"),
+
+  // IA — Servicio de generación de imágenes (marketing). Opcionales: si no
+  // están configuradas, generateImage lanza un error claro y controlado.
+  forgeApiUrl: process.env.FORGE_API_URL ?? "",
+  forgeApiKey: process.env.FORGE_API_KEY ?? "",
 };

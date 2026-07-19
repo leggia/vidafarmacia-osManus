@@ -95,14 +95,8 @@ function Router() {
           <Route path="/transferencias" component={Transferencias} />
           <Route path="/transferencias/nueva" component={NuevaTransferencia} />
           <Route path="/contingencia" component={Contingencia} />
-        <Route path="/dispensacion" component={Dispensacion} />
-        <Route path="/psicotropicos" component={Psicotropicos} />
-        <Route path="/contactos" component={Contactos} />
           <Route path="/dispensacion" component={Dispensacion} />
-        <Route path="/psicotropicos" component={Psicotropicos} />
-        <Route path="/contactos" component={Contactos} />
           <Route path="/psicotropicos" component={Psicotropicos} />
-        <Route path="/contactos" component={Contactos} />
           <Route path="/contactos" component={Contactos} />
           <Route path="/fotos" component={FotosProductos} />
           <Route path="/asistencia" component={Asistencia} />
@@ -117,7 +111,10 @@ function Router() {
   // una vista simplificada (sin el menú completo) — pero SÍ necesita poder cerrar
   // sesión, por ejemplo cuando le cambian el rol y debe reingresar para que se
   // aplique. Barra superior mínima con el botón de salir.
-  if (user?.role === "viewer") {
+  // SEGURIDAD: cualquier rol desconocido también cae aquí (vista más restringida),
+  // nunca al dashboard completo de administración. Sin sesión (user undefined) se
+  // sigue de largo: DashboardLayout es quien muestra la pantalla de login.
+  if (user && user.role !== "user" && user.role !== "admin") {
     return (
       <div className="min-h-screen">
         <div className="flex items-center justify-between px-4 h-12 border-b bg-background">
@@ -133,12 +130,9 @@ function Router() {
           <Route path="/" component={Consulta} />
           <Route path="/reservas" component={Reservas} />
           <Route path="/contingencia" component={Contingencia} />
-        <Route path="/dispensacion" component={Dispensacion} />
-        <Route path="/psicotropicos" component={Psicotropicos} />
-        <Route path="/contactos" component={Contactos} />
           <Route path="/dispensacion" component={Dispensacion} />
-        <Route path="/psicotropicos" component={Psicotropicos} />
-        <Route path="/contactos" component={Contactos} />
+          <Route path="/psicotropicos" component={Psicotropicos} />
+          <Route path="/contactos" component={Contactos} />
           <Route component={Consulta} />
         </Switch>
       </div>

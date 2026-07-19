@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { calcularDescuentosCascada, cuadraConTotal } from "./domain/descuentos";
-import { clasificarABC } from "./domain/abc";
-import { calcularResumenMensual, calcularRetraso, calcularHoras } from "./domain/sueldos";
+import { calcularDescuentosCascada, cuadraConTotal } from "./descuentos";
+import { clasificarABC } from "./abc";
+import { calcularResumenMensual, calcularRetraso, calcularHoras } from "./sueldos";
 
 describe("descuentos en cascada", () => {
   it("aplica volumen y efectivo en cascada y cuadra con el total", () => {

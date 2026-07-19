@@ -60,6 +60,10 @@ export async function crearTablasGastos(): Promise<void> {
     "ALTER TABLE gastos_registro ADD INDEX idx_gastos_sucursal (sucursal)",
     "ALTER TABLE gastos_fijos ADD COLUMN esVariable INT NOT NULL DEFAULT 0",
     "ALTER TABLE gastos_registro ADD COLUMN esVariable INT NOT NULL DEFAULT 0",
+    // Rol "cliente" (tienda): el enum original no lo incluía y el login de
+    // clientes lo insertaba con `as any` — MODIFY es idempotente (re-ejecutar
+    // no daña datos) y amplía el enum sin tocar filas existentes.
+    "ALTER TABLE users MODIFY COLUMN role ENUM('user','admin','viewer','regente','cliente') NOT NULL DEFAULT 'user'",
   ];
   for (const m of migraciones) {
     try { await db.execute(sql.raw(m)); } catch { /* ya existe */ }

@@ -4097,7 +4097,7 @@ const psicoRouter = router({
   // Detecta psicotrópicos en los items de una compra (para avisar en Compras)
   detectarEnCompra: protectedProcedure
     .input(z.object({ items: z.array(z.object({ productName: z.string().optional(), nombre: z.string().optional(), quantity: z.number().optional(), cantidad: z.number().optional() })).max(200) }))
-    .query(async ({ input }) => {
+    .mutation(async ({ input }) => {
       const { psico } = await import("./psicotropicos");
       return psico.detectarEnCompra(input.items);
     }),

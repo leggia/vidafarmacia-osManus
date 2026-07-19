@@ -187,7 +187,7 @@ export function registerGoogleOAuth(app: Express) {
       if (tipoLogin === "cliente") {
         const openIdC = `google-${perfil.sub}`;
         try {
-          await db.upsertUser({ openId: openIdC, name: perfil.name || email, email, loginMethod: "google", role: "cliente" as any, lastSignedIn: new Date() });
+          await db.upsertUser({ openId: openIdC, name: perfil.name || email, email, loginMethod: "google", role: "cliente", lastSignedIn: new Date() });
         } catch {
           await db.upsertUser({ openId: openIdC, name: perfil.name || email, email, loginMethod: "google", lastSignedIn: new Date() });
         }

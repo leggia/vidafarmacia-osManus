@@ -466,12 +466,13 @@ export const accionesTools = {
           ajustes: [{ productoId: num(params.articuloId), inventarioId: null, stockAnterior: num(params.stockAnterior), stockReal: 0, fechaVencimiento: null }],
         });
         resultado = r.ok
-          ? { ok: true, mensaje: `"${params.nombre}" retirado de ${params.almacenNombre}: stock ${params.stockAnterior} → 0.` }
-          : { ok: false, mensaje: `No se pudo retirar: ${r.mensaje}` };
+          ? `"${params.nombre}" retirado de ${params.almacenNombre}: stock ${params.stockAnterior} → 0.`
+          : `No se pudo retirar: ${r.mensaje}`;
         await auditar("retirarProducto", a.resumen, String(params.stockAnterior), "0", r.ok ? "OK" : "ERROR", quien);
       } else if (a.tipo === "ocultarDeTienda") {
         const { tienda } = await import("./tienda");
-        resultado = await tienda.ocultarDeTienda(params.nombreProducto);
+        const rOcultar = await tienda.ocultarDeTienda(params.nombreProducto);
+        resultado = rOcultar.mensaje;
         await auditar("ocultarDeTienda", a.resumen, "visible", "oculto", "OK", quien);
       } else if (a.tipo === "crearCupon") {
         const { promociones } = await import("./promociones");
