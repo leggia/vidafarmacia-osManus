@@ -270,6 +270,9 @@ function DashboardLayoutContent({
                 </DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
+            <p className="text-[10px] text-muted-foreground text-center mt-1 group-data-[collapsible=icon]:hidden">
+              v{typeof __APP_VERSION__ !== "undefined" ? __APP_VERSION__ : "?"}
+            </p>
           </SidebarFooter>
         </Sidebar>
         <div
