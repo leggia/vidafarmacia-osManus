@@ -1136,11 +1136,13 @@ Devuelve SOLO este JSON:
       const dbx = await getDb();
       if (!dbx) return { productos: [] };
       // Catálogo local (rápido, no depende de 365 para sugerir nombres)
-      const r: any = await dbx.execute(sql.raw(`SELECT nombre FROM productos_cache WHERE precioUno >= 0`));
+      const r: any = await dbx.execute(sql.raw(`SELECT nombre, nombreProveedor FROM productos_cache WHERE precioUno >= 0`));
       const f = Array.isArray(r) ? r[0] : r?.rows ?? r;
-      const catalogo: string[] = (Array.isArray(f) ? f : []).map((x: any) => String(x.nombre));
+      const filas: any[] = Array.isArray(f) ? f : [];
+      const catalogo: string[] = filas.map((x: any) => String(x.nombre));
+      const proveedorPorNombre = new Map(filas.map((x: any) => [String(x.nombre), x.nombreProveedor ? String(x.nombreProveedor) : null]));
       const { mejoresCandidatos } = await import("./domain/emparejar");
-      const candidatos = mejoresCandidatos(q, catalogo, 6);
+      const candidatos = mejoresCandidatos(q, catalogo, 8);
       if (candidatos.length === 0) return { productos: [] };
 
       // Stock real del ORIGEN (cache 60s: buscar mientras se escribe no debe
@@ -1161,6 +1163,7 @@ Devuelve SOLO este JSON:
           return {
             nombre: c.nombre,
             confianza: c.confianza,
+            proveedor: proveedorPorNombre.get(c.nombre) || null,
             stockOrigen: s ? s.stock : null, // null = no se pudo leer el stock
             articuloId: s ? s.id : null,
           };

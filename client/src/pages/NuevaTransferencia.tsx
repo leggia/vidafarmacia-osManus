@@ -522,19 +522,21 @@ export default function NuevaTransferencia() {
                     >
                       <div className="col-span-8">
                         <div className="flex gap-1.5 items-center relative">
-                          <Input
-                            value={item.productName}
-                            onChange={(e) => {
-                              updateItem(idx, "productName", e.target.value);
-                              // Buscar EN VIVO: sin botón, como el resto de la app
-                              setFilaActiva(idx);
-                              setTextoBusqueda(e.target.value);
-                            }}
-                            onFocus={() => { setFilaActiva(idx); setTextoBusqueda(item.productName || ""); }}
-                            className="text-sm h-9"
-                            placeholder="Escribe el medicamento…"
-                            autoComplete="off"
-                          />
+                          <div className="flex-1 min-w-0">
+                            <Input
+                              value={item.productName}
+                              onChange={(e) => {
+                                updateItem(idx, "productName", e.target.value);
+                                // Buscar EN VIVO: sin botón, como el resto de la app
+                                setFilaActiva(idx);
+                                setTextoBusqueda(e.target.value);
+                              }}
+                              onFocus={() => { setFilaActiva(idx); setTextoBusqueda(item.productName || ""); }}
+                              className="text-sm h-9"
+                              placeholder="Escribe el medicamento…"
+                              autoComplete="off"
+                            />
+                          </div>
                           {buscandoVivo && filaActiva === idx && (
                             <Loader2 className="absolute right-12 h-3.5 w-3.5 animate-spin text-muted-foreground" />
                           )}
@@ -548,16 +550,23 @@ export default function NuevaTransferencia() {
                             {buscandoFila === idx ? "…" : "🔍"}
                           </button>
                           {/* Sugerencias en vivo CON el stock del origen: se ve al
-                              instante si alcanza para transferir. */}
+                              instante si alcanza para transferir. Mismo comportamiento
+                              (ancho completo, texto sin recortar de más) que el resto
+                              de buscadores de producto de la app. */}
                           {filaActiva === idx && (sugerencias?.productos?.length || 0) > 0 && item.productName?.trim().length >= 2 && (
-                            <div className="absolute top-10 left-0 right-11 z-30 bg-white dark:bg-card border rounded-xl shadow-lg max-h-56 overflow-y-auto">
+                            <div className="absolute top-10 left-0 right-0 z-30 bg-white dark:bg-card border rounded-xl shadow-lg max-h-72 overflow-y-auto">
                               {sugerencias!.productos.map((p: any) => {
                                 const falta = p.stockOrigen != null && p.stockOrigen < (item.quantity || 1);
                                 return (
                                   <button key={p.nombre} type="button"
                                     onClick={() => { elegirCandidato(idx, p.nombre); setFilaActiva(null); setTextoBusqueda(""); }}
                                     className="w-full text-left px-3 py-2 text-xs hover:bg-muted flex items-center justify-between gap-2">
-                                    <span className="truncate">{p.nombre}</span>
+                                    <span className="min-w-0 flex-1">
+                                      <span className="block truncate leading-tight">{p.nombre}</span>
+                                      {p.proveedor && (
+                                        <span className="block truncate text-[10px] text-muted-foreground/70 leading-tight mt-0.5">{p.proveedor}</span>
+                                      )}
+                                    </span>
                                     {p.stockOrigen == null ? (
                                       <span className="text-[10px] text-muted-foreground shrink-0">sin dato</span>
                                     ) : (
