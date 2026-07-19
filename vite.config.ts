@@ -13,15 +13,31 @@ import { vitePluginManusRuntime } from "vite-plugin-manus-runtime";
 const plugins = [react(), tailwindcss(), jsxLocPlugin(), vitePluginManusRuntime()];
 
 // Versión de la app leída de package.json e inyectada como constante en el
-// bundle del cliente. Se muestra en el pie del menú lateral (DashboardLayout).
-const pkg = JSON.parse(
-  readFileSync(path.resolve(import.meta.dirname, "package.json"), "utf-8"),
-);
+// bundle del cliente. OJO: el servidor importa este archivo en runtime (bundleado
+// en dist/), donde import.meta.dirname es dist/ y no la raíz. Por eso se prueban
+// varias rutas y NUNCA se lanza error (crashearía el servidor al arrancar).
+function leerVersion(): string {
+  const candidatos = [
+    path.resolve(import.meta.dirname, "package.json"),
+    path.resolve(import.meta.dirname, "..", "package.json"),
+    path.resolve(process.cwd(), "package.json"),
+  ];
+  for (const ruta of candidatos) {
+    try {
+      const v = JSON.parse(readFileSync(ruta, "utf-8")).version;
+      if (typeof v === "string") return v;
+    } catch {
+      // probar la siguiente ruta
+    }
+  }
+  return "?";
+}
+const appVersion = leerVersion();
 
 export default defineConfig({
   plugins,
   define: {
-    __APP_VERSION__: JSON.stringify(pkg.version),
+    __APP_VERSION__: JSON.stringify(appVersion),
   },
   resolve: {
     alias: {
