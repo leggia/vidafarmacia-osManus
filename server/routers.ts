@@ -4163,19 +4163,25 @@ const sistemaRouter = router({
 
 export const appRouter = router({
   pedidos: router({
+    // Buscar proveedores REALES en 365 (para el autocompletado de la página Pedidos).
+    buscarProveedores: protectedProcedure
+      .input(z.object({ filtro: z.string().trim().min(2).max(120) }))
+      .query(async ({ input }) => {
+        const { inventarios365 } = await import("./inventarios365");
+        const lista = await inventarios365.listarProveedores(input.filtro);
+        return lista.slice(0, 12).map((p) => ({ id: String(p.id), nombre: p.nombre }));
+      }),
     // Pedido sugerido: por almacén (almacenId 1-4) o consolidado de todas (almacenId null).
+    // El proveedor llega como idProveedor exacto (elegido del autocompletado).
     sugerido: protectedProcedure
       .input(z.object({
         almacenId: z.number().int().min(1).max(4).nullable(),
-        proveedor: z.string().trim().max(120).optional(),
+        idProveedor: z.string().trim().max(30).optional(),
         dias: z.number().int().min(1).max(90).default(10),
       }))
       .query(async ({ input }) => {
-        const { resolverIdProveedor, calcularPedidoAlmacen, calcularPedidoConsolidado, ALMACENES_PEDIDO } = await import("./pedidos");
-        const idProveedor = await resolverIdProveedor(input.proveedor);
-        if (input.proveedor?.trim() && !idProveedor) {
-          return { modo: "error" as const, error: `No encontré el proveedor "${input.proveedor}" en el catálogo. Prueba con parte del nombre (ej. "cofar").` };
-        }
+        const { calcularPedidoAlmacen, calcularPedidoConsolidado, ALMACENES_PEDIDO } = await import("./pedidos");
+        const idProveedor = input.idProveedor || "";
         if (input.almacenId != null) {
           const items = await calcularPedidoAlmacen({ almacenId: input.almacenId, idProveedor, dias: input.dias });
           const alm = ALMACENES_PEDIDO.find((a) => a.id === input.almacenId);

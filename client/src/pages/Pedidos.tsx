@@ -8,9 +8,9 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
-import { ClipboardList, Copy, Loader2, Search, AlertTriangle } from "lucide-react";
+import { ClipboardList, Copy, Loader2, Search, AlertTriangle, X } from "lucide-react";
 import { toast } from "sonner";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 
 const SUCURSALES = [
   { id: null as number | null, nombre: "Todas (consolidado)" },
@@ -22,26 +22,38 @@ const SUCURSALES = [
 
 export default function Pedidos() {
   const [almacenId, setAlmacenId] = useState<number | null>(2);
-  const [proveedor, setProveedor] = useState("");
+  const [busquedaProv, setBusquedaProv] = useState("");
+  const [provSel, setProvSel] = useState<{ id: string; nombre: string } | null>(null);
   const [dias, setDias] = useState(10);
   // Parámetros "congelados" al presionar Generar (evita re-consultas por cada tecla)
-  const [consulta, setConsulta] = useState<{ almacenId: number | null; proveedor: string; dias: number } | null>(null);
+  const [consulta, setConsulta] = useState<{ almacenId: number | null; idProveedor?: string; provNombre?: string; dias: number } | null>(null);
   // Ajustes del usuario: cantidad final y exclusiones, por producto
   const [cantidades, setCantidades] = useState<Record<string, number>>({});
   const [excluidos, setExcluidos] = useState<Record<string, boolean>>({});
 
+  // Autocompletado: busca proveedores REALES en 365 (mínimo 2 letras, con debounce)
+  const [filtroDebounced, setFiltroDebounced] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setFiltroDebounced(busquedaProv.trim()), 400);
+    return () => clearTimeout(t);
+  }, [busquedaProv]);
+  const { data: proveedores, isFetching: buscandoProv } = trpc.pedidos.buscarProveedores.useQuery(
+    { filtro: filtroDebounced },
+    { enabled: !provSel && filtroDebounced.length >= 2, refetchOnWindowFocus: false },
+  );
+
   const { data, isFetching } = trpc.pedidos.sugerido.useQuery(
-    consulta ?? { almacenId: 2, proveedor: "", dias: 10 },
+    consulta ? { almacenId: consulta.almacenId, idProveedor: consulta.idProveedor, dias: consulta.dias } : { almacenId: 2, dias: 10 },
     { enabled: consulta !== null, refetchOnWindowFocus: false },
   );
 
   const generar = () => {
     setCantidades({});
     setExcluidos({});
-    setConsulta({ almacenId, proveedor: proveedor.trim(), dias });
+    setConsulta({ almacenId, idProveedor: provSel?.id, provNombre: provSel?.nombre, dias });
   };
 
-  const items: any[] = data && data.modo !== "error" ? (data as any).items : [];
+  const items: any[] = data ? (data as any).items : [];
   const esConsolidado = data?.modo === "consolidado";
 
   const cantidadDe = (it: any) =>
@@ -56,7 +68,7 @@ export default function Pedidos() {
     const titulo = esConsolidado
       ? `PEDIDO CONSOLIDADO (todas las sucursales)`
       : `PEDIDO — ${(data as any)?.sucursal ?? ""}`;
-    const prov = consulta?.proveedor ? ` · Proveedor: ${consulta.proveedor.toUpperCase()}` : "";
+    const prov = consulta?.provNombre ? ` · Proveedor: ${consulta.provNombre}` : "";
     const lineas = seleccionados.map((it) => `• ${it.producto} — ${cantidadDe(it)} und`);
     const texto = `${titulo}${prov} · Cobertura ${consulta?.dias} días\n${lineas.join("\n")}\nTotal: ${seleccionados.length} productos`;
     await navigator.clipboard.writeText(texto);
@@ -86,14 +98,47 @@ export default function Pedidos() {
             ))}
           </div>
           <div className="flex flex-wrap items-end gap-2">
-            <div className="flex-1 min-w-[180px]">
+            <div className="flex-1 min-w-[180px] relative">
               <label className="text-xs text-muted-foreground">Proveedor (opcional)</label>
-              <Input
-                placeholder="Ej: cofar, inti, bagó…"
-                value={proveedor}
-                onChange={(e) => setProveedor(e.target.value)}
-                onKeyDown={(e) => e.key === "Enter" && generar()}
-              />
+              {provSel ? (
+                <div className="flex items-center gap-2 h-9 px-3 rounded-md border bg-muted/40">
+                  <span className="text-sm truncate flex-1">{provSel.nombre}</span>
+                  <button
+                    className="text-muted-foreground hover:text-foreground"
+                    onClick={() => { setProvSel(null); setBusquedaProv(""); }}
+                    aria-label="Quitar proveedor"
+                  ><X className="w-4 h-4" /></button>
+                </div>
+              ) : (
+                <>
+                  <Input
+                    placeholder="Buscar: cofar, inti, bagó…"
+                    value={busquedaProv}
+                    onChange={(e) => setBusquedaProv(e.target.value)}
+                  />
+                  {filtroDebounced.length >= 2 && (
+                    <div className="absolute z-20 mt-1 w-full rounded-md border bg-popover shadow-md max-h-56 overflow-auto">
+                      {buscandoProv && (
+                        <div className="p-2 text-xs text-muted-foreground flex items-center gap-1">
+                          <Loader2 className="w-3 h-3 animate-spin" /> Buscando en 365…
+                        </div>
+                      )}
+                      {!buscandoProv && (proveedores?.length ?? 0) === 0 && (
+                        <div className="p-2 text-xs text-muted-foreground">Sin coincidencias en el catálogo de proveedores.</div>
+                      )}
+                      {proveedores?.map((p) => (
+                        <button
+                          key={p.id}
+                          className="w-full text-left px-3 py-2 text-sm hover:bg-accent"
+                          onClick={() => { setProvSel(p); setBusquedaProv(""); }}
+                        >
+                          {p.nombre}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </>
+              )}
             </div>
             <div className="w-28">
               <label className="text-xs text-muted-foreground">Días a cubrir</label>
@@ -117,13 +162,10 @@ export default function Pedidos() {
           El cálculo usa la rotación real de ventas de cada sucursal contra su stock actual.
         </p>
       )}
-      {data?.modo === "error" && (
-        <Card><CardContent className="p-4 text-sm text-red-600">{(data as any).error}</CardContent></Card>
-      )}
-      {data && data.modo !== "error" && items.length === 0 && !isFetching && (
+      {data && items.length === 0 && !isFetching && (
         <Card><CardContent className="p-4 text-sm">
           Sin productos por pedir: el stock cubre {consulta?.dias} días de venta
-          {consulta?.proveedor ? ` para "${consulta.proveedor}"` : ""}.
+          {consulta?.provNombre ? ` para "${consulta.provNombre}"` : ""}.
         </CardContent></Card>
       )}
 

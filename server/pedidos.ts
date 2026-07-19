@@ -59,16 +59,25 @@ async function rotacionMensual(sucursalVentas: string): Promise<Record<string, n
   return rot;
 }
 
-/** Resolver id de proveedor en 365 a partir de un nombre parcial (via caché local). */
+/** Resolver id de proveedor a partir de un nombre parcial: primero el caché local
+ *  (rápido), y si no está, búsqueda EN VIVO en 365 (el caché suele venir sin
+ *  proveedor, así que este fallback es el camino habitual). */
 export async function resolverIdProveedor(proveedor?: string): Promise<string> {
   if (!proveedor || !proveedor.trim()) return "";
   const db = await getDb();
-  if (!db) return "";
-  const pr = rows(await db.execute(sql`
-    SELECT DISTINCT idProveedor FROM productos_cache
-     WHERE nombreProveedor LIKE ${"%" + proveedor.trim() + "%"} AND idProveedor IS NOT NULL LIMIT 1
-  `));
-  return pr[0]?.idProveedor ? String(pr[0].idProveedor) : "";
+  if (db) {
+    const pr = rows(await db.execute(sql`
+      SELECT DISTINCT idProveedor FROM productos_cache
+       WHERE nombreProveedor LIKE ${"%" + proveedor.trim() + "%"} AND idProveedor IS NOT NULL LIMIT 1
+    `));
+    if (pr[0]?.idProveedor) return String(pr[0].idProveedor);
+  }
+  try {
+    const { inventarios365 } = await import("./inventarios365");
+    const p = await inventarios365.buscarProveedor(proveedor.trim());
+    if (p?.id) return String(p.id);
+  } catch { /* sin conexión a 365: devolver vacío */ }
+  return "";
 }
 
 /** Pedido de UN almacén: productos que no cubren `dias` días de venta. */

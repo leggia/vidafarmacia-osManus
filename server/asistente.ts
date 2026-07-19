@@ -740,11 +740,8 @@ export const asistenteTools = {
       const { inventarios365 } = await import("./inventarios365");
       let idProv = "";
       if (proveedor) {
-        const pr = rows(await db.execute(sql`
-          SELECT DISTINCT idProveedor FROM productos_cache
-           WHERE nombreProveedor LIKE ${"%" + proveedor + "%"} AND idProveedor IS NOT NULL LIMIT 1
-        `));
-        if (pr[0]?.idProveedor) idProv = String(pr[0].idProveedor);
+        const { resolverIdProveedor } = await import("./pedidos");
+        idProv = await resolverIdProveedor(proveedor);
       }
       const ALMACENES: Record<string, number> = { petrolera: 2, lanza: 3, cobol: 4, matriz: 1, principal: 1, honduras: 1, central: 1 };
       let idAlmacen: number | null = null;
