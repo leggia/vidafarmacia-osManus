@@ -2,6 +2,10 @@ import { useState, useCallback, useRef, useEffect } from "react";
 import { trpc } from "@/lib/trpc";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import {
+  AlertDialog, AlertDialogAction, AlertDialogContent, AlertDialogDescription,
+  AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
@@ -48,6 +52,9 @@ export default function NuevaTransferencia() {
   const [items, setItems] = useState<ExtractedItem[]>([]);
   const [isExtracting, setIsExtracting] = useState(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  // Modal de resultado (OK/Aceptar) tras confirmar — operación delicada, se
+  // muestra explícitamente el resultado en vez de un toast que se va solo.
+  const [resultadoModal, setResultadoModal] = useState<{ ok: boolean; titulo: string; detalle: string } | null>(null);
   const [extracted, setExtracted] = useState(false);
 
   const utils = trpc.useUtils();
@@ -262,7 +269,7 @@ export default function NuevaTransferencia() {
     }
     setIsSubmitting(true);
     try {
-      await createTransfer.mutateAsync({
+      const res = await createTransfer.mutateAsync({
         fromBranchId: parseInt(fromBranchId),
         toBranchId: parseInt(toBranchId),
         referenceNumber,
@@ -272,20 +279,21 @@ export default function NuevaTransferencia() {
         imageKey: uploadAndExtract.data?.imageKey || null,
         confirmDirectly,
       });
-      // Invalidate caches so the list page shows the new transfer immediately
       await utils.transfers.list.invalidate();
       await utils.dashboard.stats.invalidate();
-      if (confirmDirectly) {
-        toast.success("Transferencia confirmada y completada exitosamente");
+      if (!confirmDirectly) {
+        setResultadoModal({ ok: true, titulo: "Borrador guardado", detalle: `La transferencia quedó guardada como borrador con ${res.items} producto(s). Puedes confirmarla luego desde la lista.` });
+      } else if (res.exito365) {
+        setResultadoModal({ ok: true, titulo: "✓ Transferencia realizada", detalle: `${res.mensaje365}` });
       } else {
-        toast.success("Transferencia guardada como borrador");
+        // Se creó el registro pero 365 NO movió el stock: queda pendiente para reintentar.
+        setResultadoModal({ ok: false, titulo: "Transferencia NO completada", detalle: `El registro se guardó, pero el stock NO se movió en el sistema: ${res.mensaje365} Queda pendiente; puedes reintentar desde la lista sin volver a cargar los productos.` });
       }
-      setLocation("/transferencias");
     } catch (err: any) {
-      toast.error(err.message || "Error al registrar la transferencia");
+      setResultadoModal({ ok: false, titulo: "Error al transferir", detalle: err.message || "Error desconocido al registrar la transferencia." });
     }
     setIsSubmitting(false);
-  }, [fromBranchId, toBranchId, items, referenceNumber, notes, createTransfer, setLocation, uploadAndExtract.data]);
+  }, [fromBranchId, toBranchId, items, referenceNumber, notes, createTransfer, uploadAndExtract.data, utils]);
 
   const updateItem = (index: number, field: keyof ExtractedItem, value: any) => {
     setItems((prev) => {
@@ -518,16 +526,15 @@ export default function NuevaTransferencia() {
                   {items.map((item, idx) => (
                     <div
                       key={idx}
-                      className="grid grid-cols-12 gap-2 items-center py-1"
+                      className="rounded-lg border border-foreground/10 p-2 space-y-2"
                     >
-                      <div className="col-span-8">
+                      <div className="relative">
                         <div className="flex gap-1.5 items-center relative">
                           <div className="flex-1 min-w-0">
                             <Input
                               value={item.productName}
                               onChange={(e) => {
                                 updateItem(idx, "productName", e.target.value);
-                                // Buscar EN VIVO: sin botón, como el resto de la app
                                 setFilaActiva(idx);
                                 setTextoBusqueda(e.target.value);
                               }}
@@ -549,28 +556,26 @@ export default function NuevaTransferencia() {
                           >
                             {buscandoFila === idx ? "…" : "🔍"}
                           </button>
-                          {/* Sugerencias en vivo CON el stock del origen: se ve al
-                              instante si alcanza para transferir. Mismo comportamiento
-                              (ancho completo, texto sin recortar de más) que el resto
-                              de buscadores de producto de la app. */}
+                          {/* Buscador a ANCHO COMPLETO de la fila (ya no comprimido
+                              en 8/12 columnas). Nombre completo + proveedor debajo. */}
                           {filaActiva === idx && (sugerencias?.productos?.length || 0) > 0 && item.productName?.trim().length >= 2 && (
-                            <div className="absolute top-10 left-0 right-0 z-30 bg-white dark:bg-card border rounded-xl shadow-lg max-h-72 overflow-y-auto">
+                            <div className="absolute top-10 left-0 right-0 z-30 bg-white dark:bg-card border rounded-xl shadow-lg max-h-80 overflow-y-auto">
                               {sugerencias!.productos.map((p: any) => {
                                 const falta = p.stockOrigen != null && p.stockOrigen < (item.quantity || 1);
                                 return (
                                   <button key={p.nombre} type="button"
                                     onClick={() => { elegirCandidato(idx, p.nombre); setFilaActiva(null); setTextoBusqueda(""); }}
-                                    className="w-full text-left px-3 py-2 text-xs hover:bg-muted flex items-center justify-between gap-2">
+                                    className="w-full text-left px-3 py-2.5 text-sm hover:bg-muted flex items-center justify-between gap-3 border-b border-foreground/5 last:border-0">
                                     <span className="min-w-0 flex-1">
-                                      <span className="block truncate leading-tight">{p.nombre}</span>
+                                      <span className="block leading-snug">{p.nombre}</span>
                                       {p.proveedor && (
-                                        <span className="block truncate text-[10px] text-muted-foreground/70 leading-tight mt-0.5">{p.proveedor}</span>
+                                        <span className="block text-[11px] text-muted-foreground/80 leading-snug mt-0.5">{p.proveedor}</span>
                                       )}
                                     </span>
                                     {p.stockOrigen == null ? (
-                                      <span className="text-[10px] text-muted-foreground shrink-0">sin dato</span>
+                                      <span className="text-[11px] text-muted-foreground shrink-0">sin dato</span>
                                     ) : (
-                                      <span className={`text-[10px] font-bold shrink-0 ${falta ? "text-red-600" : "text-emerald-700"}`}>
+                                      <span className={`text-[11px] font-bold shrink-0 ${falta ? "text-red-600" : "text-emerald-700"}`}>
                                         {p.stockOrigen} en origen
                                       </span>
                                     )}
@@ -592,12 +597,8 @@ export default function NuevaTransferencia() {
                             {item.candidatos && item.candidatos.length > 0 && item.confianza !== "elegido" && (
                               <div className="flex flex-wrap gap-1">
                                 {item.candidatos.map((c, ci) => (
-                                  <button
-                                    key={ci}
-                                    type="button"
-                                    onClick={() => elegirCandidato(idx, c.nombre)}
-                                    className={`text-[10px] px-2 py-1 rounded-full border font-bold active:scale-95 ${c.nombre === item.productName ? "bg-emerald-600 text-white border-emerald-600" : "bg-white text-gray-700 border-gray-300"}`}
-                                  >
+                                  <button key={ci} type="button" onClick={() => elegirCandidato(idx, c.nombre)}
+                                    className="text-[10px] px-2 py-0.5 rounded-full bg-muted hover:bg-primary/10 border">
                                     {c.nombre.length > 34 ? c.nombre.slice(0, 34) + "…" : c.nombre}
                                   </button>
                                 ))}
@@ -606,26 +607,22 @@ export default function NuevaTransferencia() {
                           </div>
                         )}
                       </div>
-                      <div className="col-span-3">
-                        <Input
-                          type="number"
-                          value={item.quantity}
-                          onChange={(e) =>
-                            updateItem(
-                              idx,
-                              "quantity",
-                              parseInt(e.target.value) || 0
-                            )
-                          }
-                          className="text-sm h-9"
-                          min={0}
-                        />
-                      </div>
-                      <div className="col-span-1 flex justify-end">
+                      <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs text-muted-foreground">Cantidad</span>
+                          <Input
+                            type="number"
+                            value={item.quantity}
+                            onChange={(e) => updateItem(idx, "quantity", parseInt(e.target.value) || 0)}
+                            className="text-sm h-9 w-24"
+                            min={0}
+                          />
+                        </div>
+                        <div className="flex-1" />
                         <Button
                           variant="ghost"
                           size="icon"
-                          className="h-8 w-8"
+                          className="h-8 w-8 shrink-0"
                           onClick={() => removeItem(idx)}
                         >
                           <Trash2 className="h-3 w-3" />
@@ -742,6 +739,31 @@ export default function NuevaTransferencia() {
           )}
         </div>
       </div>
+
+      <AlertDialog open={resultadoModal !== null} onOpenChange={(o) => { if (!o) setResultadoModal(null); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className={resultadoModal?.ok ? "text-emerald-700" : "text-red-700"}>
+              {resultadoModal?.titulo}
+            </AlertDialogTitle>
+            <AlertDialogDescription className="text-sm leading-relaxed whitespace-pre-line">
+              {resultadoModal?.detalle}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogAction
+              onClick={() => {
+                const eraExito = resultadoModal?.ok;
+                setResultadoModal(null);
+                // Si salió bien, se vuelve a la lista; si no, se queda para reintentar.
+                if (eraExito) setLocation("/transferencias");
+              }}
+            >
+              Aceptar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }

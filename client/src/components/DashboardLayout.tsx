@@ -148,8 +148,15 @@ function DashboardLayoutContent({
 }: DashboardLayoutContentProps) {
   const { user, logout } = useAuth();
   const [location, setLocation] = useLocation();
-  const { state, toggleSidebar } = useSidebar();
+  const { state, toggleSidebar, setOpenMobile, setOpen, isMobile: sidebarIsMobile } = useSidebar();
   const isCollapsed = state === "collapsed";
+  // Al elegir una opción del menú, colapsarlo: en móvil cierra el drawer, en
+  // escritorio colapsa la barra a íconos para dar espacio al contenido.
+  const irA = (path: string) => {
+    setLocation(path);
+    if (sidebarIsMobile) setOpenMobile(false);
+    else setOpen(false);
+  };
   const [isResizing, setIsResizing] = useState(false);
   const sidebarRef = useRef<HTMLDivElement>(null);
   const activeMenuItem = menuItems.find((item) => item.path === location);
@@ -223,7 +230,7 @@ function DashboardLayoutContent({
                   <SidebarMenuItem key={item.path}>
                     <SidebarMenuButton
                       isActive={isActive}
-                      onClick={() => setLocation(item.path)}
+                      onClick={() => irA(item.path)}
                       tooltip={item.label}
                       className={`h-10 transition-all font-medium text-sm tracking-wide ${
                         isActive

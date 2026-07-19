@@ -107,13 +107,17 @@ export const transfers = mysqlTable("transfers", {
   fromBranchId: int("fromBranchId").notNull(),
   toBranchId: int("toBranchId").notNull(),
   referenceNumber: varchar("referenceNumber", { length: 100 }),
-  status: mysqlEnum("status", ["draft", "pending_sync", "synced", "error", "completed"]).default("draft").notNull(),
+  status: mysqlEnum("status", ["draft", "pending_sync", "synced", "error", "completed", "pending", "reverted"]).default("draft").notNull(),
   imageUrl: text("imageUrl"),
   imageKey: varchar("imageKey", { length: 500 }),
   extractedData: json("extractedData"),
   syncError: text("syncError"),
   syncAttempts: int("syncAttempts").default(0),
   notes: text("notes"),
+  // Reversión: cuándo, quién y por qué se revirtió (movimiento inverso en 365).
+  revertedAt: timestamp("revertedAt"),
+  revertedBy: int("revertedBy"),
+  revertReason: text("revertReason"),
   createdAt: timestamp("createdAt").defaultNow().notNull(),
   updatedAt: timestamp("updatedAt").defaultNow().onUpdateNow().notNull(),
 });

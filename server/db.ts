@@ -375,6 +375,83 @@ export async function confirmTransfer(transferId: number, userId: number) {
   return { success: true, message: resultado365.message };
 }
 
+// Detalle completo de una transferencia: cabecera, sucursales, items e historial.
+export async function getTransferDetalle(transferId: number) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const cab = await db.select().from(transfers).where(eq(transfers.id, transferId)).limit(1);
+  if (cab.length === 0) throw new Error("Transferencia no encontrada");
+  const t = cab[0];
+  const [origen, destino] = await Promise.all([getBranchById(t.fromBranchId), getBranchById(t.toBranchId)]);
+  const items = await db.select().from(transferItems).where(eq(transferItems.transferId, transferId));
+  const historial = await db.select().from(operationHistory)
+    .where(and(eq(operationHistory.type, "transfer"), eq(operationHistory.referenceId, transferId)))
+    .orderBy(desc(operationHistory.createdAt));
+  return {
+    id: t.id,
+    status: t.status,
+    referenceNumber: t.referenceNumber,
+    notes: t.notes,
+    createdAt: t.createdAt,
+    origen: origen?.name || "",
+    destino: destino?.name || "",
+    revertedAt: (t as any).revertedAt || null,
+    revertReason: (t as any).revertReason || null,
+    items: items.map((i) => ({ nombre: i.productName, cantidad: i.quantity })),
+    historial: historial.map((h) => ({ action: h.action, status: h.status, details: h.details, fecha: h.createdAt })),
+  };
+}
+
+// Revertir una transferencia completada: movimiento INVERSO en 365 (destino →
+// origen) por las mismas cantidades. Solo si estaba "completed"; deja constancia.
+export async function revertTransfer(transferId: number, userId: number, motivo?: string) {
+  const db = await getDb();
+  if (!db) throw new Error("Database not available");
+  const cab = await db.select().from(transfers).where(eq(transfers.id, transferId)).limit(1);
+  if (cab.length === 0) throw new Error("Transferencia no encontrada");
+  const t = cab[0];
+  if (t.status !== "completed") {
+    return { success: false, message: `Solo se puede revertir una transferencia completada. Estado actual: ${t.status}.` };
+  }
+  const [origen, destino] = await Promise.all([getBranchById(t.fromBranchId), getBranchById(t.toBranchId)]);
+  const its = await db.select().from(transferItems).where(eq(transferItems.transferId, transferId));
+  if (its.length === 0) return { success: false, message: "La transferencia no tiene productos." };
+
+  // Movimiento inverso en 365: lo que salió del origen ahora regresa desde el destino.
+  let resultado365: { success: boolean; message: string };
+  try {
+    const { inventarios365 } = await import("./inventarios365");
+    resultado365 = await inventarios365.registrarTransferencia({
+      sucursalOrigen: destino?.name || "",
+      sucursalDestino: origen?.name || "",
+      items: its.map((i) => ({ nombre: i.productName, cantidad: i.quantity })),
+      observacion: `REVERSIÓN de transferencia VidaFarma #${transferId}${motivo ? ` — ${motivo}` : ""}`,
+    });
+  } catch (e: any) {
+    resultado365 = { success: false, message: `Error conectando con 365: ${e?.message || "desconocido"}` };
+  }
+
+  await db.insert(operationHistory).values({
+    userId, type: "transfer", referenceId: transferId,
+    action: "Transferencia revertida",
+    status: resultado365.success ? "success" : "error",
+    details: `${resultado365.message}${motivo ? ` · Motivo: ${motivo}` : ""}`,
+  });
+
+  if (!resultado365.success) {
+    return { success: false, message: `No se pudo revertir: ${resultado365.message}. El stock NO se movió.` };
+  }
+
+  await db.update(transfers).set({
+    status: "reverted" as any,
+    revertedAt: new Date() as any,
+    revertedBy: userId as any,
+    revertReason: motivo || null as any,
+  }).where(eq(transfers.id, transferId));
+
+  return { success: true, message: `Transferencia revertida: el stock regresó de ${destino?.name} a ${origen?.name}.` };
+}
+
 // ─── Task Queue ───
 export async function listTaskQueue() {
   const db = await getDb();

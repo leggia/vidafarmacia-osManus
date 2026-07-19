@@ -64,6 +64,12 @@ export async function crearTablasGastos(): Promise<void> {
     // clientes lo insertaba con `as any` — MODIFY es idempotente (re-ejecutar
     // no daña datos) y amplía el enum sin tocar filas existentes.
     "ALTER TABLE users MODIFY COLUMN role ENUM('user','admin','viewer','regente','cliente') NOT NULL DEFAULT 'user'",
+    // Transferencias: estados nuevos (pending para reintento, reverted para reversión)
+    // y columnas para dejar constancia de quién/cuándo/por qué se revirtió.
+    "ALTER TABLE transfers MODIFY COLUMN status ENUM('draft','pending_sync','synced','error','completed','pending','reverted') NOT NULL DEFAULT 'draft'",
+    "ALTER TABLE transfers ADD COLUMN revertedAt TIMESTAMP NULL",
+    "ALTER TABLE transfers ADD COLUMN revertedBy INT NULL",
+    "ALTER TABLE transfers ADD COLUMN revertReason TEXT NULL",
   ];
   for (const m of migraciones) {
     try { await db.execute(sql.raw(m)); } catch { /* ya existe */ }

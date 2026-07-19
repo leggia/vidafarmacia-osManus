@@ -105,6 +105,7 @@ class ProductosCacheService {
               nombre: art.nombre,
               codigo: art.codigo || "",
               idProveedor: (art as any).idproveedor || null,
+              nombreProveedor: (art as any).proveedor || null,
               precioCostoUnid: String(art.precio_costo_unid || 0),
               descripcion: (art as any).descripcion ?? (art as any).nombre_generico ?? null,
               imagenUrl: (art as any).imagen ?? (art as any).foto ?? (art as any).url_imagen ?? (art as any).imagen_url ?? null,

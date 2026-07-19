@@ -1,7 +1,7 @@
 import { COOKIE_NAME } from "@shared/const";
 import { getSessionCookieOptions } from "./_core/cookies";
 import { systemRouter } from "./_core/systemRouter";
-import { publicProcedure, protectedProcedure, router } from "./_core/trpc";
+import { publicProcedure, protectedProcedure, adminProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import { invokeLLM } from "./_core/llm";
 import { storagePut } from "./storage";
@@ -1309,20 +1309,34 @@ Devuelve SOLO este JSON:
       })
     )
     .mutation(async ({ ctx, input }) => {
-      const status = input.confirmDirectly ? "completed" : "draft";
-      const result = await db.createTransfer({
+      if (input.fromBranchId === input.toBranchId) {
+        throw new Error("La sucursal origen y destino deben ser diferentes.");
+      }
+      const itemsLimpios = input.items.filter((i) => i.productName?.trim() && i.quantity > 0);
+      if (itemsLimpios.length === 0) {
+        throw new Error("Agrega al menos un producto con cantidad mayor a 0.");
+      }
+      // Se crea SIEMPRE como borrador primero (deja el registro y los items).
+      const created = await db.createTransfer({
         userId: ctx.user.id,
         fromBranchId: input.fromBranchId,
         toBranchId: input.toBranchId,
         referenceNumber: input.referenceNumber,
         notes: input.notes,
-        items: input.items,
+        items: itemsLimpios,
         imageUrl: input.imageUrl,
         imageKey: input.imageKey,
-        status,
+        status: "draft",
       });
-
-      return result;
+      // Si el usuario pidió confirmar directamente, se ejecuta el movimiento real
+      // en 365 vía confirmTransfer (que mueve el stock y actualiza el estado según
+      // el resultado). Antes esto se marcaba "completed" sin tocar 365 — el stock
+      // nunca se movía. Ahora el resultado de 365 se devuelve al frontend.
+      if (input.confirmDirectly) {
+        const r = await db.confirmTransfer(created.id, ctx.user.id);
+        return { id: created.id, confirmada: true, exito365: r.success, mensaje365: r.message, items: itemsLimpios.length };
+      }
+      return { id: created.id, confirmada: false, exito365: null, mensaje365: "Guardada como borrador.", items: itemsLimpios.length };
     }),
 
   confirm: protectedProcedure
@@ -1330,6 +1344,23 @@ Devuelve SOLO este JSON:
     .mutation(async ({ ctx, input }) => {
       const result = await db.confirmTransfer(input.id, ctx.user.id);
       return result;
+    }),
+
+  // Detalle completo de una transferencia (cabecera + items + historial) para el
+  // modal de la lista/historial.
+  detalle: protectedProcedure
+    .input(z.object({ id: z.number() }))
+    .query(async ({ input }) => {
+      return db.getTransferDetalle(input.id);
+    }),
+
+  // Revertir una transferencia YA COMPLETADA: registra en 365 el movimiento
+  // inverso (destino → origen) por las mismas cantidades. Operación delicada:
+  // solo admin, solo si estaba "completed", y deja constancia en el historial.
+  revertir: adminProcedure
+    .input(z.object({ id: z.number(), motivo: z.string().trim().max(300).optional() }))
+    .mutation(async ({ ctx, input }) => {
+      return db.revertTransfer(input.id, ctx.user.id, input.motivo);
     }),
 });
 
