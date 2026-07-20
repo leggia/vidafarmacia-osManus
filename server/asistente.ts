@@ -2,6 +2,7 @@
 // Cada función es una "herramienta" que el asistente puede invocar.
 import { getDb } from "./db";
 import { sql } from "drizzle-orm";
+import { FILTRO_NO_ANULADA } from "./ventas-comun";
 
 const rows = (r: any): any[] => {
   const x = Array.isArray(r) ? r[0] : r?.rows ?? r;
@@ -81,7 +82,7 @@ export const asistenteTools = {
     const filtroSuc = filtroLike("nombreSucursal", sucursal);
     const r = rows(await db.execute(sql`
       SELECT COUNT(*) as numVentas, COALESCE(SUM(total),0) as total
-       FROM ventas WHERE fecha >= ${desde} AND fecha <= ${hasta} ${filtroSuc}
+       FROM ventas WHERE fecha >= ${desde} AND fecha <= ${hasta} ${filtroSuc}${FILTRO_NO_ANULADA}
     `));
     const data = r[0] || { numVentas: 0, total: 0 };
     const resultado: any = {
@@ -95,7 +96,7 @@ export const asistenteTools = {
     if (!sucursal) {
       const porSuc = rows(await db.execute(sql`
         SELECT nombreSucursal, COUNT(*) as numVentas, COALESCE(SUM(total),0) as total
-         FROM ventas WHERE fecha >= ${desde} AND fecha <= ${hasta} AND nombreSucursal IS NOT NULL
+         FROM ventas WHERE fecha >= ${desde} AND fecha <= ${hasta} AND nombreSucursal IS NOT NULL${FILTRO_NO_ANULADA}
          GROUP BY nombreSucursal ORDER BY total DESC
       `));
       resultado.porSucursal = porSuc.map((s: any) => ({
@@ -168,7 +169,7 @@ export const asistenteTools = {
     const filtroSucD = filtroLike("d.nombreSucursal", sucursal);
 
     const rIngreso = rows(await db.execute(sql`
-      SELECT COALESCE(SUM(total),0) as ingreso FROM ventas WHERE fecha >= ${desde} AND fecha <= ${hasta} ${filtroSuc}
+      SELECT COALESCE(SUM(total),0) as ingreso FROM ventas WHERE fecha >= ${desde} AND fecha <= ${hasta} ${filtroSuc}${FILTRO_NO_ANULADA}
     `));
     const rCosto = rows(await db.execute(sql`
       SELECT COALESCE(SUM(d.cantidad * c.precioCostoUnid),0) as costo
@@ -832,11 +833,11 @@ export const asistenteTools = {
     const datosMes = async (m: string) => {
       const r = rows(await db.execute(sql`
         SELECT COALESCE(SUM(total),0) as total, COUNT(*) as ventas FROM ventas
-        WHERE DATE_FORMAT(fecha, '%Y-%m') = ${m}
+        WHERE DATE_FORMAT(fecha, '%Y-%m') = ${m}${FILTRO_NO_ANULADA}
       `));
       const porSuc = rows(await db.execute(sql`
         SELECT nombreSucursal, COALESCE(SUM(total),0) as total FROM ventas
-        WHERE DATE_FORMAT(fecha, '%Y-%m') = ${m} AND nombreSucursal IS NOT NULL
+        WHERE DATE_FORMAT(fecha, '%Y-%m') = ${m} AND nombreSucursal IS NOT NULL${FILTRO_NO_ANULADA}
         GROUP BY nombreSucursal
       `));
       return { total: num(r[0]?.total), ventas: num(r[0]?.ventas), porSuc };
@@ -1228,10 +1229,10 @@ export const asistenteTools = {
 
     // Consultas de BD en paralelo (rápidas)
     const [ventasHoy, ventasHoySuc, acumMes, acumMesAnt, pagosPend, vencCercanos] = await Promise.all([
-      db.execute(sql`SELECT COALESCE(SUM(total),0) as total, COUNT(*) as n FROM ventas WHERE fecha = ${hoyStr}`),
-      db.execute(sql`SELECT nombreSucursal, COALESCE(SUM(total),0) as total FROM ventas WHERE fecha = ${hoyStr} AND nombreSucursal IS NOT NULL GROUP BY nombreSucursal ORDER BY total DESC`),
-      db.execute(sql`SELECT COALESCE(SUM(total),0) as total FROM ventas WHERE fecha >= ${iniMes} AND fecha <= ${hoyStr}`),
-      db.execute(sql`SELECT COALESCE(SUM(total),0) as total FROM ventas WHERE fecha >= ${iniMesAnt} AND fecha <= ${corteMesAnt}`),
+      db.execute(sql`SELECT COALESCE(SUM(total),0) as total, COUNT(*) as n FROM ventas WHERE fecha = ${hoyStr}${FILTRO_NO_ANULADA}`),
+      db.execute(sql`SELECT nombreSucursal, COALESCE(SUM(total),0) as total FROM ventas WHERE fecha = ${hoyStr} AND nombreSucursal IS NOT NULL${FILTRO_NO_ANULADA} GROUP BY nombreSucursal ORDER BY total DESC`),
+      db.execute(sql`SELECT COALESCE(SUM(total),0) as total FROM ventas WHERE fecha >= ${iniMes} AND fecha <= ${hoyStr}${FILTRO_NO_ANULADA}`),
+      db.execute(sql`SELECT COALESCE(SUM(total),0) as total FROM ventas WHERE fecha >= ${iniMesAnt} AND fecha <= ${corteMesAnt}${FILTRO_NO_ANULADA}`),
       db.execute(sql`SELECT COUNT(*) as n, COALESCE(SUM(monto),0) as total FROM gastos_registro WHERE anioMes = ${mesActual} AND pagado = 0`),
       db.execute(sql`SELECT COUNT(*) as n FROM purchase_items WHERE expiryDate IS NOT NULL AND expiryDate != '' AND expiryDate >= ${hoyStr} AND expiryDate <= ${limVenc}`),
     ]);

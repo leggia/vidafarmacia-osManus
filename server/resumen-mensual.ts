@@ -6,6 +6,7 @@
 // en vivo (sigue cambiando) y se guarda igualmente al pasar por aquí, de modo que
 // al cerrar el mes ya queda su última foto.
 import { getDb } from "./db";
+import { FILTRO_NO_ANULADA } from "./ventas-comun";
 import { sql } from "drizzle-orm";
 
 const filas = (r: any) => { const x = Array.isArray(r) ? r[0] : r?.rows ?? r; return Array.isArray(x) ? x : []; };
@@ -37,7 +38,7 @@ async function calcularYGuardar(db: any, anioMes: string) {
   const { desde, hasta } = rangoMes(anioMes);
   const porSucursal = filas(await db.execute(sql`
     SELECT COALESCE(nombreSucursal, 'Sin sucursal') AS sucursal, COUNT(*) AS n, COALESCE(SUM(total),0) AS monto
-    FROM ventas WHERE fecha >= ${desde} AND fecha < ${hasta}
+    FROM ventas WHERE fecha >= ${desde} AND fecha < ${hasta}${FILTRO_NO_ANULADA}
     GROUP BY nombreSucursal
   `));
   // Reemplazar el resumen del mes completo (idempotente)

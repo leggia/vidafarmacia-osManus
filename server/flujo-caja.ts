@@ -3,6 +3,7 @@
 // mercadería, gastos operativos, sueldos, cuotas de créditos. Da el excedente
 // real disponible mes a mes, con metodología transparente (nunca una caja negra).
 import { getDb } from "./db";
+import { FILTRO_NO_ANULADA } from "./ventas-comun";
 import { sql } from "drizzle-orm";
 
 const rows = (r: any) => { const x = Array.isArray(r) ? r[0] : r?.rows ?? r; return Array.isArray(x) ? x : []; };
@@ -69,12 +70,12 @@ async function mesHistorico(db: any, anioMes: string): Promise<MesFlujo> {
   const ultimoDia = new Date(anio, mes, 0).getDate();
   const hasta = `${anioMes}-${String(ultimoDia).padStart(2, "0")}`;
 
-  const ing = rows(await db.execute(sql`SELECT COALESCE(SUM(total),0) AS t FROM ventas WHERE fecha >= ${desde} AND fecha <= ${hasta}`));
+  const ing = rows(await db.execute(sql`SELECT COALESCE(SUM(total),0) AS t FROM ventas WHERE fecha >= ${desde} AND fecha <= ${hasta}${FILTRO_NO_ANULADA}`));
   const ingresos = num(ing[0]?.t);
 
   const porSucursalRaw = rows(await db.execute(sql`
     SELECT nombreSucursal, COALESCE(SUM(total),0) AS t FROM ventas
-    WHERE fecha >= ${desde} AND fecha <= ${hasta} AND nombreSucursal IS NOT NULL GROUP BY nombreSucursal
+    WHERE fecha >= ${desde} AND fecha <= ${hasta} AND nombreSucursal IS NOT NULL${FILTRO_NO_ANULADA} GROUP BY nombreSucursal
   `));
   const porSucursal = porSucursalRaw.map((r: any) => ({ sucursal: r.nombreSucursal, ingresos: num(r.t) }));
 
