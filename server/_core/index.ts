@@ -61,6 +61,33 @@ async function startServer() {
   app.use("/api/admin", requireAdmin);
 
   // Endpoint admin para limpiar cache (solo en producción)
+  // Diagnóstico: qué valores de 'estado' existen en las ventas (para confirmar
+  // cómo 365 marca las anuladas) + fuerza el refresco de estados recientes.
+  app.get("/api/admin/diag-estados-ventas", async (_req, res) => {
+    try {
+      const db = await getDb();
+      if (!db) return res.status(500).json({ error: "DB no disponible" });
+      const r: any = await db.execute(sql`
+        SELECT COALESCE(estado,'(null)') AS estado, COUNT(*) AS n, COALESCE(SUM(total),0) AS total
+        FROM ventas GROUP BY estado ORDER BY n DESC
+      `);
+      const filas = Array.isArray(r) ? r[0] : r?.rows ?? r;
+      res.json({ estados: filas });
+    } catch (e: any) {
+      res.status(500).json({ error: e?.message });
+    }
+  });
+
+  app.post("/api/admin/refrescar-estados-ventas", async (_req, res) => {
+    try {
+      const { refrescarEstadoVentasRecientes } = await import("../sync-ventas");
+      const r = await refrescarEstadoVentasRecientes(10);
+      res.json({ success: true, ...r });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e?.message });
+    }
+  });
+
   app.post("/api/admin/clear-cache", async (_req, res) => {
     try {
       const db = await getDb();
@@ -324,7 +351,7 @@ async function startServer() {
   // - Todo en background, con try/catch; jamás bloquea el servidor
   const sincronizarVentasAuto = async () => {
     try {
-      const { sincronizarVentasIncremental } = await import("../sync-ventas");
+      const { sincronizarVentasIncremental, refrescarEstadoVentasRecientes } = await import("../sync-ventas");
       let intentos = 0;
       let huboHueco = true;
       // Repetir mientras haya hueco (hasta 5 veces) para cerrar acumulaciones grandes
@@ -335,6 +362,10 @@ async function startServer() {
         if (r.nuevas > 0) console.log(`[CronVentas] +${r.nuevas} ventas${huboHueco ? " (hay más, repitiendo)" : ""}`);
         if (huboHueco) await new Promise((res) => setTimeout(res, 1500));
       }
+      // Refrescar estados recientes: captura ANULACIONES de ventas ya sincronizadas
+      // (la incremental no las ve porque no son ventas nuevas).
+      const est = await refrescarEstadoVentasRecientes();
+      if (est.actualizadas > 0) console.log(`[CronVentas] ${est.actualizadas} estados actualizados (anulaciones)`);
     } catch (e) {
       console.warn("[CronVentas] Error en sincronización automática:", e);
     }

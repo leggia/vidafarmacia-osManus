@@ -2582,7 +2582,7 @@ const ventasRouter = router({
       } catch { /* continuar */ }
     }
     // Sincronizar repetidamente hasta cerrar huecos (varios días acumulados)
-    const { sincronizarVentasIncremental } = await import("./sync-ventas");
+    const { sincronizarVentasIncremental, refrescarEstadoVentasRecientes } = await import("./sync-ventas");
     let totalNuevas = 0;
     let ultimoId = 0;
     let primeraVez = false;
@@ -2597,6 +2597,8 @@ const ventasRouter = router({
       intentos++;
       if (huboHueco) await new Promise((res) => setTimeout(res, 800));
     }
+    // Refrescar estados recientes para capturar anulaciones de ventas ya sincronizadas.
+    await refrescarEstadoVentasRecientes(8);
     // Tras sincronizar ventas, otorgar puntos de fidelidad a las ventas de mostrador
     // con cliente identificado (idempotente). No bloquea si falla.
     try {
