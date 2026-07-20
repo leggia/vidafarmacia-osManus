@@ -33,6 +33,41 @@ const branchesRouter = router({
 
 // ─── Purchases Router ────────────────────────────────────────────────────────
 const purchasesRouter = router({
+  // Leer la FECHA DE VENCIMIENTO de una foto (caja/blíster del producto).
+  // Útil cuando la factura no imprime el vencimiento pero la caja física sí.
+  // Usa el mismo LLM de visión (gratis por ahora). Devuelve YYYY-MM-DD o null.
+  leerVencimiento: protectedProcedure
+    .input(z.object({ fileBase64: z.string(), mimeType: z.string() }))
+    .mutation(async ({ input }) => {
+      const dataUrl = `data:${input.mimeType};base64,${input.fileBase64}`;
+      const llmResult = await invokeLLM({
+        messages: [
+          {
+            role: "system",
+            content: "Eres experto en leer fechas de vencimiento impresas en cajas y blísteres de medicamentos. Las fechas suelen aparecer como VENC, EXP, V., CAD seguidas de mes/año (MM/AAAA, MM-AAAA) o día/mes/año. Responde SOLO JSON.",
+          },
+          {
+            role: "user",
+            content: [
+              { type: "text", text: 'Lee la fecha de vencimiento de esta imagen. Responde en JSON: {"fecha":"YYYY-MM-DD"} usando el último día del mes si solo hay mes/año (ej: 08/2027 → 2027-08-31). Si no hay fecha visible, {"fecha":null}.' },
+              { type: "image_url", image_url: { url: dataUrl } },
+            ] as any,
+          },
+        ],
+        response_format: { type: "json_object" },
+      });
+      try {
+        const c = llmResult.choices[0]?.message?.content;
+        const parsed = typeof c === "string" ? JSON.parse(c.replace(/```json|```/g, "").trim()) : {};
+        const fecha = parsed?.fecha;
+        if (typeof fecha === "string" && /^\d{4}-\d{2}-\d{2}$/.test(fecha)) {
+          return { fecha };
+        }
+        return { fecha: null };
+      } catch {
+        return { fecha: null };
+      }
+    }),
   list: protectedProcedure.query(async ({ ctx }) => {
     return db.listPurchases(ctx.user.id);
   }),

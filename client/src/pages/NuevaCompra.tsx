@@ -24,7 +24,6 @@ import {
   Check,
   AlertTriangle,
   CheckCircle2,
-  Calendar,
   Camera,
   Image as ImageIcon,
   FileText,
@@ -172,6 +171,11 @@ export default function NuevaCompra() {
 
   const [file, setFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  // Escaneo de vencimiento por foto de la caja
+  const vencInputRef = useRef<HTMLInputElement>(null);
+  const [filaVencimiento, setFilaVencimiento] = useState<number | null>(null);
+  const [leyendoVenc, setLeyendoVenc] = useState<number | null>(null);
+  const leerVencimientoMut = trpc.purchases.leerVencimiento.useMutation();
   const [cropUrl, setCropUrl] = useState<string | null>(null); // imagen pendiente de recortar
   const [branchId, setBranchId] = useState<string>("");
 
@@ -198,7 +202,6 @@ export default function NuevaCompra() {
   // Ventanas de resultado al sincronizar
   const [modalExito, setModalExito] = useState<{ mensaje: string; ingresoId?: string } | null>(null);
   const [modalError, setModalError] = useState<{ mensaje: string } | null>(null);
-  const [showExpiry, setShowExpiry] = useState(false);
   // Inteligencia de precios: por cada producto, si se mantiene/subió/bajó vs la
   // última compra propia (o el costo del sistema), y el margen contra la venta.
   const [comparacionPrecios, setComparacionPrecios] = useState<Map<string, any>>(new Map());
@@ -286,7 +289,6 @@ export default function NuevaCompra() {
             }
           }
           if (Object.keys(empRestaurado).length > 0) setProductosEmparejados(empRestaurado);
-          setShowExpiry(its.some((it: any) => it.expiryDate));
           setExtracted(true);
           setBorradorGuardadoId(parseInt(borradorId));
           toast.success("Borrador cargado. Continúa donde lo dejaste.");
@@ -442,7 +444,6 @@ export default function NuevaCompra() {
             });
         setItems(mappedItems);
         if (mappedItems.some((i: any) => i.expiryDate)) {
-          setShowExpiry(true);
         }
         // Inteligencia de precios: compara cada costo contra la referencia
         // conocida — así no hay que revisar manualmente los que se mantienen.
@@ -765,6 +766,35 @@ export default function NuevaCompra() {
     setItems((prev) => prev.filter((_, i) => i !== index));
   };
 
+  // Escanear vencimiento: toma la foto de la caja, la lee con visión (gratis) y
+  // completa el campo del producto. Redimensiona antes de enviar para no gastar.
+  const onFotoVencimiento = useCallback(async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const foto = e.target.files?.[0];
+    e.target.value = ""; // permitir reusar el mismo archivo
+    const idx = filaVencimiento;
+    setFilaVencimiento(null);
+    if (!foto || idx === null) return;
+    setLeyendoVenc(idx);
+    try {
+      const base64: string = await new Promise((resolve, reject) => {
+        const r = new FileReader();
+        r.onload = () => resolve((r.result as string).split(",")[1]);
+        r.onerror = () => reject(new Error("No se pudo leer la foto"));
+        r.readAsDataURL(foto);
+      });
+      const res = await leerVencimientoMut.mutateAsync({ fileBase64: base64, mimeType: foto.type || "image/jpeg" });
+      if (res.fecha) {
+        updateItem(idx, "expiryDate", res.fecha);
+        toast.success(`Vencimiento leído: ${res.fecha}`);
+      } else {
+        toast.error("No se pudo leer la fecha. Escríbela a mano o intenta otra foto más nítida.", { duration: 6000 });
+      }
+    } catch (err: any) {
+      toast.error(err.message || "Error al leer el vencimiento");
+    }
+    setLeyendoVenc(null);
+  }, [filaVencimiento, leerVencimientoMut]);
+
   // Un producto está emparejado si su nombre actual existe como clave en productosEmparejados
   // (productosEmparejados mapea nombreSistema → nombreFactura)
   // Un ítem está emparejado si tiene VÍNCULO REAL con un producto del sistema
@@ -952,6 +982,15 @@ export default function NuevaCompra() {
                 onChange={handleFileSelect}
                 className="hidden"
               />
+              {/* Input de cámara para escanear el vencimiento de la caja */}
+              <input
+                ref={vencInputRef}
+                type="file"
+                accept="image/*"
+                capture="environment"
+                onChange={onFotoVencimiento}
+                className="hidden"
+              />
             </CardContent>
           </Card>
 
@@ -1135,15 +1174,6 @@ export default function NuevaCompra() {
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => setShowExpiry(!showExpiry)}
-                    className={`gap-1 text-xs uppercase tracking-wider font-semibold ${showExpiry ? "bg-primary text-primary-foreground" : ""}`}
-                  >
-                    <Calendar className="h-3 w-3" />
-                    {showExpiry ? "Ocultar Venc." : "Fecha Venc."}
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
                     onClick={addEmptyItem}
                     className="gap-1 text-xs uppercase tracking-wider font-semibold"
                   >
@@ -1308,17 +1338,29 @@ export default function NuevaCompra() {
                           step="0.01"
                         />
                       </div>
-                      {showExpiry && (
-                        <div className="flex-1 min-w-[130px]">
-                          <label className="text-[10px] uppercase text-muted-foreground tracking-wider">Vencimiento</label>
+                      <div className="flex-1 min-w-[150px]">
+                        <label className="text-[10px] uppercase text-muted-foreground tracking-wider flex items-center gap-1">
+                          Vencimiento
+                          {!item.expiryDate && <span className="text-amber-600 font-bold normal-case">• falta</span>}
+                        </label>
+                        <div className="flex gap-1">
                           <Input
                             type="date"
                             value={item.expiryDate || ""}
                             onChange={(e) => updateItem(idx, "expiryDate", e.target.value || null)}
-                            className="text-sm h-9"
+                            className={`text-sm h-9 ${!item.expiryDate ? "border-amber-400 bg-amber-50/50" : ""}`}
                           />
+                          <button
+                            type="button"
+                            title="Escanear vencimiento con la cámara (foto de la caja)"
+                            onClick={() => { setFilaVencimiento(idx); vencInputRef.current?.click(); }}
+                            className="shrink-0 h-9 w-9 rounded-lg border border-emerald-300 text-emerald-700 flex items-center justify-center disabled:opacity-50"
+                            disabled={leyendoVenc === idx}
+                          >
+                            {leyendoVenc === idx ? <Loader2 className="h-4 w-4 animate-spin" /> : <Camera className="h-4 w-4" />}
+                          </button>
                         </div>
-                      )}
+                      </div>
                       <div className="min-w-[70px]">
                         <label className="text-[10px] uppercase text-muted-foreground tracking-wider">Subtotal</label>
                         <p className="text-sm font-bold h-9 flex items-center">{item.subtotal.toFixed(2)}</p>
