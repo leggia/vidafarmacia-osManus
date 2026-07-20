@@ -414,6 +414,48 @@ const purchasesRouter = router({
       const isImage = input.mimeType.startsWith("image/");
       const isPdf = input.mimeType === "application/pdf";
 
+      // RAMA XML: si es una factura electrónica del SIN (XML), se parsea DIRECTO
+      // con datos exactos (precios y descuentos oficiales), sin LLM. Cero errores
+      // de OCR. Devuelve el mismo formato que la extracción por foto.
+      const isXml = input.mimeType.includes("xml") || input.fileName.toLowerCase().endsWith(".xml");
+      if (isXml) {
+        try {
+          const contenidoXml = buffer.toString("utf-8");
+          const { esFacturaXml, parsearFacturaXml } = await import("./factura-xml");
+          if (esFacturaXml(contenidoXml, input.fileName)) {
+            const f = parsearFacturaXml(contenidoXml);
+            if (f.items.length === 0) {
+              throw new Error("El XML no contiene productos (detalle vacío).");
+            }
+            console.log(`[FacturaXML] ${f.items.length} productos, proveedor ${f.razonSocialEmisor}, factura ${f.numeroFactura}`);
+            return {
+              imageUrl,
+              imageKey,
+              fuente: "xml" as const,
+              supplier: f.razonSocialEmisor || "",
+              nitEmisor: f.nitEmisor || "",
+              receiptNumber: f.numeroFactura || "",
+              cuf: f.cuf || "",
+              fechaEmision: f.fechaEmision || "",
+              totalFactura: f.montoTotal,
+              descuentoTotal: f.descuentoTotalLineas + f.descuentoAdicional,
+              items: f.items.map((it) => ({
+                productName: it.productName,
+                productNameFactura: it.productName,
+                quantity: it.quantity,
+                unitCost: it.unitCost,
+                subtotal: it.subtotal,
+                descuento: it.descuento,
+                expiryDate: it.expiryDate,
+                codigoProducto: it.codigoProducto,
+              })),
+            };
+          }
+        } catch (e: any) {
+          throw new Error(`No se pudo leer el XML de la factura: ${e?.message || "formato no reconocido"}. Verifica que sea el XML de factura electrónica del SIN.`);
+        }
+      }
+
       const userContent: any[] = [
         {
           type: "text",

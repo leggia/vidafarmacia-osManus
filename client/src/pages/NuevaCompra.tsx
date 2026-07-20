@@ -344,9 +344,10 @@ export default function NuevaCompra() {
       const selected = e.target.files?.[0];
       if (!selected) return;
 
+      const esXml = selected.name.toLowerCase().endsWith(".xml") || selected.type.includes("xml");
       const validTypes = ['image/jpeg', 'image/png', 'image/webp', 'application/pdf', 'image/heic', 'image/heif'];
-      if (!validTypes.includes(selected.type) && !selected.type.startsWith("image/")) {
-        toast.error('Solo imágenes (JPG, PNG) o PDF');
+      if (!esXml && !validTypes.includes(selected.type) && !selected.type.startsWith("image/")) {
+        toast.error('Solo imágenes (JPG, PNG), PDF o XML de factura del SIN');
         return;
       }
 
@@ -485,7 +486,11 @@ export default function NuevaCompra() {
             setDescuentoGlobalPct(result.descuentoGlobalPct || (factorDesc > 0 ? Math.round(factorDesc * 1000) / 10 : 0));
             setTotalFacturaReal(result.totalFactura || 0);
             setExtracted(true);
-            toast.success(`Se extrajeron ${result.items.length} productos de la imagen`);
+            if ((result as any).fuente === "xml") {
+              toast.success(`✓ ${result.items.length} productos leídos del XML (precios y descuentos exactos)`, { duration: 6000 });
+            } else {
+              toast.success(`Se extrajeron ${result.items.length} productos de la imagen`);
+            }
             // Si el backend detectó que la suma no cuadra con la factura, avisar
             if (result.avisoTotal) {
               toast.warning(`⚠️ ${result.avisoTotal}`, { duration: 10000 });
@@ -922,7 +927,7 @@ export default function NuevaCompra() {
               <input
                 ref={fileInputRef}
                 type="file"
-                accept="image/*,.pdf"
+                accept="image/*,.pdf,.xml,text/xml,application/xml"
                 onChange={handleFileSelect}
                 className="hidden"
               />
