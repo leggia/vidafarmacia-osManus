@@ -27,6 +27,7 @@ import {
   Calendar,
   Camera,
   Image as ImageIcon,
+  FileText,
 } from "lucide-react";
 import { useLocation } from "wouter";
 import ImageCropper from "@/components/ImageCropper";
@@ -468,6 +469,7 @@ export default function NuevaCompra() {
             { onSuccess: (r: any) => setAlertasDescuento(r?.alertas || []) }
           );
         }
+            let provResuelto = result.supplier || "";
             if (result.supplier) {
               setSupplier(result.supplier);
               setSupplierOriginal(result.supplier);
@@ -477,6 +479,7 @@ export default function NuevaCompra() {
                 if (provConf) {
                   setSupplier(provConf.nombre);
                   setProveedorConfirmado({ id: parseInt(provConf.id) || 0, nombre: provConf.nombre });
+                  provResuelto = provConf.nombre; // los productos se emparejan bajo ESTE nombre
                 }
               } catch {}
             }
@@ -496,7 +499,7 @@ export default function NuevaCompra() {
               toast.warning(`⚠️ ${result.avisoTotal}`, { duration: 10000 });
             }
             // Pre-buscar SOLO confirmaciones guardadas (match seguro, no por similitud)
-            const provNombre = result.supplier || "";
+            const provNombre = provResuelto || "";
             for (let i = 0; i < result.items.length; i++) {
               const nombre = result.items[i].productName;
               try {
@@ -842,14 +845,32 @@ export default function NuevaCompra() {
               </CardTitle>
             </CardHeader>
             <CardContent>
-              {previewUrl ? (
+              {previewUrl || (file && (file.name.toLowerCase().endsWith(".xml") || file.type === "application/pdf")) ? (
                 <div className="space-y-3">
                   <div className="border border-foreground/10 rounded overflow-hidden">
-                    <img
-                      src={previewUrl}
-                      alt="Factura"
-                      className="w-full h-auto max-h-80 object-contain bg-muted"
-                    />
+                    {file && (file.name.toLowerCase().endsWith(".xml") || file.type.includes("xml")) ? (
+                      <div className="flex items-center gap-3 p-4 bg-muted">
+                        <FileText className="h-8 w-8 text-emerald-600 shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">{file.name}</p>
+                          <p className="text-xs text-muted-foreground">Factura XML del SIN — se leerán datos exactos</p>
+                        </div>
+                      </div>
+                    ) : file && file.type === "application/pdf" && !previewUrl ? (
+                      <div className="flex items-center gap-3 p-4 bg-muted">
+                        <FileText className="h-8 w-8 text-red-600 shrink-0" />
+                        <div className="min-w-0">
+                          <p className="text-sm font-medium truncate">{file.name}</p>
+                          <p className="text-xs text-muted-foreground">PDF de factura</p>
+                        </div>
+                      </div>
+                    ) : (
+                      <img
+                        src={previewUrl!}
+                        alt="Factura"
+                        className="w-full h-auto max-h-80 object-contain bg-muted"
+                      />
+                    )}
                   </div>
                   <div className="flex gap-2">
                     <Button
@@ -864,7 +885,7 @@ export default function NuevaCompra() {
                       ) : (
                         <Sparkles className="h-4 w-4" />
                       )}
-                      {isExtracting ? "Extrayendo..." : extracted ? "Extraído" : "Extraer con IA"}
+                      {isExtracting ? "Extrayendo..." : extracted ? "Extraído" : (file && file.name.toLowerCase().endsWith(".xml") ? "Leer XML" : "Extraer con IA")}
                     </Button>
                     <Button
                       variant="outline"
@@ -908,8 +929,8 @@ export default function NuevaCompra() {
                   >
                     <ImageIcon className="h-5 w-5 text-muted-foreground" />
                     <div className="text-left">
-                      <p className="text-sm font-medium">Subir desde galería o PDF</p>
-                      <p className="text-xs text-muted-foreground">JPG, PNG o PDF</p>
+                      <p className="text-sm font-medium">Subir factura: galería, PDF o XML</p>
+                      <p className="text-xs text-muted-foreground">JPG, PNG, PDF o XML del SIN (datos exactos)</p>
                     </div>
                   </button>
                 </div>

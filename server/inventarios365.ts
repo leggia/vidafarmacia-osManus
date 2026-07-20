@@ -1527,6 +1527,28 @@ class Inventarios365Service {
         };
       }
 
+      // APRENDIZAJE: guardar en 'confirmaciones' cada emparejamiento exitoso, para
+      // que la PRÓXIMA compra del mismo producto (mismo proveedor + nombre en
+      // factura) lo reconozca al instante sin re-buscar. Antes esto no se hacía:
+      // la sincronización emparejaba al vuelo pero no aprendía, así que cada compra
+      // empezaba de cero. Se guarda en background (no bloquea la respuesta) y con el
+      // proveedor de la compra como clave.
+      if (params.proveedor && productosEmparejados.length > 0) {
+        (async () => {
+          try {
+            const { confirmacionesService } = await import("./confirmaciones");
+            for (const e of productosEmparejados) {
+              await confirmacionesService.confirmar(params.proveedor!, e.nombreFactura, {
+                id: e.id, nombre: e.nombreSistema, codigo: "",
+              } as any);
+            }
+            console.log(`[Inventarios365] Aprendidos ${productosEmparejados.length} emparejamientos para "${params.proveedor}"`);
+          } catch (err) {
+            console.error("[Inventarios365] Error guardando emparejamientos aprendidos:", err);
+          }
+        })();
+      }
+
       // 4. Calcular total si no se proporcionó
       const totalFinal =
         (params.total ?? 0) > 0
