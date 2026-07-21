@@ -63,6 +63,42 @@ async function startServer() {
   // Endpoint admin para limpiar cache (solo en producción)
   // Diagnóstico: qué valores de 'estado' existen en las ventas (para confirmar
   // cómo 365 marca las anuladas) + fuerza el refresco de estados recientes.
+  // Consulta la CABECERA individual en 365 de cada venta local del día. Revela el
+  // estado REAL en 365 (no el del listado) y si la venta existe allá.
+  // Uso: /api/admin/diag-cabeceras?fecha=2026-07-19&sucursal=Lanza
+  app.get("/api/admin/diag-cabeceras", async (req: any, res) => {
+    try {
+      const db = await getDb();
+      if (!db) return res.status(500).json({ error: "DB no disponible" });
+      const fecha = String(req.query.fecha || "");
+      const sucursal = String(req.query.sucursal || "");
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(fecha)) return res.status(400).json({ error: "fecha YYYY-MM-DD" });
+      const filtroSuc = sucursal ? sql` AND nombreSucursal LIKE ${"%" + sucursal + "%"}` : sql``;
+      const r: any = await db.execute(sql`
+        SELECT id, total, estado, numComprobante FROM ventas WHERE fecha = ${fecha}${filtroSuc} ORDER BY id
+      `);
+      const locales = (Array.isArray(r) ? r[0] : r?.rows ?? r) as any[];
+      const { inventarios365 } = await import("../inventarios365");
+      const detalle = [];
+      let noExisten = 0, distintoEstado = 0;
+      for (const v of locales) {
+        const cab = await inventarios365.obtenerCabeceraVenta(Number(v.id));
+        const estado365 = cab ? String(cab.estado ?? "?") : "NO EXISTE";
+        if (!cab) noExisten++;
+        else if (String(v.estado) !== estado365) distintoEstado++;
+        detalle.push({ id: v.id, total: v.total, comp: v.numComprobante, local: String(v.estado), en365: estado365 });
+        await new Promise((r) => setTimeout(r, 60));
+      }
+      res.json({
+        fecha, sucursal: sucursal || "(todas)",
+        totalLocales: locales.length, noExisten, distintoEstado,
+        detalle,
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e?.message });
+    }
+  });
+
   // Compara el estado LOCAL vs el estado REAL en 365 para las ventas de un día.
   // Revela ventas que localmente están "1" pero en 365 fueron canceladas.
   // Uso: /api/admin/diag-comparar-365?fecha=2026-07-19&sucursal=Lanza
