@@ -63,6 +63,24 @@ async function startServer() {
   // Endpoint admin para limpiar cache (solo en producción)
   // Diagnóstico: qué valores de 'estado' existen en las ventas (para confirmar
   // cómo 365 marca las anuladas) + fuerza el refresco de estados recientes.
+  // Muestra el objeto CRUDO de las cajas de 365 (para ver si el cierre incluye
+  // el monto de ventas, y así comparar contra lo local). Uso: /api/admin/diag-caja-cruda
+  app.get("/api/admin/diag-caja-cruda", async (_req, res) => {
+    try {
+      const { inventarios365 } = await import("../inventarios365");
+      const crudo = await inventarios365.diagRaw("/caja?page=1&buscar=&criterio=");
+      const arr = crudo?.cajas ?? crudo?.data ?? crudo?.movimientos ?? (Array.isArray(crudo) ? crudo : []);
+      const lista = Array.isArray(arr) ? arr : arr?.data ?? [];
+      const ejemplos = lista.slice(0, 2);
+      res.json({
+        keys: crudo && typeof crudo === "object" ? Object.keys(crudo) : typeof crudo,
+        ejemplos: ejemplos.map((c: any) => ({ campos: Object.keys(c), valores: c })),
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e?.message });
+    }
+  });
+
   // Muestra el objeto CRUDO de la cabecera de una venta en 365, para ver los
   // nombres reales de los campos (estado, etc.). Uso: /api/admin/diag-cabecera-cruda?id=69112
   app.get("/api/admin/diag-cabecera-cruda", async (req: any, res) => {
