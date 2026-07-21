@@ -67,12 +67,25 @@ async function startServer() {
     try {
       const db = await getDb();
       if (!db) return res.status(500).json({ error: "DB no disponible" });
+      // 1. Estados guardados localmente
       const r: any = await db.execute(sql`
         SELECT COALESCE(estado,'(null)') AS estado, COUNT(*) AS n, COALESCE(SUM(total),0) AS total
         FROM ventas GROUP BY estado ORDER BY n DESC
       `);
       const filas = Array.isArray(r) ? r[0] : r?.rows ?? r;
-      res.json({ estados: filas });
+      // 2. Qué devuelve 365 en crudo para las 3 ventas más recientes (para ver el
+      //    nombre exacto del campo y el valor cuando está cancelada)
+      let muestra365: any = null;
+      try {
+        const { inventarios365 } = await import("../inventarios365");
+        const { ventas } = await inventarios365.listarVentasPagina(1);
+        muestra365 = (ventas || []).slice(0, 3).map((v: any) => ({
+          id: v.id, estado: v.estado, campos: Object.keys(v),
+        }));
+      } catch (e: any) {
+        muestra365 = { error: e?.message };
+      }
+      res.json({ estadosLocales: filas, muestra365 });
     } catch (e: any) {
       res.status(500).json({ error: e?.message });
     }
