@@ -91,6 +91,20 @@ export async function crearTablasGastos(): Promise<void> {
     )`,
     // Un CUF identifica únicamente una factura del SIN: evita duplicados en la bandeja.
     "ALTER TABLE bandeja_facturas ADD UNIQUE INDEX idx_bandeja_cuf (cuf)",
+    // Diferencias de caja (faltantes/sobrantes por cierre)
+    `CREATE TABLE IF NOT EXISTS diferencias_caja (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      cajaId INT NOT NULL,
+      idSucursal INT,
+      sucursal VARCHAR(150),
+      usuario VARCHAR(100),
+      fechaCierre VARCHAR(30),
+      ventasSistema DECIMAL(12,2) DEFAULT 0,
+      saldoFaltante DECIMAL(12,2) DEFAULT 0,
+      saldoSobrante DECIMAL(12,2) DEFAULT 0,
+      registradoEn TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`,
+    "ALTER TABLE diferencias_caja ADD UNIQUE INDEX idx_difcaja_caja (cajaId)",
   ];
   for (const m of migraciones) {
     try { await db.execute(sql.raw(m)); } catch { /* ya existe */ }

@@ -180,6 +180,17 @@ async function startServer() {
     }
   });
 
+  // Captura manual de cierres de caja (faltantes/sobrantes). GET para el navegador.
+  app.get("/api/admin/capturar-cierres-caja", async (_req, res) => {
+    try {
+      const { diferenciasCajaService } = await import("../diferencias-caja");
+      const r = await diferenciasCajaService.capturarCierres();
+      res.json({ success: true, ...r });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e?.message });
+    }
+  });
+
   // Diagnóstico por fecha+sucursal: desglose por estado para comparar con 365.
   // Uso: /api/admin/diag-ventas-dia?fecha=2026-07-20&sucursal=Lanza
   app.get("/api/admin/diag-ventas-dia", async (req: any, res) => {
@@ -534,6 +545,11 @@ async function startServer() {
       // (la incremental no las ve porque no son ventas nuevas).
       const est = await refrescarEstadoVentasRecientes(2);
       if (est.actualizadas > 0) console.log(`[CronVentas] ${est.actualizadas} estados actualizados (anulaciones)`);
+      // Capturar diferencias de caja (faltantes/sobrantes) de cierres nuevos.
+      try {
+        const { diferenciasCajaService } = await import("../diferencias-caja");
+        await diferenciasCajaService.capturarCierres();
+      } catch (e) { console.warn("[CronVentas] Error capturando cierres de caja:", e); }
     } catch (e) {
       console.warn("[CronVentas] Error en sincronización automática:", e);
     }

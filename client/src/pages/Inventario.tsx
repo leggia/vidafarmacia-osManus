@@ -172,6 +172,11 @@ export default function Inventario() {
     enabled: vista === "sesiones",
   });
   const crearSesion = trpc.inventario.crearSesion.useMutation();
+  // Diferencias de caja acumuladas desde el último inventario de esta sucursal.
+  const { data: difCaja } = trpc.inventario.diferenciasCaja.useQuery(
+    { almacenId: sesionActiva?.almacenId ?? 0 },
+    { enabled: !!sesionActiva?.almacenId },
+  );
   const guardarConteoProveedor = trpc.inventario.guardarConteoProveedor.useMutation();
   const reintentarAjuste = trpc.inventario.reintentarAjuste.useMutation();
   const [reintentandoId, setReintentandoId] = useState<number | null>(null);
@@ -604,8 +609,35 @@ export default function Inventario() {
           </div>
         </div>
 
-        {/* Progreso global del inventario (sobre todos los proveedores del sistema).
-            Clic en la barra → despliega discretamente los proveedores que FALTAN. */}
+        {/* Diferencias de caja acumuladas desde el último inventario. El neto
+            (sobrantes − faltantes) es dinero que no cuadra: puede ser producto
+            que salió sin registrarse. Se muestra para tenerlo en cuenta y descontar
+            con las correcciones del inventario. */}
+        {difCaja && difCaja.cierres > 0 && (() => {
+          const neto = difCaja.neto;
+          const falto = neto < 0;
+          return (
+            <div className={`rounded-lg border p-3 ${falto ? "bg-red-50 border-red-300" : "bg-blue-50 border-blue-300"}`}>
+              <div className="flex items-center justify-between">
+                <div>
+                  <p className="text-xs font-black uppercase tracking-wider">Diferencia de caja acumulada</p>
+                  <p className="text-[11px] text-muted-foreground">Desde el último inventario · {difCaja.cierres} cierres</p>
+                </div>
+                <div className="text-right">
+                  <p className={`text-lg font-black ${falto ? "text-red-700" : "text-blue-700"}`}>
+                    {falto ? "−" : "+"} Bs {Math.abs(neto).toFixed(2)}
+                  </p>
+                  <p className="text-[10px] text-muted-foreground">
+                    {falto ? "faltó dinero" : "sobró dinero"}
+                  </p>
+                </div>
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-1">
+                Faltantes: Bs {difCaja.faltanteTotal.toFixed(2)} · Sobrantes: Bs {difCaja.sobranteTotal.toFixed(2)}. Ten en cuenta esta diferencia al cuadrar el inventario.
+              </p>
+            </div>
+          );
+        })()}
         {(() => {
           // "Conteo puntual" es un pseudo-proveedor: no cuenta para el avance real.
           const provsReales = provsHechos.filter((p: any) => p.proveedorNombre !== "Conteo puntual");

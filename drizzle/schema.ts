@@ -173,6 +173,27 @@ export const operationHistory = mysqlTable("operation_history", {
 export type OperationHistoryItem = typeof operationHistory.$inferSelect;
 export type InsertOperationHistoryItem = typeof operationHistory.$inferInsert;
 
+// ─── Diferencias de caja (faltantes/sobrantes por cierre) ────────────────────
+// Cada cierre de caja en 365 reporta saldoFaltante/saldoSobrante: la diferencia
+// entre lo que el sistema esperaba y el efectivo real. Se guardan aquí por caja
+// (sucursal+fecha+usuario) para acumularlos por sucursal y mostrarlos en el
+// próximo inventario, donde se van descontando con cada corrección.
+export const diferenciasCaja = mysqlTable("diferencias_caja", {
+  id: int("id").autoincrement().primaryKey(),
+  cajaId: int("cajaId").notNull(),           // id de la caja en 365 (para no duplicar)
+  idSucursal: int("idSucursal"),
+  sucursal: varchar("sucursal", { length: 150 }),
+  usuario: varchar("usuario", { length: 100 }),
+  fechaCierre: varchar("fechaCierre", { length: 30 }),
+  ventasSistema: decimal("ventasSistema", { precision: 12, scale: 2 }).default("0"),  // 'ventas' de 365
+  saldoFaltante: decimal("saldoFaltante", { precision: 12, scale: 2 }).default("0"),
+  saldoSobrante: decimal("saldoSobrante", { precision: 12, scale: 2 }).default("0"),
+  // neto = sobrante - faltante (positivo = sobró dinero; negativo = faltó)
+  registradoEn: timestamp("registradoEn").defaultNow().notNull(),
+});
+
+export type DiferenciaCaja = typeof diferenciasCaja.$inferSelect;
+
 // ─── Bandeja de Facturas XML ─────────────────────────────────────────────────
 // Cada factura XML (subida manual o, más adelante, llegada por correo) queda
 // GUARDADA aquí en espera, con su estado. Es la base de la cámara-inteligente

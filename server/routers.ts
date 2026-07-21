@@ -1885,6 +1885,30 @@ Devuelve JSON:
     return inventarios365.listarTodosProveedores();
   }),
 
+  // Diferencias de caja acumuladas de una sucursal desde el último inventario
+  // completado (o desde una fecha dada). Para mostrar al iniciar el inventario.
+  diferenciasCaja: protectedProcedure
+    .input(z.object({ almacenId: z.number(), desdeFecha: z.string().optional() }))
+    .query(async ({ input }) => {
+      const { getDb } = await import("./db");
+      const { inventarioSesiones } = await import("../drizzle/schema");
+      const { and, eq, desc } = await import("drizzle-orm");
+      const db = await getDb();
+      if (!db) return null;
+      // Si no se da fecha, usar la del último inventario COMPLETADO de esa sucursal.
+      let desde = input.desdeFecha;
+      if (!desde) {
+        const ult = await db.select().from(inventarioSesiones)
+          .where(and(eq(inventarioSesiones.almacenId, input.almacenId), eq(inventarioSesiones.estado, "completado")))
+          .orderBy(desc(inventarioSesiones.creadoEn)).limit(1);
+        if (ult.length > 0) desde = ult[0].creadoEn.toISOString().slice(0, 19).replace("T", " ");
+      }
+      const { diferenciasCajaService } = await import("./diferencias-caja");
+      const acum = await diferenciasCajaService.acumuladoSucursal(input.almacenId, desde);
+      const detalle = await diferenciasCajaService.detalleSucursal(input.almacenId, desde);
+      return { desde: desde || "(todo el historial)", ...acum, detalle };
+    }),
+
   listarSesiones: protectedProcedure.query(async () => {
     const { getDb } = await import("./db");
     const { inventarioSesiones, inventarioProveedores } = await import("../drizzle/schema");
