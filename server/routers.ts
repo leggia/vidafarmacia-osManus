@@ -4,6 +4,7 @@ import { systemRouter } from "./_core/systemRouter";
 import { publicProcedure, protectedProcedure, adminProcedure, router } from "./_core/trpc";
 import { z } from "zod";
 import { invokeLLM } from "./_core/llm";
+import { FILTRO_NO_ANULADA, FILTRO_DETALLE_NO_ANULADA } from "./ventas-comun";
 import { storagePut } from "./storage";
 
 import { nanoid } from "nanoid";
@@ -2540,21 +2541,21 @@ const ventasRouter = router({
 
       const porSucursal = filas(await db.execute(sql`
         SELECT nombreSucursal, COUNT(*) AS n, COALESCE(SUM(total),0) AS monto
-        FROM ventas WHERE fecha >= ${desde} AND fecha < ${sigMes}
+        FROM ventas WHERE fecha >= ${desde} AND fecha < ${sigMes}${FILTRO_NO_ANULADA}
         GROUP BY nombreSucursal ORDER BY monto DESC
       `));
       const porDia = filas(await db.execute(sql`
         SELECT fecha, COUNT(*) AS n, COALESCE(SUM(total),0) AS monto
-        FROM ventas WHERE fecha >= ${desde} AND fecha < ${sigMes}
+        FROM ventas WHERE fecha >= ${desde} AND fecha < ${sigMes}${FILTRO_NO_ANULADA}
         GROUP BY fecha ORDER BY fecha
       `));
       const sinDetalle = filas(await db.execute(sql`
         SELECT COUNT(*) AS n FROM ventas v
-        WHERE v.fecha >= ${desde} AND v.fecha < ${sigMes} AND v.total > 0
+        WHERE v.fecha >= ${desde} AND v.fecha < ${sigMes} AND v.total > 0 AND CAST(v.estado AS CHAR) = '1'
           AND NOT EXISTS (SELECT 1 FROM ventas_detalle d WHERE d.ventaId = v.id)
       `));
       const totales = filas(await db.execute(sql`
-        SELECT COUNT(*) AS n, COALESCE(SUM(total),0) AS monto FROM ventas WHERE fecha >= ${desde} AND fecha < ${sigMes}
+        SELECT COUNT(*) AS n, COALESCE(SUM(total),0) AS monto FROM ventas WHERE fecha >= ${desde} AND fecha < ${sigMes}${FILTRO_NO_ANULADA}
       `));
 
       // Días del mes transcurridos SIN ninguna venta registrada (sospechoso en una
@@ -2745,43 +2746,43 @@ const ventasRouter = router({
           // Productos más vendidos POR CANTIDAD
           db.execute(sql`
             SELECT articuloNombre, SUM(cantidad) as unidades, SUM(subtotal) as monto, COUNT(*) as veces
-             FROM ventas_detalle WHERE ${rango} ${filtroSuc} ${excluirMenores}
+             FROM ventas_detalle WHERE ${rango} ${filtroSuc} ${excluirMenores}${FILTRO_DETALLE_NO_ANULADA}
              GROUP BY articuloNombre ORDER BY unidades DESC LIMIT 15
           `),
           // Productos más vendidos POR VALOR (ingreso generado)
           db.execute(sql`
             SELECT articuloNombre, SUM(cantidad) as unidades, SUM(subtotal) as monto, COUNT(*) as veces
-             FROM ventas_detalle WHERE ${rango} ${filtroSuc} ${excluirMenores}
+             FROM ventas_detalle WHERE ${rango} ${filtroSuc} ${excluirMenores}${FILTRO_DETALLE_NO_ANULADA}
              GROUP BY articuloNombre ORDER BY monto DESC LIMIT 15
           `),
           // Mejores vendedores
           db.execute(sql`
             SELECT vendedor, SUM(total) as monto, COUNT(*) as ventas
-             FROM ventas WHERE ${rango} ${filtroSuc}
+             FROM ventas WHERE ${rango} ${filtroSuc}${FILTRO_NO_ANULADA}
              GROUP BY vendedor ORDER BY monto DESC LIMIT 10
           `),
           // Mejores clientes (más Bs pagados en el periodo)
           db.execute(sql`
             SELECT idCliente, razonSocialCliente, SUM(total) as monto, COUNT(*) as ventas
-             FROM ventas WHERE ${rango} ${filtroSuc} ${excluirGenerico}
+             FROM ventas WHERE ${rango} ${filtroSuc} ${excluirGenerico}${FILTRO_NO_ANULADA}
              GROUP BY idCliente, razonSocialCliente ORDER BY monto DESC LIMIT 15
           `),
           // Ventas por sucursal
           db.execute(sql`
             SELECT nombreSucursal, SUM(total) as monto, COUNT(*) as ventas
-             FROM ventas WHERE ${rango}
+             FROM ventas WHERE ${rango}${FILTRO_NO_ANULADA}
              GROUP BY nombreSucursal ORDER BY monto DESC
           `),
           // Mejores días de la semana
           db.execute(sql`
             SELECT diaSemana, SUM(total) as monto, COUNT(*) as ventas
-             FROM ventas WHERE ${rango} ${filtroSuc}
+             FROM ventas WHERE ${rango} ${filtroSuc}${FILTRO_NO_ANULADA}
              GROUP BY diaSemana ORDER BY diaSemana
           `),
           // Totales del periodo
           db.execute(sql`
             SELECT COUNT(*) as ventas, SUM(total) as monto, AVG(total) as promedio
-             FROM ventas WHERE ${rango} ${filtroSuc}
+             FROM ventas WHERE ${rango} ${filtroSuc}${FILTRO_NO_ANULADA}
           `),
         ]);
         return {

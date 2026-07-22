@@ -25,3 +25,14 @@ export const FILTRO_NO_ANULADA = sql` AND CAST(estado AS CHAR) = '1' `;
 // Para consultas con alias de tabla (ej. FROM ventas v): pasar el alias.
 export const filtroNoAnuladaAlias = (alias: string) =>
   sql.raw(` AND CAST(${alias}.estado AS CHAR) = '1' `);
+
+/**
+ * Igual pero para `ventas_detalle` (las LÍNEAS de producto), que no tiene columna
+ * estado: se excluyen las líneas cuya venta padre está anulada/cancelada.
+ * Se usa NOT IN (anuladas) en vez de EXISTS(válidas) para no descartar líneas
+ * huérfanas cuya venta aún no se sincronizó.
+ */
+export const FILTRO_DETALLE_NO_ANULADA = sql` AND ventaId NOT IN (SELECT id FROM ventas WHERE CAST(estado AS CHAR) <> '1') `;
+
+export const filtroDetalleNoAnuladaAlias = (alias: string) =>
+  sql.raw(` AND ${alias}.ventaId NOT IN (SELECT id FROM ventas WHERE CAST(estado AS CHAR) <> '1') `);

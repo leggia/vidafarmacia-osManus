@@ -130,7 +130,7 @@ async function diferenciasCajaPeriodo(desde: string, hasta: string, sucursal?: s
     const d = r[0] || {};
     const falt = num(d.falt), sobr = num(d.sobr), n = num(d.n);
     if (n === 0) {
-      return { mensaje: "Todas las cajas cuadraron (sin faltantes ni sobrantes).", faltante: "Bs 0.00", sobrante: "Bs 0.00", cierresConDiferencia: 0 };
+      return { _faltNum: 0, _sobrNum: 0, mensaje: "Todas las cajas cuadraron (sin faltantes ni sobrantes).", faltante: "Bs 0.00", sobrante: "Bs 0.00", cierresConDiferencia: 0 };
     }
     // Detalle por caja para poder señalar dónde ocurrió
     const det = rows(await db.execute(sql`
@@ -140,6 +140,7 @@ async function diferenciasCajaPeriodo(desde: string, hasta: string, sucursal?: s
       ORDER BY fechaCierre DESC LIMIT 20
     `));
     return {
+      _faltNum: falt, _sobrNum: sobr,
       faltante: `Bs ${fmtBs(falt)}`,
       sobrante: `Bs ${fmtBs(sobr)}`,
       neto: `Bs ${fmtBs(sobr - falt)}`, // + sobró / − faltó
@@ -192,7 +193,17 @@ export const asistenteTools = {
     // Diferencias de caja del mismo período (faltantes/sobrantes de los cierres).
     // Complementan la venta: el sistema dice X, pero el efectivo real pudo diferir.
     const dif = await diferenciasCajaPeriodo(desde, hasta, sucursal);
-    if (dif) resultado.diferenciasCaja = dif;
+    if (dif) {
+      const { _faltNum, _sobrNum, ...difPublico } = dif as any;
+      resultado.diferenciasCaja = difPublico;
+      // DOS NÚMEROS: lo registrado por el sistema vs el dinero realmente recibido.
+      // La venta física/efectiva = venta del sistema + sobrantes de caja (dinero
+      // que entró de más, típicamente producto vendido sin registrar).
+      const ventaSistema = num(data.total);
+      resultado.ventaSistema = `Bs ${fmtBs(ventaSistema)}`;
+      resultado.ventaFisicaEfectivo = `Bs ${fmtBs(ventaSistema + (_sobrNum ?? 0))}`;
+      resultado.notaDosNumeros = "ventaSistema = lo registrado; ventaFisicaEfectivo = sistema + sobrantes de caja (dinero real recibido).";
+    }
     return resultado;
   },
 

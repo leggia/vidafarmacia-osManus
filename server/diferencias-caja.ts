@@ -25,29 +25,32 @@ class DiferenciasCajaService {
    * Captura las cajas CERRADAS de 365 y guarda su faltante/sobrante. Idempotente
    * por cajaId (una caja cerrada no cambia). Solo procesa cajas con fechaCierre.
    */
-  async capturarCierres(): Promise<{ guardadas: number; revisadas: number }> {
+  async capturarCierres(): Promise<{ guardadas: number; revisadas: number; cerradas: number; conDiferencia: number; paginas: number }> {
     const db = await getDb();
-    if (!db) return { guardadas: 0, revisadas: 0 };
+    if (!db) return { guardadas: 0, revisadas: 0, cerradas: 0, conDiferencia: 0, paginas: 0 };
     const { inventarios365 } = await import("./inventarios365");
 
-    let guardadas = 0, revisadas = 0;
+    let guardadas = 0, revisadas = 0, cerradas = 0, conDiferencia = 0, paginas = 0;
     try {
-      for (let page = 1; page <= 10; page++) {
+      for (let page = 1; page <= 20; page++) {
         const data = await inventarios365.diagRaw(`/caja?page=${page}&buscar=&criterio=`);
         const arr = data?.cajas ?? data?.data ?? (Array.isArray(data) ? data : []);
         const lista = Array.isArray(arr) ? arr : arr?.data ?? [];
         if (lista.length === 0) break;
+        paginas = page;
 
         for (const c of lista) {
           revisadas++;
           // Solo cajas cerradas (las abiertas aún pueden cambiar)
           if (!c.fechaCierre) continue;
+          cerradas++;
           const cajaId = Number(c.id);
           if (!cajaId) continue;
           const falt = num(c.saldoFaltante);
           const sobr = num(c.saldoSobrante);
           // Si no hubo diferencia, no vale la pena registrar (ahorra filas)
           if (falt === 0 && sobr === 0) continue;
+          conDiferencia++;
 
           // Idempotente: si ya existe esta caja, saltar
           const existe = rows(await db.execute(sql`SELECT id FROM diferencias_caja WHERE cajaId = ${cajaId} LIMIT 1`));
@@ -66,15 +69,20 @@ class DiferenciasCajaService {
           guardadas++;
         }
 
+        // Paginación: seguir mientras la página venga llena. Si el paginador
+        // reporta última página, respetarlo; si no lo reporta bien, el corte por
+        // página vacía o por lista incompleta evita quedarse en la página 1.
         const pag = data?.pagination ?? {};
-        const lastPage = pag.last_page ?? pag.lastPage ?? 1;
-        if (page >= lastPage) break;
+        const lastPage = Number(pag.last_page ?? pag.lastPage ?? 0);
+        const perPage = Number(pag.per_page ?? pag.perPage ?? lista.length);
+        if (lastPage > 0 && page >= lastPage) break;
+        if (lista.length < perPage) break;
       }
     } catch (e) {
       console.warn("[DiferenciasCaja] Error capturando cierres:", e);
     }
-    if (guardadas > 0) console.log(`[DiferenciasCaja] ${guardadas} cierres con diferencia guardados`);
-    return { guardadas, revisadas };
+    console.log(`[DiferenciasCaja] ${guardadas} nuevas · ${cerradas} cerradas · ${conDiferencia} con diferencia · ${revisadas} revisadas en ${paginas} páginas`);
+    return { guardadas, revisadas, cerradas, conDiferencia, paginas };
   }
 
   /**

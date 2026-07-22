@@ -2,6 +2,7 @@
 // asistencia, ganancia neta). Compartido entre el reporte (router) y el asistente
 // para que ambos den EXACTAMENTE los mismos números.
 import { getDb } from "./db";
+import { FILTRO_NO_ANULADA, filtroDetalleNoAnuladaAlias } from "./ventas-comun";
 import { sql } from "drizzle-orm";
 
 export type RentabilidadSucursal = {
@@ -38,7 +39,7 @@ export async function calcularRentabilidadPorSucursal(anioMes: string): Promise<
   try {
     const ingresos = rows(await db.execute(sql`
       SELECT nombreSucursal, SUM(total) as ingreso, COUNT(*) as ventas
-       FROM ventas WHERE fecha >= ${desde} AND fecha <= ${hasta} AND nombreSucursal IS NOT NULL
+       FROM ventas WHERE fecha >= ${desde} AND fecha <= ${hasta} AND nombreSucursal IS NOT NULL${FILTRO_NO_ANULADA}
        GROUP BY nombreSucursal
     `));
     const costos = rows(await db.execute(sql`
@@ -46,7 +47,7 @@ export async function calcularRentabilidadPorSucursal(anioMes: string): Promise<
        FROM ventas_detalle d JOIN productos_cache c ON c.nombre = d.articuloNombre
        WHERE d.fecha >= ${desde} AND d.fecha <= ${hasta}
        AND d.articuloNombre NOT LIKE '%ventas menores%' AND d.articuloNombre NOT LIKE '%venta menor%'
-       AND c.precioCostoUnid > 0 AND d.nombreSucursal IS NOT NULL
+       AND c.precioCostoUnid > 0 AND d.nombreSucursal IS NOT NULL${filtroDetalleNoAnuladaAlias("d")}
        GROUP BY d.nombreSucursal
     `));
     // Cobertura de costo por sucursal: % de lo vendido con costo conocido.
@@ -58,7 +59,7 @@ export async function calcularRentabilidadPorSucursal(anioMes: string): Promise<
        FROM ventas_detalle d LEFT JOIN productos_cache c ON c.nombre = d.articuloNombre
        WHERE d.fecha >= ${desde} AND d.fecha <= ${hasta}
        AND d.articuloNombre NOT LIKE '%ventas menores%' AND d.articuloNombre NOT LIKE '%venta menor%'
-       AND d.nombreSucursal IS NOT NULL
+       AND d.nombreSucursal IS NOT NULL${filtroDetalleNoAnuladaAlias("d")}
        GROUP BY d.nombreSucursal
     `));
     const coberturaPorSuc: Record<string, number> = {};
