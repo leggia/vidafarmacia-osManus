@@ -3,14 +3,11 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import {
-  Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription,
-} from "@/components/ui/dialog";
-import {
   AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent,
   AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { Textarea } from "@/components/ui/textarea";
-import { Plus, ArrowLeftRight, CheckCircle2, Loader2, Undo2 } from "lucide-react";
+import { Plus, ArrowLeftRight, CheckCircle2, Loader2, Undo2, Eye, ChevronDown, ChevronUp } from "lucide-react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
 import { useState } from "react";
@@ -23,13 +20,9 @@ export default function Transferencias() {
   const esAdmin = user?.role === "admin";
   const { data: transfers, isLoading } = trpc.transfers.list.useQuery();
   const [confirmingId, setConfirmingId] = useState<number | null>(null);
-  const [detalleId, setDetalleId] = useState<number | null>(null);
+  const [expandidaId, setExpandidaId] = useState<number | null>(null);
   const [revertirId, setRevertirId] = useState<number | null>(null);
   const [motivoRevertir, setMotivoRevertir] = useState("");
-
-  const { data: detalle, isFetching: cargandoDetalle } = trpc.transfers.detalle.useQuery(
-    { id: detalleId! }, { enabled: detalleId !== null },
-  );
 
   const confirmTransfer = trpc.transfers.confirm.useMutation({
     onSuccess: (r: any) => {
@@ -79,26 +72,29 @@ export default function Transferencias() {
           {transfers.map((t: any) => (
             <Card key={t.id} className="border-foreground/10 hover:border-foreground/20 transition-colors">
               <CardContent className="py-4">
-                <div className="flex items-center justify-between gap-2">
-                  <button className="flex items-center gap-4 text-left flex-1 min-w-0" onClick={() => setDetalleId(t.id)}>
-                    <div className="h-10 w-10 bg-foreground/5 rounded flex items-center justify-center shrink-0">
-                      <ArrowLeftRight className="h-5 w-5 text-foreground/60" />
+                <div className="flex items-center justify-between gap-3">
+                  {/* Icono + Info (mismo patrón que Compras) */}
+                  <div className="flex items-center gap-4 min-w-0">
+                    <div className="h-10 w-10 flex-shrink-0 bg-primary/10 rounded flex items-center justify-center">
+                      <ArrowLeftRight className="h-5 w-5 text-primary" />
                     </div>
                     <div className="min-w-0">
-                      <p className="font-semibold text-sm truncate">{t.referenceNumber || `Transferencia #${t.id}`}</p>
-                      <p className="text-xs truncate">
-                        <span className="text-muted-foreground">De</span> <b>{t.fromBranchName}</b>
-                        <span className="text-muted-foreground"> a </span><b>{t.toBranchName}</b>
+                      <p className="font-semibold text-sm truncate">
+                        {t.referenceNumber || `Transferencia #${t.id}`}
                       </p>
-                      <p className="text-xs text-muted-foreground">
-                        {t.itemCount > 0
-                          ? `${t.itemCount} producto${t.itemCount !== 1 ? "s" : ""}${t.unidades ? ` · ${t.unidades} unidades` : ""} · Ver detalle`
-                          : "Ver detalle"}
+                      <p className="text-xs text-muted-foreground truncate">
+                        {t.fromBranchName} → {t.toBranchName}
+                        {t.itemCount ? ` — ${t.itemCount} producto${t.itemCount !== 1 ? "s" : ""}` : ""}
+                        {t.unidades ? ` — ${t.unidades} unidades` : ""}
+                      </p>
+                      <p className="text-[11px] text-muted-foreground">
+                        {new Date(t.createdAt).toLocaleDateString("es-BO")}
                       </p>
                     </div>
-                  </button>
-                  <div className="flex items-center gap-3 shrink-0">
-                    <p className="text-xs text-muted-foreground hidden sm:block">{new Date(t.createdAt).toLocaleDateString("es-BO")}</p>
+                  </div>
+
+                  {/* Estado + acciones */}
+                  <div className="flex items-center gap-2 shrink-0">
                     <StatusBadge status={t.status} />
                     {(t.status === "draft" || t.status === "pending_sync" || t.status === "pending") && (
                       <Button size="sm" variant="outline" onClick={() => handleConfirm(t.id)} disabled={confirmingId === t.id}
@@ -108,13 +104,28 @@ export default function Transferencias() {
                       </Button>
                     )}
                     {esAdmin && t.status === "completed" && (
-                      <Button size="sm" variant="outline" onClick={() => setRevertirId(t.id)}
-                        className="gap-1 text-xs uppercase tracking-wider font-semibold border-amber-500 text-amber-700 hover:bg-amber-50">
-                        <Undo2 className="h-3 w-3" /> Revertir
+                      <Button size="sm" variant="ghost" onClick={() => setRevertirId(t.id)}
+                        className="gap-1 text-xs text-amber-700 hover:text-amber-800 hover:bg-amber-50"
+                        title="Revertir esta transferencia">
+                        <Undo2 className="h-3.5 w-3.5" />
                       </Button>
                     )}
+                    {/* Ver detalle de la transferencia */}
+                    <Button
+                      size="sm"
+                      variant="ghost"
+                      onClick={() => setExpandidaId(expandidaId === t.id ? null : t.id)}
+                      className="gap-1 text-xs text-muted-foreground hover:text-foreground"
+                      title="Ver detalle de productos"
+                    >
+                      <Eye className="h-3.5 w-3.5" />
+                      {expandidaId === t.id ? <ChevronUp className="h-3 w-3" /> : <ChevronDown className="h-3 w-3" />}
+                    </Button>
                   </div>
                 </div>
+
+                {/* Detalle expandible de la transferencia */}
+                {expandidaId === t.id && <DetalleTransferencia transferId={t.id} />}
               </CardContent>
             </Card>
           ))}
@@ -128,81 +139,6 @@ export default function Transferencias() {
         </div>
       )}
 
-      <Dialog open={detalleId !== null} onOpenChange={(o) => { if (!o) setDetalleId(null); }}>
-        <DialogContent className="max-w-lg max-h-[85vh] overflow-y-auto">
-          <DialogHeader>
-            <DialogTitle>{detalle?.referenceNumber || `Transferencia #${detalleId}`}</DialogTitle>
-            <DialogDescription>
-              {cargandoDetalle ? "Cargando…" : detalle ? `${detalle.origen} → ${detalle.destino}` : ""}
-            </DialogDescription>
-          </DialogHeader>
-          {detalle && (
-            <div className="space-y-4 text-sm">
-              <div className="flex items-center gap-2">
-                <StatusBadge status={detalle.status} />
-                <span className="text-xs text-muted-foreground">{new Date(detalle.createdAt).toLocaleString("es-BO")}</span>
-              </div>
-              {detalle.revertedAt && (
-                <div className="p-2 rounded bg-amber-50 border border-amber-200 text-xs text-amber-800">
-                  Revertida el {new Date(detalle.revertedAt).toLocaleString("es-BO")}
-                  {detalle.revertReason ? ` — ${detalle.revertReason}` : ""}
-                </div>
-              )}
-              {detalle.notes && <p className="text-xs text-muted-foreground">Nota: {detalle.notes}</p>}
-              {/* Origen y destino bien visibles: es el dato clave de una transferencia */}
-              <div className="grid grid-cols-2 gap-2">
-                <div className="border rounded p-2">
-                  <p className="text-[10px] uppercase tracking-wider text-muted-foreground">Origen (sale de)</p>
-                  <p className="text-sm font-bold leading-tight">{detalle.origen}</p>
-                </div>
-                <div className="border rounded p-2 bg-emerald-50 border-emerald-200">
-                  <p className="text-[10px] uppercase tracking-wider text-emerald-700">Destino (entra a)</p>
-                  <p className="text-sm font-bold leading-tight text-emerald-900">{detalle.destino}</p>
-                </div>
-              </div>
-              <div>
-                <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">
-                  Productos ({detalle.items.length})
-                  {(() => {
-                    const u = detalle.items.reduce((s: number, it: any) => s + (Number(it.cantidad) || 0), 0);
-                    return u > 0 ? <span className="font-normal normal-case"> · {u} unidades en total</span> : null;
-                  })()}
-                </p>
-                <div className="border rounded divide-y">
-                  {detalle.items.map((it, i) => (
-                    <div key={i} className="flex justify-between px-3 py-1.5 text-xs gap-2">
-                      <span className="truncate">{it.nombre}</span>
-                      <span className="font-bold shrink-0">{it.cantidad} u.</span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              {detalle.historial.length > 0 && (
-                <div>
-                  <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground mb-1">Historial</p>
-                  <div className="space-y-1">
-                    {detalle.historial.map((h, i) => (
-                      <div key={i} className="text-[11px] flex items-start gap-2">
-                        <span className={h.status === "error" ? "text-red-600" : h.status === "success" ? "text-emerald-700" : "text-muted-foreground"}>●</span>
-                        <span className="flex-1">
-                          <b>{h.action}</b> — {h.details}
-                          <span className="block text-muted-foreground">{new Date(h.fecha).toLocaleString("es-BO")}</span>
-                        </span>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-              {esAdmin && detalle.status === "completed" && (
-                <Button variant="outline" className="w-full gap-2 border-amber-500 text-amber-700 hover:bg-amber-50"
-                  onClick={() => { setRevertirId(detalle.id); setDetalleId(null); }}>
-                  <Undo2 className="h-4 w-4" /> Revertir esta transferencia
-                </Button>
-              )}
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
 
       <AlertDialog open={revertirId !== null} onOpenChange={(o) => { if (!o) { setRevertirId(null); setMotivoRevertir(""); } }}>
         <AlertDialogContent>
@@ -242,4 +178,86 @@ function StatusBadge({ status }: { status: string }) {
   };
   const c = config[status] || { label: status, className: "bg-gray-100 text-gray-600 border-gray-300" };
   return <Badge variant="outline" className={`text-xs uppercase tracking-wider font-medium ${c.className}`}>{c.label}</Badge>;
+}
+
+/**
+ * Detalle desplegable de una transferencia — mismo patrón visual que DetalleCompra
+ * en Compras.tsx (título, filas con fondo suave, totales al pie), para que la app
+ * mantenga un solo diseño en todas las listas.
+ */
+function DetalleTransferencia({ transferId }: { transferId: number }) {
+  const { data, isLoading } = trpc.transfers.detalle.useQuery({ id: transferId });
+
+  if (isLoading) {
+    return (
+      <div className="mt-3 pt-3 border-t flex items-center justify-center py-3">
+        <Loader2 className="h-4 w-4 animate-spin text-muted-foreground" />
+      </div>
+    );
+  }
+  if (!data || !data.items || data.items.length === 0) {
+    return (
+      <div className="mt-3 pt-3 border-t text-xs text-muted-foreground text-center py-2">
+        No hay detalle de productos para esta transferencia.
+      </div>
+    );
+  }
+
+  const totalUnidades = data.items.reduce((s: number, it: any) => s + Number(it.cantidad || 0), 0);
+
+  return (
+    <div className="mt-3 pt-3 border-t">
+      {/* Origen y destino: el dato clave de una transferencia */}
+      <div className="flex items-center gap-2 mb-2 text-xs">
+        <span className="px-2 py-1 rounded-md bg-muted/50 font-medium truncate">{data.origen}</span>
+        <ArrowLeftRight className="h-3 w-3 text-muted-foreground shrink-0" />
+        <span className="px-2 py-1 rounded-md bg-emerald-50 text-emerald-800 font-medium truncate">{data.destino}</span>
+      </div>
+
+      {data.revertedAt && (
+        <div className="mb-2 p-2 rounded-md bg-amber-50 border border-amber-200 text-[11px] text-amber-800">
+          Revertida el {new Date(data.revertedAt).toLocaleString("es-BO")}
+          {data.revertReason ? ` — ${data.revertReason}` : ""}
+        </div>
+      )}
+      {data.notes && <p className="text-[11px] text-muted-foreground mb-2">Nota: {data.notes}</p>}
+
+      <p className="text-[11px] font-semibold text-muted-foreground mb-2 uppercase tracking-wider">
+        Detalle ({data.items.length} producto{data.items.length !== 1 ? "s" : ""})
+      </p>
+      <div className="space-y-1.5">
+        {data.items.map((it: any, i: number) => (
+          <div key={i} className="flex items-center gap-2 text-xs bg-muted/30 rounded-md px-2.5 py-1.5">
+            <div className="min-w-0 flex-1">
+              <p className="font-medium truncate">{it.nombre}</p>
+            </div>
+            <div className="text-right shrink-0">
+              <p className="font-bold tabular-nums">{Number(it.cantidad || 0)} u.</p>
+            </div>
+          </div>
+        ))}
+      </div>
+      <div className="flex justify-between items-center mt-2 pt-2 border-t text-xs">
+        <span className="font-semibold">Total transferido</span>
+        <span className="font-black tabular-nums">{totalUnidades} unidades</span>
+      </div>
+
+      {data.historial?.length > 0 && (
+        <div className="mt-3 pt-2 border-t">
+          <p className="text-[11px] font-semibold text-muted-foreground mb-1.5 uppercase tracking-wider">Historial</p>
+          <div className="space-y-1">
+            {data.historial.map((h: any, i: number) => (
+              <div key={i} className="text-[11px] flex items-start gap-2">
+                <span className={h.status === "error" ? "text-red-600" : h.status === "success" ? "text-emerald-700" : "text-muted-foreground"}>●</span>
+                <span className="flex-1">
+                  <b>{h.action}</b> — {h.details}
+                  <span className="block text-muted-foreground">{new Date(h.fecha).toLocaleString("es-BO")}</span>
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
 }
