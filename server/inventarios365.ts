@@ -868,15 +868,54 @@ class Inventarios365Service {
   async saldoStock(idAlmacen: number, idArticulo: number): Promise<number | null> {
     try {
       const data: any = await this.get<any>(`/inventarios/saldostock?idAlmacen=${idAlmacen}&idArticulo=${idArticulo}`);
-      // La respuesta puede venir como número, {saldo}, {saldo_stock} o {data:...}
-      const bruto = typeof data === "number" ? data
-        : data?.saldo_stock ?? data?.saldoStock ?? data?.saldo ?? data?.stock ?? data?.data;
-      const n = Number(bruto);
-      return Number.isFinite(n) ? n : null;
+      const n = this.extraerSaldo(data);
+      if (n === null) {
+        console.warn(`[Inventarios365] Saldo no interpretable (almacén ${idAlmacen}, art ${idArticulo}):`, JSON.stringify(data)?.substring(0, 200));
+      }
+      return n;
     } catch (e: any) {
       console.warn(`[Inventarios365] No se pudo leer saldo (almacén ${idAlmacen}, artículo ${idArticulo}):`, e?.message);
       return null;
     }
+  }
+
+  /**
+   * Interpreta la respuesta de saldostock, que puede venir como número, texto,
+   * objeto o array de objetos. Devuelve null si NO se pudo leer un número real:
+   * es importante NO confundir "no se pudo leer" con "hay 0", porque un cero
+   * falso cancelaría transferencias válidas (Number(null) es 0).
+   */
+  private extraerSaldo(data: any): number | null {
+    if (data === null || data === undefined) return null;
+    if (typeof data === "number") return Number.isFinite(data) ? data : null;
+    if (typeof data === "string") {
+      const n = Number(data.trim());
+      return Number.isFinite(n) ? n : null;
+    }
+    if (Array.isArray(data)) {
+      for (const item of data) {
+        const n = this.extraerSaldo(item);
+        if (n !== null) return n;
+      }
+      return null;
+    }
+    if (typeof data === "object") {
+      const claves = ["saldo_stock", "saldoStock", "saldo", "stock", "cantidad", "existencia"];
+      for (const k of claves) {
+        const v = (data as any)[k];
+        if (v === null || v === undefined) continue;
+        const n = Number(v);
+        if (Number.isFinite(n)) return n;
+      }
+      // Envoltorios habituales: { data: ... }, { inventarios: ... }
+      for (const k of ["data", "inventarios", "result"]) {
+        if ((data as any)[k] !== undefined) {
+          const n = this.extraerSaldo((data as any)[k]);
+          if (n !== null) return n;
+        }
+      }
+    }
+    return null;
   }
 
   /**
@@ -1816,11 +1855,17 @@ class Inventarios365Service {
           continue;
         }
         // 365 valida el saldo del almacén de ORIGEN antes de permitir el traspaso:
-        // se comprueba igual aquí para no enviar algo que será rechazado.
+        // se comprueba igual aquí para avisar antes de enviar. IMPORTANTE: solo se
+        // bloquea si la lectura del saldo es confiable (> 0 y menor a lo pedido).
+        // Si el saldo viene 0 o no se pudo leer, NO se bloquea: se deja que 365
+        // decida, porque un cero falso cancelaría transferencias válidas.
         const saldo = await this.saldoStock(almacenOrigen.id, articulo.id);
-        if (saldo !== null && item.cantidad > saldo) {
+        if (saldo !== null && saldo > 0 && item.cantidad > saldo) {
           sinSaldo.push(`${articulo.nombre} (pide ${item.cantidad}, hay ${saldo})`);
           continue;
+        }
+        if (saldo === 0) {
+          console.warn(`[Inventarios365] Saldo 0 para "${articulo.nombre}" en almacén ${almacenOrigen.id}; se envía igual y decide 365.`);
         }
         arrayDetalle.push({
           idarticulo: articulo.id,

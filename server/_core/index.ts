@@ -180,6 +180,58 @@ async function startServer() {
     }
   });
 
+  // Revisa producto por producto de una transferencia contra 365: si se encuentra
+  // el artículo y qué saldo tiene en el origen. Dice exactamente qué la bloquea.
+  // Uso: /api/admin/diag-transferencia-productos?id=5
+  app.get("/api/admin/diag-transferencia-productos", async (req: any, res) => {
+    try {
+      const db = await getDb();
+      if (!db) return res.status(500).json({ error: "DB no disponible" });
+      const id = Number(req.query.id);
+      if (!id) return res.status(400).json({ error: "id requerido" });
+      const t: any = await db.execute(sql`
+        SELECT t.id, t.status, bo.name AS origen, bd.name AS destino
+        FROM transfers t
+        LEFT JOIN branches bo ON bo.id = t.fromBranchId
+        LEFT JOIN branches bd ON bd.id = t.toBranchId
+        WHERE t.id = ${id} LIMIT 1
+      `);
+      const cab = (Array.isArray(t) ? t[0] : t?.rows ?? t)[0];
+      if (!cab) return res.status(404).json({ error: "transferencia no encontrada" });
+      const it: any = await db.execute(sql`SELECT productName, quantity FROM transfer_items WHERE transferId = ${id}`);
+      const items = (Array.isArray(it) ? it[0] : it?.rows ?? it) as any[];
+
+      const { inventarios365 } = await import("../inventarios365");
+      const almacenes = await inventarios365.listarAlmacenes();
+      const norm = (x: string) => String(x || "").toLowerCase().trim();
+      const almOrigen = almacenes.find((a: any) => norm(a.nombre_almacen) === norm(cab.origen));
+
+      const revision = [];
+      for (const p of items) {
+        const art = await inventarios365.buscarArticulo(p.productName);
+        let saldo: number | null = null;
+        let saldoCrudo: any = null;
+        if (art && almOrigen) {
+          saldo = await inventarios365.saldoStock((almOrigen as any).id, art.id);
+          try { saldoCrudo = await inventarios365.diagRaw(`/inventarios/saldostock?idAlmacen=${(almOrigen as any).id}&idArticulo=${art.id}`); } catch {}
+        }
+        revision.push({
+          producto: p.productName,
+          pide: p.quantity,
+          encontradoEn365: !!art,
+          idArticulo: art?.id ?? null,
+          codigo: art?.codigo ?? null,
+          saldoLeido: saldo,
+          saldoRespuestaCruda: saldoCrudo,
+          bloquea: !art ? "NO EXISTE EN 365" : (saldo !== null && saldo > 0 && p.quantity > saldo) ? "SIN SALDO SUFICIENTE" : "ok",
+        });
+      }
+      res.json({ transferencia: cab, almacenOrigen: almOrigen ?? "NO IDENTIFICADO", revision });
+    } catch (e: any) {
+      res.status(500).json({ error: e?.message });
+    }
+  });
+
   // Últimas transferencias con su estado, productos y lo que respondió 365.
   // Responde por qué una transferencia no se reflejó.
   app.get("/api/admin/diag-transferencias", async (_req, res) => {
