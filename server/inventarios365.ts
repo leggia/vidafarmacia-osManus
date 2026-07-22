@@ -1716,25 +1716,43 @@ class Inventarios365Service {
     try {
       const almacenes = await this.listarAlmacenes();
 
-      const almacenOrigen = almacenes.find((a) =>
-        a.nombre_almacen
-          .toLowerCase()
-          .includes(params.sucursalOrigen.toLowerCase())
-      );
-      const almacenDestino = almacenes.find((a) =>
-        a.nombre_almacen
-          .toLowerCase()
-          .includes(params.sucursalDestino.toLowerCase())
-      );
+      // Buscar el almacén por nombre EXACTO. Antes se usaba includes(), que hacía
+      // que "Casa Matriz" enganchara con "Casa Matriz Cobol" (o al revés) y el
+      // traspaso se registrara entre almacenes equivocados — la transferencia
+      // "funcionaba" pero el stock no se movía donde correspondía.
+      const norm = (x: string) => String(x || "").toLowerCase().trim();
+      const buscarAlmacen = (nombre: string) => {
+        const n = norm(nombre);
+        if (!n) return { almacen: null as any, motivo: "nombre vacío" };
+        const exactos = almacenes.filter((a: any) => norm(a.nombre_almacen) === n);
+        if (exactos.length === 1) return { almacen: exactos[0], motivo: "" };
+        if (exactos.length > 1) return { almacen: null as any, motivo: `hay ${exactos.length} almacenes llamados "${nombre}"` };
+        // Sin coincidencia exacta: aceptar "contiene" SOLO si es inequívoco
+        const parciales = almacenes.filter((a: any) => norm(a.nombre_almacen).includes(n) || n.includes(norm(a.nombre_almacen)));
+        if (parciales.length === 1) return { almacen: parciales[0], motivo: "" };
+        if (parciales.length > 1) {
+          return { almacen: null as any, motivo: `"${nombre}" es ambiguo, coincide con: ${parciales.map((a: any) => a.nombre_almacen).join(" / ")}` };
+        }
+        return { almacen: null as any, motivo: `no existe un almacén "${nombre}" en 365` };
+      };
+
+      const rOrigen = buscarAlmacen(params.sucursalOrigen);
+      const rDestino = buscarAlmacen(params.sucursalDestino);
+      const almacenOrigen = rOrigen.almacen;
+      const almacenDestino = rDestino.almacen;
 
       if (!almacenOrigen || !almacenDestino) {
+        const problemas = [rOrigen.motivo && `Origen: ${rOrigen.motivo}`, rDestino.motivo && `Destino: ${rDestino.motivo}`]
+          .filter(Boolean).join(" · ");
         return {
           success: false,
-          message: `Almacenes no encontrados: ${
-            !almacenOrigen ? `"${params.sucursalOrigen}"` : ""
-          } ${!almacenDestino ? `"${params.sucursalDestino}"` : ""}`.trim(),
+          message: `No se pudo identificar el almacén en 365. ${problemas}. Almacenes disponibles: ${almacenes.map((a: any) => a.nombre_almacen).join(", ")}`,
         };
       }
+      if (almacenOrigen.id === almacenDestino.id) {
+        return { success: false, message: `Origen y destino resultaron el MISMO almacén en 365 ("${almacenOrigen.nombre_almacen}"). Revisa los nombres de sucursal.` };
+      }
+      console.log(`[Inventarios365] Traspaso: "${params.sucursalOrigen}" → almacén ${almacenOrigen.id} "${almacenOrigen.nombre_almacen}" | "${params.sucursalDestino}" → almacén ${almacenDestino.id} "${almacenDestino.nombre_almacen}"`);
 
       const arrayDetalle = [];
       const omitidos: string[] = [];
@@ -1758,7 +1776,7 @@ class Inventarios365Service {
         };
       }
 
-      const respData = await this.post("/traspasoproducto/registrar", {
+      const respData: any = await this.post("/traspasoproducto/registrar", {
         idalmacen_origen: almacenOrigen.id,
         idalmacen_destino: almacenDestino.id,
         observacion:
@@ -1766,8 +1784,18 @@ class Inventarios365Service {
         inventarios: arrayDetalle,
       });
 
+      // Dejar rastro de lo que respondió 365: si el traspaso no se refleja, este
+      // log dice exactamente qué contestó (antes se asumía éxito sin verlo).
+      console.log(`[Inventarios365] Respuesta traspaso:`, JSON.stringify(respData)?.substring(0, 500));
+
       if (respData?.error) {
         return { success: false, message: respData.error };
+      }
+      // Algunos endpoints de 365 devuelven { success:false } o un mensaje de fallo
+      // sin usar la clave 'error': tratarlos como fallo para no marcar completada
+      // una transferencia que no se registró.
+      if (respData?.success === false || respData?.status === false) {
+        return { success: false, message: respData?.message || respData?.mensaje || "365 rechazó el traspaso" };
       }
 
       return {

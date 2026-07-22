@@ -180,6 +180,36 @@ async function startServer() {
     }
   });
 
+  // Compara los nombres de sucursal de VidaFarma con los almacenes reales de 365.
+  // Sirve para detectar por qué una transferencia no se refleja (nombre que no
+  // coincide o que es ambiguo, ej. "Casa Matriz" vs "Casa Matriz Cobol").
+  app.get("/api/admin/diag-almacenes", async (_req, res) => {
+    try {
+      const db = await getDb();
+      const { inventarios365 } = await import("../inventarios365");
+      const almacenes = await inventarios365.listarAlmacenes();
+      let sucursales: any[] = [];
+      if (db) {
+        const r: any = await db.execute(sql`SELECT id, name FROM branches ORDER BY id`);
+        sucursales = (Array.isArray(r) ? r[0] : r?.rows ?? r) as any[];
+      }
+      const norm = (x: string) => String(x || "").toLowerCase().trim();
+      const cruce = sucursales.map((s: any) => {
+        const exactos = almacenes.filter((a: any) => norm(a.nombre_almacen) === norm(s.name));
+        const parciales = almacenes.filter((a: any) => norm(a.nombre_almacen).includes(norm(s.name)) || norm(s.name).includes(norm(a.nombre_almacen)));
+        return {
+          sucursalVidaFarma: s.name,
+          coincidenciaExacta: exactos.map((a: any) => `${a.id}: ${a.nombre_almacen}`),
+          coincidenciasParciales: parciales.map((a: any) => `${a.id}: ${a.nombre_almacen}`),
+          estado: exactos.length === 1 ? "OK (exacta)" : parciales.length === 1 ? "OK (única parcial)" : parciales.length > 1 ? "AMBIGUA — puede transferir al almacén equivocado" : "SIN COINCIDENCIA",
+        };
+      });
+      res.json({ almacenes365: almacenes.map((a: any) => ({ id: a.id, nombre: a.nombre_almacen })), cruce });
+    } catch (e: any) {
+      res.status(500).json({ error: e?.message });
+    }
+  });
+
   // Captura manual de cierres de caja (faltantes/sobrantes). GET para el navegador.
   app.get("/api/admin/capturar-cierres-caja", async (_req, res) => {
     try {
