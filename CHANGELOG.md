@@ -1,3 +1,15 @@
+## v2.46 → v2.70 — Era "Datos que cuadran" (julio 2026)
+
+- **Facturas XML del SIN**: lector que extrae productos, precios y descuentos exactos (sin OCR). Bandeja de facturas en espera con estados, y cámara que reconoce la factura física contra esa bandeja (/bandeja, /escanear).
+- **Ventas anuladas**: el estado en 365 es numérico ("1" válida, "0" cancelada, "4" anulada), no texto. Filtros compartidos (`ventas-comun.ts`) aplicados en asistente, reportes, flujo de caja, rentabilidad y diagnóstico del mes; refresco de estados leyendo la cabecera individual de cada venta.
+- **Transferencias**: se usaba un endpoint inventado (365 respondía 200 sin registrar). Ahora `POST /traspaso/registrar` con el payload real, validación de saldo en origen, atómicas (todo o nada) y verificadas contra `/list/traspasos`. Historial con el mismo diseño que compras, detalle desplegable y reversión con doble confirmación.
+- **Diferencias de caja**: se capturan faltantes/sobrantes de cada cierre. Los sobrantes se explican en el inventario descontando los faltantes de producto valorados a costo (o venta −20% si no hay costo).
+- **Obligaciones**: incluye sueldos además de créditos y gastos fijos.
+- **Reportes por mes**: selector de meses con datos ("MAYO 26") en vez de rango de fechas suelto.
+- **Rendimiento**: la lista de cajas de 365 se paginaba por cada trabajador (N×60 peticiones) — ahora una vez con caché compartido; almacenes cacheados 10 min.
+- **Compras**: se desbloqueó el registro cuando los productos ya estaban emparejados automáticamente; el emparejamiento ahora se aprende al sincronizar.
+- **Vencimientos**: campo de edición libre (11/27 o 31/12/2027) con formato automático y escaneo por foto de la caja.
+
 ## v1.85 → v2.3 — Era "Tienda + Marketing" (julio 2026)
 
 - **Tienda pública** (/tienda): búsqueda por principio activo (descripción 365 + diccionario), carrito, reservas VF-XXXX, home estilo CVS (recompensas, categorías, más vendidos, carrusel ofertas), barra sticky, PWA con símbolo de marca.
