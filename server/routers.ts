@@ -3148,7 +3148,7 @@ const obligacionesRouter = router({
       return obligacionesDelMes(input?.anioMes);
     }),
   pagar: protectedProcedure
-    .input(z.object({ tipo: z.enum(["credito", "gasto"]), refId: z.number(), anioMes: z.string().max(7), monto: z.number() }))
+    .input(z.object({ tipo: z.enum(["credito", "gasto", "sueldo"]), refId: z.number(), anioMes: z.string().max(7), monto: z.number() }))
     .mutation(async ({ input, ctx }) => {
       soloFinanzas(ctx);
       const { pagarObligacion } = await import("./obligaciones");

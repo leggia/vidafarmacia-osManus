@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { trpc } from "@/lib/trpc";
 import { toast } from "sonner";
-import { CalendarClock, AlertTriangle, CheckCircle2, Clock, Landmark, Receipt, ChevronDown, ChevronUp, RotateCcw } from "lucide-react";
+import { CalendarClock, AlertTriangle, CheckCircle2, Clock, Landmark, Receipt, ChevronDown, ChevronUp, RotateCcw , Users } from "lucide-react";
 
 const bs = (n: number) => `Bs ${n.toLocaleString("es-BO", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`;
 
@@ -98,8 +98,8 @@ export default function Tareas() {
             : "bg-white dark:bg-card"}`}>
             {/* Fila 1: icono + NOMBRE COMPLETO (hasta 2 líneas, todo el ancho) */}
             <div className="flex items-start gap-3 mb-1.5">
-              <div className={`h-9 w-9 rounded-xl flex items-center justify-center shrink-0 ${o.tipo === "credito" ? "bg-sky-100 text-sky-700" : "bg-amber-100 text-amber-700"}`}>
-                {o.tipo === "credito" ? <Landmark className="w-4 h-4" /> : <Receipt className="w-4 h-4" />}
+              <div className={`h-9 w-9 rounded-xl flex items-center justify-center shrink-0 ${o.tipo === "credito" ? "bg-sky-100 text-sky-700" : o.tipo === "sueldo" ? "bg-violet-100 text-violet-700" : "bg-amber-100 text-amber-700"}`}>
+                {o.tipo === "credito" ? <Landmark className="w-4 h-4" /> : o.tipo === "sueldo" ? <Users className="w-4 h-4" /> : <Receipt className="w-4 h-4" />}
               </div>
               <div className="min-w-0 flex-1">
                 <p className="text-sm font-black leading-snug line-clamp-2">{o.nombre}</p>

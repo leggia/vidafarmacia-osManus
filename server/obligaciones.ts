@@ -13,7 +13,7 @@ const DIA_LIMITE_DEFECTO = 10;
 
 export type Obligacion = {
   clave: string;               // única: "credito-3" | "gasto-7"
-  tipo: "credito" | "gasto";
+  tipo: "credito" | "gasto" | "sueldo";
   refId: number;               // id del crédito o del gasto fijo
   nombre: string;
   detalle: string;
@@ -85,6 +85,40 @@ export async function obligacionesDelMes(anioMes?: string) {
     }
   } catch { /* módulo gastos sin tabla aún */ }
 
+  // SUELDOS: son una obligación mensual más. Se toma el sueldo de cada trabajador
+  // activo y se marca pagado si existe el registro del mes en pagos_sueldo (donde
+  // queda el monto realmente pagado, que puede diferir por descuentos o extras).
+  try {
+    const trabs = rows(await db.execute(sql.raw(
+      `SELECT id, nombre, sucursalFija, sueldoMensual FROM trabajadores WHERE activo = 1`
+    )));
+    if (trabs.length > 0) {
+      const pagos = rows(await db.execute(sql`
+        SELECT trabajadorId, pagado, montoPagado, fechaPago FROM pagos_sueldo WHERE anioMes = ${am}
+      `));
+      const pagoMap = new Map(pagos.map((p: any) => [num(p.trabajadorId), p]));
+      // Los sueldos se pagan a fin de mes salvo que se configure otra cosa.
+      const dia = ultimoDia;
+      const fechaLimite = `${am}-${String(dia).padStart(2, "0")}`;
+      const diasParaVencer = Math.round((new Date(fechaLimite).getTime() - new Date(hoyStr).getTime()) / 86400000);
+      for (const t of trabs) {
+        const pago: any = pagoMap.get(num(t.id));
+        const pagado = pago && num(pago.pagado) === 1;
+        const monto = pagado && num(pago.montoPagado) > 0 ? num(pago.montoPagado) : num(t.sueldoMensual);
+        if (monto <= 0) continue; // sin sueldo configurado: no es obligación
+        obligaciones.push({
+          clave: `sueldo-${t.id}`, tipo: "sueldo", refId: num(t.id),
+          nombre: `Sueldo · ${t.nombre}`,
+          detalle: t.sucursalFija ? `Sueldo mensual · ${t.sucursalFija}` : "Sueldo mensual",
+          monto,
+          diaLimite: dia, fechaLimite,
+          estado: pagado ? "pagado" : (hoyStr >= fechaLimite ? "alerta" : "proximo"),
+          diasParaVencer, fechaPago: pagado ? (pago.fechaPago || null) : null,
+        });
+      }
+    }
+  } catch { /* módulo de sueldos sin tabla aún */ }
+
   // Orden empresarial: alertas primero (más vencida primero), luego próximas por
   // fecha, pagadas al final.
   const peso = (o: Obligacion) => o.estado === "alerta" ? 0 : o.estado === "proximo" ? 1 : 2;
@@ -108,10 +142,17 @@ export async function obligacionesDelMes(anioMes?: string) {
 }
 
 // Pagar una obligación desde la ficha (acción directa, sin ir a otro módulo).
-export async function pagarObligacion(d: { tipo: "credito" | "gasto"; refId: number; anioMes: string; monto: number }) {
+export async function pagarObligacion(d: { tipo: "credito" | "gasto" | "sueldo"; refId: number; anioMes: string; monto: number }) {
   const db = await getDb();
   if (!db) throw new Error("Sin BD");
   const hoyStr = new Date().toISOString().slice(0, 10);
+  if (d.tipo === "sueldo") {
+    // Un pago de sueldo por trabajador y mes (sin duplicados)
+    const ya = rows(await db.execute(sql`SELECT id, montoPagado FROM pagos_sueldo WHERE trabajadorId = ${num(d.refId)} AND anioMes = ${d.anioMes} LIMIT 1`));
+    if (ya.length > 0) throw new Error(`El sueldo de este mes ya está registrado (Bs ${num(ya[0].montoPagado)}). Edítalo en el módulo de sueldos si hubo un detalle.`);
+    await db.execute(sql`INSERT INTO pagos_sueldo (trabajadorId, anioMes, montoPagado, pagado, notas) VALUES (${num(d.refId)}, ${d.anioMes}, ${num(d.monto)}, 1, ${"Pagado desde Obligaciones"})`);
+    return { ok: true, mensaje: "Pago de sueldo registrado" };
+  }
   if (d.tipo === "credito") {
     // Misma protección que /creditos: una cuota por mes, sin duplicados
     const ya = rows(await db.execute(sql`SELECT id, monto, fecha FROM creditos_pagos WHERE creditoId = ${num(d.refId)} AND DATE_FORMAT(fecha, '%Y-%m') = ${d.anioMes} LIMIT 1`));
