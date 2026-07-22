@@ -274,6 +274,30 @@ async function startServer() {
     }
   });
 
+  // Vuelca los traspasos que 365 devuelve en /list/traspasos para un rango de
+  // fechas. Sirve para diagnosticar por qué la VERIFICACIÓN de un traspaso da
+  // falso negativo (nombres de campo reales de origen/destino/fecha y si el
+  // traspaso recién creado aparece o no en la lista).
+  // Uso: /api/admin/diag-traspasos-crudo?desde=YYYY-MM-DD&hasta=YYYY-MM-DD
+  app.get("/api/admin/diag-traspasos-crudo", async (req, res) => {
+    try {
+      const { inventarios365 } = await import("../inventarios365");
+      const hoy = new Date().toISOString().slice(0, 10);
+      const desde = (req.query.desde as string) || hoy.slice(0, 8) + "01";
+      const hasta = (req.query.hasta as string) || hoy;
+      const lista = await inventarios365.listarTraspasos(desde, hasta);
+      res.json({
+        rango: { desde, hasta },
+        total: lista.length,
+        clavesPrimerRegistro: lista[0] ? Object.keys(lista[0]) : null,
+        primeros5: lista.slice(0, 5),
+        ultimos5: lista.slice(-5),
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e?.message });
+    }
+  });
+
   // Compara los nombres de sucursal de VidaFarma con los almacenes reales de 365.
   // Sirve para detectar por qué una transferencia no se refleja (nombre que no
   // coincide o que es ambiguo, ej. "Casa Matriz" vs "Casa Matriz Cobol").
