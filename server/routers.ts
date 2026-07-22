@@ -1888,7 +1888,7 @@ Devuelve JSON:
   // Diferencias de caja acumuladas de una sucursal desde el último inventario
   // completado (o desde una fecha dada). Para mostrar al iniciar el inventario.
   diferenciasCaja: protectedProcedure
-    .input(z.object({ almacenId: z.number(), desdeFecha: z.string().optional() }))
+    .input(z.object({ almacenId: z.number(), desdeFecha: z.string().optional(), sesionId: z.number().optional() }))
     .query(async ({ input }) => {
       const { getDb } = await import("./db");
       const { inventarioSesiones } = await import("../drizzle/schema");
@@ -1906,7 +1906,15 @@ Devuelve JSON:
       const { diferenciasCajaService } = await import("./diferencias-caja");
       const acum = await diferenciasCajaService.acumuladoSucursal(input.almacenId, desde);
       const detalle = await diferenciasCajaService.detalleSucursal(input.almacenId, desde);
-      return { desde: desde || "(todo el historial)", ...acum, detalle };
+      // DESCUENTO PROGRESIVO: el sobrante de caja se explica con los productos
+      // FALTANTES del inventario en curso, valorados a COSTO (salió mercadería que
+      // se cobró pero no se descargó del sistema). Lo que quede es lo no explicado.
+      let faltantes = { valor: 0, unidades: 0, productos: 0 };
+      if (input.sesionId) {
+        faltantes = await diferenciasCajaService.valorFaltantesInventario(input.sesionId);
+      }
+      const restante = Math.round((acum.sobranteTotal - faltantes.valor) * 100) / 100;
+      return { desde: desde || "(todo el historial)", ...acum, faltantes, restante, detalle };
     }),
 
   listarSesiones: protectedProcedure.query(async () => {

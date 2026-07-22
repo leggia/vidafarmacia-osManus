@@ -78,28 +78,75 @@ class DiferenciasCajaService {
   }
 
   /**
-   * Acumulado de diferencias de una sucursal desde una fecha (el último inventario).
-   * Devuelve faltante total, sobrante total y el neto en Bs.
+   * Acumulado de SOBRANTES de caja de una sucursal desde una fecha (el último
+   * inventario). Solo se consideran los sobrantes: si sobró dinero en el turno,
+   * lo más probable es que haya salido producto sin registrarse. Los faltantes de
+   * caja no entran porque los vendedores los reponen y son poco frecuentes.
    */
   async acumuladoSucursal(idSucursal: number, desdeFecha?: string): Promise<{
-    faltanteTotal: number; sobranteTotal: number; neto: number; cierres: number;
+    faltanteTotal: number; sobranteTotal: number; cierres: number;
   }> {
     const db = await getDb();
-    if (!db) return { faltanteTotal: 0, sobranteTotal: 0, neto: 0, cierres: 0 };
+    if (!db) return { faltanteTotal: 0, sobranteTotal: 0, cierres: 0 };
     const filtroFecha = desdeFecha ? sql` AND fechaCierre >= ${desdeFecha}` : sql``;
     const r = rows(await db.execute(sql`
       SELECT COALESCE(SUM(saldoFaltante),0) AS falt, COALESCE(SUM(saldoSobrante),0) AS sobr, COUNT(*) AS n
       FROM diferencias_caja WHERE idSucursal = ${idSucursal}${filtroFecha}
     `));
     const d = r[0] || {};
-    const faltanteTotal = num(d.falt);
-    const sobranteTotal = num(d.sobr);
     return {
-      faltanteTotal,
-      sobranteTotal,
-      neto: Math.round((sobranteTotal - faltanteTotal) * 100) / 100, // + sobró / − faltó
+      faltanteTotal: num(d.falt),   // informativo
+      sobranteTotal: num(d.sobr),   // este es el que se explica con el inventario
       cierres: num(d.n),
     };
+  }
+
+  /**
+   * Valor a COSTO de los productos FALTANTES contados en una sesión de inventario
+   * (físico < sistema). Ese valor explica el sobrante de caja: salió mercadería
+   * que se cobró pero no se descargó del sistema.
+   *
+   * Los sobrantes de producto no se consideran aquí (no explican dinero de más).
+   */
+  async valorFaltantesInventario(sesionId: number): Promise<{ valor: number; unidades: number; productos: number }> {
+    const db = await getDb();
+    if (!db) return { valor: 0, unidades: 0, productos: 0 };
+
+    const provs = rows(await db.execute(sql`
+      SELECT conteos FROM inventario_proveedores WHERE sesionId = ${sesionId}
+    `));
+
+    // Juntar los faltantes de todos los proveedores contados en la sesión
+    const faltantes = new Map<number, number>(); // articuloId → unidades faltantes
+    for (const p of provs) {
+      let conteos: any[] = [];
+      try {
+        conteos = typeof p.conteos === "string" ? JSON.parse(p.conteos) : (p.conteos ?? []);
+      } catch { continue; }
+      for (const c of conteos ?? []) {
+        const dif = Number(c?.diferencia ?? 0);
+        const id = Number(c?.articuloId);
+        if (!id || !(dif < 0)) continue; // solo faltantes
+        faltantes.set(id, (faltantes.get(id) ?? 0) + Math.abs(dif));
+      }
+    }
+    if (faltantes.size === 0) return { valor: 0, unidades: 0, productos: 0 };
+
+    // Costos desde el caché de productos (precio de costo por unidad)
+    const ids = Array.from(faltantes.keys());
+    const costos = rows(await db.execute(sql`
+      SELECT articuloId, precioCostoUnid FROM productos_cache
+      WHERE articuloId IN (${sql.join(ids.map((i) => sql`${i}`), sql`, `)})
+    `));
+    const costoPorId = new Map<number, number>();
+    for (const c of costos) costoPorId.set(Number(c.articuloId), num(c.precioCostoUnid));
+
+    let valor = 0, unidades = 0;
+    for (const [id, unids] of Array.from(faltantes.entries())) {
+      unidades += unids;
+      valor += unids * (costoPorId.get(id) ?? 0);
+    }
+    return { valor: Math.round(valor * 100) / 100, unidades, productos: faltantes.size };
   }
 
   /** Detalle de diferencias de una sucursal desde una fecha. */
@@ -112,6 +159,74 @@ class DiferenciasCajaService {
       FROM diferencias_caja WHERE idSucursal = ${idSucursal}${filtroFecha}
       ORDER BY fechaCierre DESC
     `));
+  }
+
+  /**
+   * Valor en Bs de las correcciones de inventario de una sesión, a precio de COSTO.
+   *
+   * Los conteos guardan `diferencia = stockFisico − stockSistema`:
+   *   - diferencia < 0 → FALTA producto. Explica dinero que faltó, así que ACERCA
+   *     la deuda a cero (suma al neto negativo).
+   *   - diferencia > 0 → SOBRA producto. AUMENTA la deuda (resta del neto).
+   *
+   * Por eso el ajuste de cada línea es (−diferencia × costoUnitario) y el total:
+   *   restante = netoCaja + ajusteCorrecciones
+   */
+  async valorCorreccionesSesion(sesionId: number): Promise<{
+    ajuste: number; valorFaltantes: number; valorSobrantes: number;
+    lineas: number; sinCosto: number;
+  }> {
+    const db = await getDb();
+    if (!db) return { ajuste: 0, valorFaltantes: 0, valorSobrantes: 0, lineas: 0, sinCosto: 0 };
+
+    // Conteos de todos los proveedores de la sesión
+    const provs = rows(await db.execute(sql`
+      SELECT conteos FROM inventario_proveedores WHERE sesionId = ${sesionId}
+    `));
+
+    // Aplanar los conteos con diferencia ≠ 0
+    const conDif: Array<{ articuloId: number; diferencia: number }> = [];
+    for (const p of provs) {
+      let arr: any = p.conteos;
+      if (typeof arr === "string") { try { arr = JSON.parse(arr); } catch { arr = null; } }
+      if (!Array.isArray(arr)) continue;
+      for (const c of arr) {
+        const dif = Number(c?.diferencia) || 0;
+        const aid = Number(c?.articuloId) || 0;
+        if (dif !== 0 && aid > 0) conDif.push({ articuloId: aid, diferencia: dif });
+      }
+    }
+    if (conDif.length === 0) return { ajuste: 0, valorFaltantes: 0, valorSobrantes: 0, lineas: 0, sinCosto: 0 };
+
+    // Costos desde el caché de productos (precioCostoUnid)
+    const ids = Array.from(new Set(conDif.map((c) => c.articuloId)));
+    const costos = new Map<number, number>();
+    // En bloques, para no armar un IN gigante
+    for (let i = 0; i < ids.length; i += 300) {
+      const bloque = ids.slice(i, i + 300);
+      const lista = sql.raw(bloque.join(","));
+      const r = rows(await db.execute(sql`
+        SELECT articuloId, precioCostoUnid FROM productos_cache WHERE articuloId IN (${lista})
+      `));
+      for (const row of r) costos.set(Number(row.articuloId), num(row.precioCostoUnid));
+    }
+
+    let valorFaltantes = 0, valorSobrantes = 0, sinCosto = 0;
+    for (const c of conDif) {
+      const costo = costos.get(c.articuloId) ?? 0;
+      if (costo <= 0) { sinCosto++; continue; }
+      const valor = Math.abs(c.diferencia) * costo;
+      if (c.diferencia < 0) valorFaltantes += valor;  // falta producto
+      else valorSobrantes += valor;                    // sobra producto
+    }
+    const r2 = (n: number) => Math.round(n * 100) / 100;
+    return {
+      ajuste: r2(valorFaltantes - valorSobrantes), // faltante acerca a cero, sobrante aleja
+      valorFaltantes: r2(valorFaltantes),
+      valorSobrantes: r2(valorSobrantes),
+      lineas: conDif.length,
+      sinCosto,
+    };
   }
 }
 

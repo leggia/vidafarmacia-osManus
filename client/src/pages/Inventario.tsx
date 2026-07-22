@@ -174,7 +174,7 @@ export default function Inventario() {
   const crearSesion = trpc.inventario.crearSesion.useMutation();
   // Diferencias de caja acumuladas desde el último inventario de esta sucursal.
   const { data: difCaja } = trpc.inventario.diferenciasCaja.useQuery(
-    { almacenId: sesionActiva?.almacenId ?? 0 },
+    { almacenId: sesionActiva?.almacenId ?? 0, sesionId: sesionActiva?.id },
     { enabled: !!sesionActiva?.almacenId },
   );
   const guardarConteoProveedor = trpc.inventario.guardarConteoProveedor.useMutation();
@@ -356,6 +356,8 @@ export default function Inventario() {
       const detalle = await utils.inventario.detalleSesion.fetch({ sesionId: sesionActiva.id });
       if (detalle) setSesionActiva((prev: any) => ({ ...prev, proveedores: detalle.proveedores }));
       await utils.inventario.listarSesiones.invalidate();
+      // Refrescar el sobrante de caja por explicar: cada faltante contado lo descuenta
+      await utils.inventario.diferenciasCaja.invalidate();
       if (completar) { setVista("proveedores"); setProveedorActivo(null); setItems([]); }
     } catch (e: any) { toast.error("Error: " + (e.message || "")); }
   };
@@ -613,27 +615,38 @@ export default function Inventario() {
             (sobrantes − faltantes) es dinero que no cuadra: puede ser producto
             que salió sin registrarse. Se muestra para tenerlo en cuenta y descontar
             con las correcciones del inventario. */}
-        {difCaja && difCaja.cierres > 0 && (() => {
-          const neto = difCaja.neto;
-          const falto = neto < 0;
+        {difCaja && difCaja.sobranteTotal > 0 && (() => {
+          const explicado = difCaja.faltantes?.valor ?? 0;
+          const restante = difCaja.restante ?? difCaja.sobranteTotal;
+          const pct = difCaja.sobranteTotal > 0
+            ? Math.min(100, Math.round((explicado / difCaja.sobranteTotal) * 100)) : 0;
+          const cuadrado = restante <= 0;
           return (
-            <div className={`rounded-lg border p-3 ${falto ? "bg-red-50 border-red-300" : "bg-blue-50 border-blue-300"}`}>
-              <div className="flex items-center justify-between">
-                <div>
-                  <p className="text-xs font-black uppercase tracking-wider">Diferencia de caja acumulada</p>
-                  <p className="text-[11px] text-muted-foreground">Desde el último inventario · {difCaja.cierres} cierres</p>
+            <div className={`rounded-lg border p-3 ${cuadrado ? "bg-green-50 border-green-300" : "bg-blue-50 border-blue-300"}`}>
+              <div className="flex items-center justify-between gap-2">
+                <div className="min-w-0">
+                  <p className="text-xs font-black uppercase tracking-wider">Sobrante de caja por explicar</p>
+                  <p className="text-[11px] text-muted-foreground">
+                    Desde el último inventario · {difCaja.cierres} cierres con sobrante
+                  </p>
                 </div>
-                <div className="text-right">
-                  <p className={`text-lg font-black ${falto ? "text-red-700" : "text-blue-700"}`}>
-                    {falto ? "−" : "+"} Bs {Math.abs(neto).toFixed(2)}
+                <div className="text-right shrink-0">
+                  <p className={`text-lg font-black ${cuadrado ? "text-green-700" : "text-blue-700"}`}>
+                    Bs {Math.abs(restante).toFixed(2)}
                   </p>
                   <p className="text-[10px] text-muted-foreground">
-                    {falto ? "faltó dinero" : "sobró dinero"}
+                    {cuadrado ? "¡explicado!" : "sin explicar"}
                   </p>
                 </div>
               </div>
-              <p className="text-[11px] text-muted-foreground mt-1">
-                Faltantes: Bs {difCaja.faltanteTotal.toFixed(2)} · Sobrantes: Bs {difCaja.sobranteTotal.toFixed(2)}. Ten en cuenta esta diferencia al cuadrar el inventario.
+              {/* Barra de avance: cuánto del sobrante ya se explicó con faltantes */}
+              <div className="h-1.5 bg-foreground/10 rounded-full overflow-hidden mt-2">
+                <div className={`h-full ${cuadrado ? "bg-green-600" : "bg-blue-600"}`} style={{ width: `${pct}%` }} />
+              </div>
+              <p className="text-[11px] text-muted-foreground mt-1.5">
+                Sobró Bs {difCaja.sobranteTotal.toFixed(2)} en caja · Faltantes contados: Bs {explicado.toFixed(2)} a costo
+                {difCaja.faltantes?.unidades ? ` (${difCaja.faltantes.unidades} unid. en ${difCaja.faltantes.productos} productos)` : ""}.
+                Cada producto que falte al contar descuenta de este monto.
               </p>
             </div>
           );
