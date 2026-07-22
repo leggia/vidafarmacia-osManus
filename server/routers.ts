@@ -2828,6 +2828,7 @@ const ventasRouter = router({
   // Devuelve el más reciente primero, con su total para dar contexto.
   mesesDisponibles: protectedProcedure.query(async () => {
     const { getDb } = await import("./db");
+    const { sql } = await import("drizzle-orm");
     const db = await getDb();
     if (!db) return [];
     try {
