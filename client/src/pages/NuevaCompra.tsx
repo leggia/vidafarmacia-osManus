@@ -648,9 +648,14 @@ export default function NuevaCompra() {
         toast.error("Agregue al menos un producto");
         return;
       }
-      // Solo al confirmar (sincronizar): exigir que todos estén emparejados
+      // Solo al confirmar (sincronizar): exigir que todos estén emparejados.
+      // Se usa itemEmparejado (la MISMA función que pinta el check verde) para no
+      // pedir emparejar de nuevo lo que ya está emparejado: antes esta validación
+      // solo miraba el mapa por nombre e ignoraba articuloId, así que los productos
+      // emparejados automáticamente (o cuyo nombre se editó) se veían con check
+      // pero bloqueaban la compra.
       if (confirmDirectly) {
-        const sinEmparejar = items.filter(it => productosEmparejados[it.productName] === undefined);
+        const sinEmparejar = items.filter(it => !itemEmparejado(it));
         if (sinEmparejar.length > 0) {
           toast.error(`No se puede registrar: ${sinEmparejar.length} producto(s) sin emparejar. Empareja todos antes de confirmar la compra completa.`, { duration: 6000 });
           return;
