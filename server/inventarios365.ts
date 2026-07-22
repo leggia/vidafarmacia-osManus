@@ -860,25 +860,41 @@ class Inventarios365Service {
   }
 
   /**
-   * Stock actual (sin caché) de ciertos productos en un almacén. Se usa para
-   * VERIFICAR que un traspaso realmente movió existencias.
+   * Saldo (stock) de un artículo en un almacén concreto.
+   * Endpoint real: GET /inventarios/saldostock?idAlmacen=&idArticulo=
+   * 365 lo usa para no dejar armar un traspaso sin existencias suficientes.
+   * Devuelve null si no se pudo consultar (para no bloquear por un fallo de red).
    */
-  private async stockDeArticulos(almacenId: number, nombres: string[]): Promise<Map<string, number> | null> {
+  async saldoStock(idAlmacen: number, idArticulo: number): Promise<number | null> {
     try {
-      const { obtenerStockAlmacen } = await import("./stock-cache");
-      const r = await obtenerStockAlmacen(almacenId, { ttlSeg: 0, fallbackCache: false });
-      const buscados = new Set(nombres.map((n) => String(n).toLowerCase().trim()));
-      const m = new Map<string, number>();
-      for (const p of (r.lista || []) as any[]) {
-        const key = String(p.nombre || "").toLowerCase().trim();
-        if (buscados.has(key)) m.set(key, Number(p.stock) || 0);
-      }
-      return m;
+      const data: any = await this.get<any>(`/inventarios/saldostock?idAlmacen=${idAlmacen}&idArticulo=${idArticulo}`);
+      // La respuesta puede venir como número, {saldo}, {saldo_stock} o {data:...}
+      const bruto = typeof data === "number" ? data
+        : data?.saldo_stock ?? data?.saldoStock ?? data?.saldo ?? data?.stock ?? data?.data;
+      const n = Number(bruto);
+      return Number.isFinite(n) ? n : null;
     } catch (e: any) {
-      console.warn("[Inventarios365] No se pudo leer stock para verificar traspaso:", e?.message);
+      console.warn(`[Inventarios365] No se pudo leer saldo (almacén ${idAlmacen}, artículo ${idArticulo}):`, e?.message);
       return null;
     }
   }
+
+  /**
+   * Traspasos registrados en un rango de fechas.
+   * Endpoint real: GET /list/traspasos?fechaInicio=YYYY-MM-DD&fechaFin=YYYY-MM-DD
+   * Se usa para VERIFICAR que un traspaso quedó realmente registrado.
+   */
+  async listarTraspasos(fechaInicio: string, fechaFin: string): Promise<any[]> {
+    try {
+      const data: any = await this.get<any>(`/list/traspasos?fechaInicio=${fechaInicio}&fechaFin=${fechaFin}`);
+      if (Array.isArray(data)) return data;
+      return data?.traspasos?.data ?? data?.traspasos ?? data?.data ?? [];
+    } catch (e: any) {
+      console.warn("[Inventarios365] No se pudo listar traspasos:", e?.message);
+      return [];
+    }
+  }
+
 
   /**
    * Buscar un proveedor por nombre.
@@ -1786,19 +1802,44 @@ class Inventarios365Service {
       }
       console.log(`[Inventarios365] Traspaso: "${params.sucursalOrigen}" → almacén ${almacenOrigen.id} "${almacenOrigen.nombre_almacen}" | "${params.sucursalDestino}" → almacén ${almacenDestino.id} "${almacenDestino.nombre_almacen}"`);
 
-      const arrayDetalle = [];
+      // Armar el detalle con EXACTAMENTE los campos que espera 365 (confirmado por
+      // captura de red del botón "Transferir"): idarticulo, idalmacen,
+      // idalmacendes, codigo, cantidad_traspaso, nombre_producto,
+      // precio_costo_unid y saldo_stock.
+      const arrayDetalle: any[] = [];
       const omitidos: string[] = [];
+      const sinSaldo: string[] = [];
       for (const item of params.items) {
         const articulo = await this.buscarArticulo(item.nombre);
-        if (articulo) {
-          arrayDetalle.push({
-            idarticulo: articulo.id,
-            articulo: articulo.nombre,
-            cantidad: item.cantidad,
-          });
-        } else {
+        if (!articulo) {
           omitidos.push(item.nombre);
+          continue;
         }
+        // 365 valida el saldo del almacén de ORIGEN antes de permitir el traspaso:
+        // se comprueba igual aquí para no enviar algo que será rechazado.
+        const saldo = await this.saldoStock(almacenOrigen.id, articulo.id);
+        if (saldo !== null && item.cantidad > saldo) {
+          sinSaldo.push(`${articulo.nombre} (pide ${item.cantidad}, hay ${saldo})`);
+          continue;
+        }
+        arrayDetalle.push({
+          idarticulo: articulo.id,
+          idalmacen: almacenOrigen.id,
+          idalmacendes: almacenDestino.id,
+          codigo: String(articulo.codigo ?? ""),
+          cantidad_traspaso: item.cantidad,
+          nombre_producto: articulo.nombre,
+          precio_costo_unid: String(articulo.precio_costo_unid ?? "0"),
+          saldo_stock: String(saldo ?? articulo.stock ?? "0"),
+        });
+      }
+
+      // Sin saldo suficiente: se cancela todo (mismo criterio de "todo o nada")
+      if (sinSaldo.length > 0) {
+        return {
+          success: false,
+          message: `Transferencia CANCELADA (no se movió nada): sin stock suficiente en ${almacenOrigen.nombre_almacen} → ${sinSaldo.join(", ")}. Ajusta las cantidades o repone antes de transferir.`,
+        };
       }
 
       if (arrayDetalle.length === 0) {
@@ -1819,62 +1860,51 @@ class Inventarios365Service {
         };
       }
 
-      // Foto del stock del DESTINO antes de traspasar, para verificar después.
-      const nombresArt = arrayDetalle.map((d: any) => String(d.articulo));
-      const stockAntes = await this.stockDeArticulos(almacenDestino.id, nombresArt);
+      const fechaTraspaso = new Date().toISOString().slice(0, 10);
+      const payload = {
+        tipo_traspaso: "Salida",
+        almacen_origen: almacenOrigen.id,
+        almacen_destino: almacenDestino.id,
+        fecha_traspaso: fechaTraspaso,
+        data: arrayDetalle,
+      };
+      console.log(`[Inventarios365] POST /traspaso/registrar`, JSON.stringify(payload).substring(0, 400));
 
-      const respData: any = await this.post("/traspasoproducto/registrar", {
-        idalmacen_origen: almacenOrigen.id,
-        idalmacen_destino: almacenDestino.id,
-        observacion:
-          params.observacion || "Transferencia desde VidaFarma-OS",
-        inventarios: arrayDetalle,
-      });
-
-      // Dejar rastro de lo que respondió 365: si el traspaso no se refleja, este
-      // log dice exactamente qué contestó (antes se asumía éxito sin verlo).
+      // Endpoint REAL del botón "Transferir" de 365 (confirmado por captura de red).
+      // Antes se usaba /traspasoproducto/registrar con otro formato: 365 respondía
+      // 200 pero NO registraba nada — por eso las transferencias no se reflejaban.
+      const respData: any = await this.post("/traspaso/registrar", payload);
       console.log(`[Inventarios365] Respuesta traspaso:`, JSON.stringify(respData)?.substring(0, 500));
 
       if (respData?.error) {
         return { success: false, message: respData.error };
       }
-      // Algunos endpoints de 365 devuelven { success:false } o un mensaje de fallo
-      // sin usar la clave 'error': tratarlos como fallo para no marcar completada
-      // una transferencia que no se registró.
       if (respData?.success === false || respData?.status === false) {
         return { success: false, message: respData?.message || respData?.mensaje || "365 rechazó el traspaso" };
       }
 
-      // VERIFICACIÓN EN VIVO: 365 puede responder sin error y aun así NO aplicar el
-      // traspaso (pasó: respondió "registrada" y el stock nunca se movió). Se
-      // comprueba que el stock del destino haya subido; si no subió, se reporta
-      // fallo para que la transferencia quede PENDIENTE y se pueda reintentar,
-      // en vez de darla por hecha.
+      // VERIFICACIÓN: consultar la lista real de traspasos de 365 y confirmar que
+      // el nuestro quedó registrado hoy entre esos dos almacenes.
       let avisoVerificacion = "";
-      if (stockAntes) {
-        const stockDespues = await this.stockDeArticulos(almacenDestino.id, nombresArt);
-        if (stockDespues) {
-          let subio = 0;
-          for (const d of arrayDetalle as any[]) {
-            const k = String(d.articulo).toLowerCase().trim();
-            const antes = stockAntes.get(k);
-            const despues = stockDespues.get(k);
-            if (antes !== undefined && despues !== undefined && despues > antes) subio++;
-          }
-          if (subio === 0) {
-            return {
-              success: false,
-              message: `365 aceptó el traspaso pero el stock del destino NO cambió (verificado en vivo). La transferencia queda pendiente: revisa en 365 si el traspaso requiere confirmación manual.`,
-            };
-          }
-          if (subio < arrayDetalle.length) {
-            avisoVerificacion = ` ⚠ Verificado: solo ${subio} de ${arrayDetalle.length} productos subieron de stock en el destino.`;
-          } else {
-            avisoVerificacion = " ✓ Verificado: el stock del destino subió.";
-          }
-        } else {
-          avisoVerificacion = " (no se pudo verificar el stock después)";
+      try {
+        const desde = fechaTraspaso.slice(0, 8) + "01";
+        const hasta = fechaTraspaso;
+        const lista = await this.listarTraspasos(desde, hasta);
+        const encontrado = lista.some((t: any) => {
+          const o = Number(t.almacen_origen ?? t.idalmacen_origen ?? t.idalmacen ?? 0);
+          const d = Number(t.almacen_destino ?? t.idalmacen_destino ?? t.idalmacendes ?? 0);
+          const f = String(t.fecha_traspaso ?? t.fecha ?? "").slice(0, 10);
+          return o === almacenOrigen.id && d === almacenDestino.id && f === fechaTraspaso;
+        });
+        if (lista.length > 0 && !encontrado) {
+          return {
+            success: false,
+            message: `365 respondió sin error pero el traspaso NO aparece en su lista de traspasos. Queda pendiente para reintentar.`,
+          };
         }
+        avisoVerificacion = encontrado ? " ✓ Verificado en la lista de traspasos de 365." : "";
+      } catch {
+        avisoVerificacion = " (no se pudo verificar contra la lista de traspasos)";
       }
 
       return {
