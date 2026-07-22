@@ -1848,6 +1848,10 @@ class Inventarios365Service {
       const arrayDetalle: any[] = [];
       const omitidos: string[] = [];
       const sinSaldo: string[] = [];
+      // Para VERIFICAR después por saldo (no por la lista de traspasos, que 365 no
+      // devuelve para movimientos hacia el almacén principal): guardamos el saldo del
+      // almacén DESTINO antes del POST por cada artículo enviado.
+      const verificacion: Array<{ idarticulo: number; cantidad: number; saldoDestAntes: number | null }> = [];
       for (const item of params.items) {
         const articulo = await this.buscarArticulo(item.nombre);
         if (!articulo) {
@@ -1867,6 +1871,7 @@ class Inventarios365Service {
         if (saldo === 0) {
           console.warn(`[Inventarios365] Saldo 0 para "${articulo.nombre}" en almacén ${almacenOrigen.id}; se envía igual y decide 365.`);
         }
+        const saldoDestAntes = await this.saldoStock(almacenDestino.id, articulo.id);
         arrayDetalle.push({
           idarticulo: articulo.id,
           idalmacen: almacenOrigen.id,
@@ -1877,6 +1882,7 @@ class Inventarios365Service {
           precio_costo_unid: String(articulo.precio_costo_unid ?? "0"),
           saldo_stock: String(saldo ?? articulo.stock ?? "0"),
         });
+        verificacion.push({ idarticulo: articulo.id, cantidad: item.cantidad, saldoDestAntes });
       }
 
       // Sin saldo suficiente: se cancela todo (mismo criterio de "todo o nada")
@@ -1928,28 +1934,40 @@ class Inventarios365Service {
         return { success: false, message: respData?.message || respData?.mensaje || "365 rechazó el traspaso" };
       }
 
-      // VERIFICACIÓN: consultar la lista real de traspasos de 365 y confirmar que
-      // el nuestro quedó registrado hoy entre esos dos almacenes.
+      // VERIFICACIÓN POR SALDO (no por /list/traspasos). 365 NO lista los traspasos
+      // hacia el ALMACÉN PRINCIPAL, así que una reversión (sucursal → principal) nunca
+      // aparecía en /list/traspasos y daba un falso negativo ("el traspaso no aparece")
+      // aunque el stock SÍ se había movido. Además la lista comparaba la fecha en UTC
+      // contra la hora Bolivia de 365, fallando en traspasos de la noche. El saldo del
+      // almacén DESTINO es la fuente de verdad y funciona en cualquier dirección: si el
+      // traspaso se aplicó, el saldo del destino sube ≈ lo transferido.
       let avisoVerificacion = "";
-      try {
-        const desde = fechaTraspaso.slice(0, 8) + "01";
-        const hasta = fechaTraspaso;
-        const lista = await this.listarTraspasos(desde, hasta);
-        const encontrado = lista.some((t: any) => {
-          const o = Number(t.almacen_origen ?? t.idalmacen_origen ?? t.idalmacen ?? 0);
-          const d = Number(t.almacen_destino ?? t.idalmacen_destino ?? t.idalmacendes ?? 0);
-          const f = String(t.fecha_traspaso ?? t.fecha ?? "").slice(0, 10);
-          return o === almacenOrigen.id && d === almacenDestino.id && f === fechaTraspaso;
-        });
-        if (lista.length > 0 && !encontrado) {
-          return {
-            success: false,
-            message: `365 respondió sin error pero el traspaso NO aparece en su lista de traspasos. Queda pendiente para reintentar.`,
-          };
+      if (process.env.MODO_STAGING === "true") {
+        avisoVerificacion = " [STAGING] simulado — sin verificación de saldo.";
+      } else {
+        let esperado = 0, observado = 0, medibles = 0;
+        for (const v of verificacion) {
+          if (v.saldoDestAntes === null) continue;
+          const despues = await this.saldoStock(almacenDestino.id, v.idarticulo);
+          if (despues === null) continue;
+          medibles++;
+          esperado += v.cantidad;
+          observado += despues - v.saldoDestAntes;
         }
-        avisoVerificacion = encontrado ? " ✓ Verificado en la lista de traspasos de 365." : "";
-      } catch {
-        avisoVerificacion = " (no se pudo verificar contra la lista de traspasos)";
+        if (medibles > 0) {
+          // Todo-o-nada: si se registró, el saldo del destino subió ≈ lo esperado. Se
+          // tolera algo de ruido (una venta simultánea en el destino) con el umbral 50%.
+          const aplicado = observado >= Math.max(1, Math.ceil(esperado * 0.5));
+          if (!aplicado) {
+            return {
+              success: false,
+              message: `365 respondió sin error pero el saldo del almacén destino NO aumentó (esperado +${esperado}, observado +${observado}). El traspaso no se aplicó; el stock NO se movió.`,
+            };
+          }
+          avisoVerificacion = ` ✓ Verificado por saldo (destino +${observado} de +${esperado}).`;
+        } else {
+          avisoVerificacion = " (no se pudo verificar por saldo; revisa el stock en 365 antes de reintentar, pudo haberse aplicado).";
+        }
       }
 
       return {

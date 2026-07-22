@@ -469,7 +469,7 @@ export async function revertTransfer(transferId: number, userId: number, motivo?
   });
 
   if (!resultado365.success) {
-    return { success: false, message: `No se pudo revertir: ${resultado365.message}. El stock NO se movió.` };
+    return { success: false, message: `No se pudo revertir: ${resultado365.message}` };
   }
 
   await db.update(transfers).set({
@@ -479,7 +479,7 @@ export async function revertTransfer(transferId: number, userId: number, motivo?
     revertReason: motivo || null as any,
   }).where(eq(transfers.id, transferId));
 
-  return { success: true, message: `Transferencia revertida: el stock regresó de ${destino?.name} a ${origen?.name}.` };
+  return { success: true, message: `Transferencia revertida: el stock regresó de ${destino?.name} a ${origen?.name}. ${resultado365.message}` };
 }
 
 // ─── Task Queue ───
