@@ -13,6 +13,20 @@ import { toast } from "sonner";
 import { useState } from "react";
 import { useAuth } from "../_core/hooks/useAuth";
 
+/**
+ * Identificación de la ficha: si la transferencia no trae número de referencia,
+ * se arma una legible con el destino y la fecha (ej. "A Lanza · 21/07/2026"), en
+ * vez de un "#id" que no dice nada.
+ */
+function tituloTransferencia(t: any): string {
+  if (t.referenceNumber) return t.referenceNumber;
+  const fecha = t.createdAt ? new Date(t.createdAt).toLocaleDateString("es-BO") : "";
+  const destino = t.toBranchName && t.toBranchName !== "Desconocida" ? t.toBranchName : null;
+  if (destino && fecha) return `A ${destino} · ${fecha}`;
+  if (destino) return `A ${destino}`;
+  return `Transferencia #${t.id}`;
+}
+
 export default function Transferencias() {
   const [, setLocation] = useLocation();
   const utils = trpc.useUtils();
@@ -23,6 +37,7 @@ export default function Transferencias() {
   const [expandidaId, setExpandidaId] = useState<number | null>(null);
   const [revertirId, setRevertirId] = useState<number | null>(null);
   const [motivoRevertir, setMotivoRevertir] = useState("");
+  const [confirmarFinal, setConfirmarFinal] = useState(false);
 
   const confirmTransfer = trpc.transfers.confirm.useMutation({
     onSuccess: (r: any) => {
@@ -46,9 +61,9 @@ export default function Transferencias() {
       else toast.error(r?.message || "No se pudo revertir", { duration: 10000 });
       utils.transfers.list.invalidate();
       utils.dashboard.stats.invalidate();
-      setRevertirId(null); setMotivoRevertir("");
+      setRevertirId(null); setMotivoRevertir(""); setConfirmarFinal(false);
     },
-    onError: (err) => { toast.error(err.message || "Error al revertir"); setRevertirId(null); },
+    onError: (err) => { toast.error(err.message || "Error al revertir"); setRevertirId(null); setConfirmarFinal(false); },
   });
 
   const handleConfirm = (id: number) => { setConfirmingId(id); confirmTransfer.mutate({ id }); };
@@ -80,7 +95,7 @@ export default function Transferencias() {
                     </div>
                     <div className="min-w-0">
                       <p className="font-semibold text-sm truncate">
-                        {t.referenceNumber || `Transferencia #${t.id}`}
+                        {tituloTransferencia(t)}
                       </p>
                       <p className="text-xs text-muted-foreground truncate">
                         {t.fromBranchName} → {t.toBranchName}
@@ -140,10 +155,11 @@ export default function Transferencias() {
       )}
 
 
-      <AlertDialog open={revertirId !== null} onOpenChange={(o) => { if (!o) { setRevertirId(null); setMotivoRevertir(""); } }}>
+      {/* PASO 1 de 2: motivo y aviso de lo que hará */}
+      <AlertDialog open={revertirId !== null && !confirmarFinal} onOpenChange={(o) => { if (!o) { setRevertirId(null); setMotivoRevertir(""); } }}>
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle className="text-amber-700">Revertir transferencia</AlertDialogTitle>
+            <AlertDialogTitle className="text-amber-700">Revertir transferencia (paso 1 de 2)</AlertDialogTitle>
             <AlertDialogDescription>
               Se registrará el movimiento INVERSO en el sistema: el stock volverá del destino al origen por las mismas cantidades. Esta acción queda registrada.
             </AlertDialogDescription>
@@ -151,13 +167,52 @@ export default function Transferencias() {
           <Textarea placeholder="Motivo de la reversión (opcional)" value={motivoRevertir}
             onChange={(e) => setMotivoRevertir(e.target.value)} className="text-sm" rows={2} />
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={revertir.isPending}>Cancelar</AlertDialogCancel>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              className="bg-amber-600 hover:bg-amber-700"
+              onClick={(e) => { e.preventDefault(); setConfirmarFinal(true); }}>
+              Continuar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* PASO 2 de 2: confirmación final con los datos concretos, para no revertir
+          por error. Muestra qué transferencia es y hacia dónde volverá el stock. */}
+      <AlertDialog open={confirmarFinal} onOpenChange={(o) => { if (!o) setConfirmarFinal(false); }}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle className="text-red-700">¿Confirmas la reversión? (paso 2 de 2)</AlertDialogTitle>
+            <AlertDialogDescription>
+              Esta acción MUEVE STOCK REAL en inventarios365 y no se deshace sola.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          {(() => {
+            const t: any = (transfers || []).find((x: any) => x.id === revertirId);
+            if (!t) return null;
+            return (
+              <div className="rounded-lg border border-red-200 bg-red-50 p-3 text-sm space-y-1">
+                <p className="font-bold">{tituloTransferencia(t)}</p>
+                <p className="text-xs">
+                  El stock volverá de <b>{t.toBranchName}</b> a <b>{t.fromBranchName}</b>
+                  {t.unidades ? ` — ${t.unidades} unidades` : ""}
+                </p>
+                {motivoRevertir.trim() && (
+                  <p className="text-xs text-muted-foreground">Motivo: {motivoRevertir.trim()}</p>
+                )}
+              </div>
+            );
+          })()}
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={revertir.isPending} onClick={() => setConfirmarFinal(false)}>
+              No, volver
+            </AlertDialogCancel>
             <AlertDialogAction
               disabled={revertir.isPending}
-              className="bg-amber-600 hover:bg-amber-700"
+              className="bg-red-600 hover:bg-red-700"
               onClick={(e) => { e.preventDefault(); if (revertirId) revertir.mutate({ id: revertirId, motivo: motivoRevertir.trim() || undefined }); }}>
               {revertir.isPending ? <Loader2 className="h-4 w-4 animate-spin mr-1" /> : <Undo2 className="h-4 w-4 mr-1" />}
-              Revertir
+              Sí, revertir definitivamente
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
