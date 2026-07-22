@@ -648,6 +648,12 @@ export default function Inventario() {
                 {difCaja.faltantes?.unidades ? ` (${difCaja.faltantes.unidades} unid. en ${difCaja.faltantes.productos} productos)` : ""}.
                 Cada producto que falte al contar descuenta de este monto.
               </p>
+              {(difCaja.faltantes?.estimados > 0 || difCaja.faltantes?.sinDato > 0) && (
+                <p className="text-[10px] text-amber-700 mt-1">
+                  {difCaja.faltantes.estimados > 0 && `${difCaja.faltantes.estimados} producto(s) sin costo registrado: se estimó el costo como precio de venta −20%. `}
+                  {difCaja.faltantes.sinDato > 0 && `${difCaja.faltantes.sinDato} producto(s) sin costo ni precio: no descuentan.`}
+                </p>
+              )}
             </div>
           );
         })()}

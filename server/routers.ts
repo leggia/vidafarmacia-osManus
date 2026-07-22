@@ -1909,7 +1909,7 @@ Devuelve JSON:
       // DESCUENTO PROGRESIVO: el sobrante de caja se explica con los productos
       // FALTANTES del inventario en curso, valorados a COSTO (salió mercadería que
       // se cobró pero no se descargó del sistema). Lo que quede es lo no explicado.
-      let faltantes = { valor: 0, unidades: 0, productos: 0 };
+      let faltantes = { valor: 0, unidades: 0, productos: 0, estimados: 0, sinDato: 0 };
       if (input.sesionId) {
         faltantes = await diferenciasCajaService.valorFaltantesInventario(input.sesionId);
       }

@@ -108,9 +108,9 @@ class DiferenciasCajaService {
    *
    * Los sobrantes de producto no se consideran aquí (no explican dinero de más).
    */
-  async valorFaltantesInventario(sesionId: number): Promise<{ valor: number; unidades: number; productos: number }> {
+  async valorFaltantesInventario(sesionId: number): Promise<{ valor: number; unidades: number; productos: number; estimados: number; sinDato: number }> {
     const db = await getDb();
-    if (!db) return { valor: 0, unidades: 0, productos: 0 };
+    if (!db) return { valor: 0, unidades: 0, productos: 0, estimados: 0, sinDato: 0 };
 
     const provs = rows(await db.execute(sql`
       SELECT conteos FROM inventario_proveedores WHERE sesionId = ${sesionId}
@@ -130,23 +130,42 @@ class DiferenciasCajaService {
         faltantes.set(id, (faltantes.get(id) ?? 0) + Math.abs(dif));
       }
     }
-    if (faltantes.size === 0) return { valor: 0, unidades: 0, productos: 0 };
+    if (faltantes.size === 0) return { valor: 0, unidades: 0, productos: 0, estimados: 0, sinDato: 0 };
 
-    // Costos desde el caché de productos (precio de costo por unidad)
+    // Costos desde el caché de productos. Si el precio de costo es 0 (nunca se
+    // registró una compra de ese producto), se ESTIMA como el precio de venta
+    // menos 20%, para que el faltante igual descuente algo razonable.
     const ids = Array.from(faltantes.keys());
     const costos = rows(await db.execute(sql`
-      SELECT articuloId, precioCostoUnid FROM productos_cache
+      SELECT articuloId, precioCostoUnid, precioUno FROM productos_cache
       WHERE articuloId IN (${sql.join(ids.map((i) => sql`${i}`), sql`, `)})
     `));
-    const costoPorId = new Map<number, number>();
-    for (const c of costos) costoPorId.set(Number(c.articuloId), num(c.precioCostoUnid));
+    const costoPorId = new Map<number, { costo: number; estimado: boolean }>();
+    for (const c of costos) {
+      const real = num(c.precioCostoUnid);
+      if (real > 0) {
+        costoPorId.set(Number(c.articuloId), { costo: real, estimado: false });
+      } else {
+        const venta = num(c.precioUno);
+        costoPorId.set(Number(c.articuloId), { costo: venta * 0.8, estimado: venta > 0 });
+      }
+    }
 
-    let valor = 0, unidades = 0;
+    let valor = 0, unidades = 0, estimados = 0, sinDato = 0;
     for (const [id, unids] of Array.from(faltantes.entries())) {
       unidades += unids;
-      valor += unids * (costoPorId.get(id) ?? 0);
+      const c = costoPorId.get(id);
+      if (!c || c.costo <= 0) { sinDato++; continue; }
+      if (c.estimado) estimados++;
+      valor += unids * c.costo;
     }
-    return { valor: Math.round(valor * 100) / 100, unidades, productos: faltantes.size };
+    return {
+      valor: Math.round(valor * 100) / 100,
+      unidades,
+      productos: faltantes.size,
+      estimados,   // productos cuyo costo se dedujo del precio de venta (−20%)
+      sinDato,     // productos sin costo ni precio de venta: no descuentan
+    };
   }
 
   /** Detalle de diferencias de una sucursal desde una fecha. */
