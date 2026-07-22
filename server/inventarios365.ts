@@ -837,14 +837,46 @@ class Inventarios365Service {
    * Endpoint: GET /almacen/selectAlmacen → { almacenes: [{id, nombre_almacen}] }
    */
   async listarAlmacenes(): Promise<AlmacenAPI[]> {
+    // Los almacenes casi no cambian: se cachean 10 min y TODOS los módulos que
+    // los piden reutilizan el mismo dato (antes cada llamada golpeaba 365).
+    const cacheKey = "almacenes-lista";
+    const cached = this.cacheInventario.get(cacheKey);
+    if (cached && cached.expira > Date.now()) return cached.data as any;
     try {
       const data = await this.get<{ almacenes: AlmacenAPI[] }>(
         "/almacen/selectAlmacen"
       );
-      return data?.almacenes || [];
+      const lista = data?.almacenes || [];
+      if (lista.length > 0) {
+        this.cacheInventario.set(cacheKey, { data: lista as any, expira: Date.now() + 10 * 60 * 1000 });
+      }
+      return lista;
     } catch (error) {
       console.error("[Inventarios365] Error listando almacenes:", error);
-      return [];
+      // Si falla la red pero hay copia previa, usarla: mejor un dato de hace un
+      // rato que quedarse sin almacenes y bloquear una transferencia.
+      return (cached?.data as any) || [];
+    }
+  }
+
+  /**
+   * Stock actual (sin caché) de ciertos productos en un almacén. Se usa para
+   * VERIFICAR que un traspaso realmente movió existencias.
+   */
+  private async stockDeArticulos(almacenId: number, nombres: string[]): Promise<Map<string, number> | null> {
+    try {
+      const { obtenerStockAlmacen } = await import("./stock-cache");
+      const r = await obtenerStockAlmacen(almacenId, { ttlSeg: 0, fallbackCache: false });
+      const buscados = new Set(nombres.map((n) => String(n).toLowerCase().trim()));
+      const m = new Map<string, number>();
+      for (const p of (r.lista || []) as any[]) {
+        const key = String(p.nombre || "").toLowerCase().trim();
+        if (buscados.has(key)) m.set(key, Number(p.stock) || 0);
+      }
+      return m;
+    } catch (e: any) {
+      console.warn("[Inventarios365] No se pudo leer stock para verificar traspaso:", e?.message);
+      return null;
     }
   }
 
@@ -1776,6 +1808,10 @@ class Inventarios365Service {
         };
       }
 
+      // Foto del stock del DESTINO antes de traspasar, para verificar después.
+      const nombresArt = arrayDetalle.map((d: any) => String(d.articulo));
+      const stockAntes = await this.stockDeArticulos(almacenDestino.id, nombresArt);
+
       const respData: any = await this.post("/traspasoproducto/registrar", {
         idalmacen_origen: almacenOrigen.id,
         idalmacen_destino: almacenDestino.id,
@@ -1798,11 +1834,43 @@ class Inventarios365Service {
         return { success: false, message: respData?.message || respData?.mensaje || "365 rechazó el traspaso" };
       }
 
+      // VERIFICACIÓN EN VIVO: 365 puede responder sin error y aun así NO aplicar el
+      // traspaso (pasó: respondió "registrada" y el stock nunca se movió). Se
+      // comprueba que el stock del destino haya subido; si no subió, se reporta
+      // fallo para que la transferencia quede PENDIENTE y se pueda reintentar,
+      // en vez de darla por hecha.
+      let avisoVerificacion = "";
+      if (stockAntes) {
+        const stockDespues = await this.stockDeArticulos(almacenDestino.id, nombresArt);
+        if (stockDespues) {
+          let subio = 0;
+          for (const d of arrayDetalle as any[]) {
+            const k = String(d.articulo).toLowerCase().trim();
+            const antes = stockAntes.get(k);
+            const despues = stockDespues.get(k);
+            if (antes !== undefined && despues !== undefined && despues > antes) subio++;
+          }
+          if (subio === 0) {
+            return {
+              success: false,
+              message: `365 aceptó el traspaso pero el stock del destino NO cambió (verificado en vivo). La transferencia queda pendiente: revisa en 365 si el traspaso requiere confirmación manual.`,
+            };
+          }
+          if (subio < arrayDetalle.length) {
+            avisoVerificacion = ` ⚠ Verificado: solo ${subio} de ${arrayDetalle.length} productos subieron de stock en el destino.`;
+          } else {
+            avisoVerificacion = " ✓ Verificado: el stock del destino subió.";
+          }
+        } else {
+          avisoVerificacion = " (no se pudo verificar el stock después)";
+        }
+      }
+
       return {
         success: true,
-        message: omitidos.length === 0
+        message: (omitidos.length === 0
           ? `Transferencia registrada en 365 (${arrayDetalle.length} productos).`
-          : `Transferencia registrada en 365 con ${arrayDetalle.length} productos. ⚠ OMITIDOS (no encontrados en 365): ${omitidos.join(", ")} — transfiérelos manualmente o corrige el nombre.`,
+          : `Transferencia registrada en 365 con ${arrayDetalle.length} productos. ⚠ OMITIDOS (no encontrados en 365): ${omitidos.join(", ")} — transfiérelos manualmente o corrige el nombre.`) + avisoVerificacion,
       };
     } catch (error: any) {
       console.error(
