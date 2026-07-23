@@ -16,7 +16,12 @@
 
 // Extrae el contenido de <tag>...</tag> (primer match) dentro de un bloque.
 function tag(xml: string, nombre: string): string | null {
-  const m = xml.match(new RegExp(`<${nombre}[^>]*>([\\s\\S]*?)</${nombre}>`));
+  // El nombre de la etiqueta debe terminar exactamente ahí: o cierra con ">" o
+  // sigue un espacio (atributos). Antes se usaba `<nombre[^>]*>`, que hacía que
+  // "codigoProducto" enganchara "<codigoProductoSin>" y capturara basura entre
+  // ambas etiquetas. Afectaba a todo nombre que fuera prefijo de otro
+  // (codigoProducto/codigoProductoSin, cuf/cufd, montoTotal/montoTotalSujetoIva).
+  const m = xml.match(new RegExp(`<${nombre}(?:\\s[^>]*)?>([\\s\\S]*?)</${nombre}\\s*>`));
   return m ? decodeXml(m[1].trim()) : null;
 }
 function tagNum(xml: string, nombre: string): number {
@@ -38,7 +43,10 @@ export interface FacturaXmlItem {
   subtotal: number;        // subtotal de la línea (con descuento)
   descuento: number;       // descuento de la línea
   expiryDate: string | null;
-  codigoProducto: string | null; // código del proveedor (útil para emparejar)
+  codigoProducto: string | null;      // código del proveedor (útil para emparejar)
+  codigoProductoSin: string | null;   // código del producto según el SIN
+  precioUnitario: number;             // precio de lista, ANTES del descuento
+  unidadMedida: string | null;        // código de unidad de medida del SIN
 }
 
 export interface FacturaXmlResult {
@@ -52,6 +60,15 @@ export interface FacturaXmlResult {
   montoTotal: number;
   descuentoAdicional: number;          // descuento a nivel factura (si hay)
   descuentoTotalLineas: number;        // suma de descuentos por producto
+  montoTotalSujetoIva: number;         // base imponible
+  // A quién está dirigida la factura: importante ahora que entran por correo,
+  // para detectar una factura que no es de la farmacia.
+  razonSocialCliente: string | null;
+  nitCliente: string | null;
+  // Datos de contacto del proveedor (útiles para su ficha)
+  direccionEmisor: string | null;
+  municipioEmisor: string | null;
+  telefonoEmisor: string | null;
   // Detalle
   items: FacturaXmlItem[];
 }
@@ -74,6 +91,12 @@ export function parsearFacturaXml(xml: string): FacturaXmlResult {
   const fechaEmision = tag(cab, "fechaEmision");
   const montoTotal = tagNum(cab, "montoTotal");
   const descuentoAdicional = tagNum(cab, "descuentoAdicional");
+  const montoTotalSujetoIva = tagNum(cab, "montoTotalSujetoIva");
+  const razonSocialCliente = tag(cab, "nombreRazonSocial");
+  const nitCliente = tag(cab, "numeroDocumento");
+  const direccionEmisor = tag(cab, "direccion");
+  const municipioEmisor = tag(cab, "municipio");
+  const telefonoEmisor = tag(cab, "telefono");
 
   // Detalle: todos los bloques <detalle>...</detalle>
   const items: FacturaXmlItem[] = [];
@@ -88,6 +111,8 @@ export function parsearFacturaXml(xml: string): FacturaXmlResult {
     const descuento = tagNum(d, "montoDescuento");
     const subTotal = tagNum(d, "subTotal");
     const codigoProducto = tag(d, "codigoProducto");
+    const codigoProductoSin = tag(d, "codigoProductoSin");
+    const unidadMedida = tag(d, "unidadMedida");
 
     descuentoTotalLineas += descuento;
 
@@ -105,6 +130,9 @@ export function parsearFacturaXml(xml: string): FacturaXmlResult {
       descuento: Number(descuento.toFixed(2)),
       expiryDate: null, // el XML del SIN no incluye vencimiento por línea
       codigoProducto,
+      codigoProductoSin,
+      precioUnitario: Number(precioUnitario.toFixed(4)),
+      unidadMedida,
     });
   }
 
@@ -118,6 +146,12 @@ export function parsearFacturaXml(xml: string): FacturaXmlResult {
     montoTotal,
     descuentoAdicional,
     descuentoTotalLineas: Number(descuentoTotalLineas.toFixed(2)),
+    montoTotalSujetoIva,
+    razonSocialCliente,
+    nitCliente,
+    direccionEmisor,
+    municipioEmisor,
+    telefonoEmisor,
     items,
   };
 }
