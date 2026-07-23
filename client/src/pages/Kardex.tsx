@@ -209,9 +209,6 @@ export default function Kardex() {
                   className={`px-2.5 py-1 rounded-full border text-xs transition ${
                     sucursalFiltro === s.sucursal ? "bg-primary text-primary-foreground border-primary font-semibold" : "hover:border-primary/50"}`}>
                   {s.sucursal}
-                  <span className={`ml-1 tabular-nums ${sucursalFiltro === s.sucursal ? "" : "text-muted-foreground"}`}>
-                    {s.stockActual ?? s.saldo}
-                  </span>
                 </button>
               ))}
             </div>
@@ -231,15 +228,32 @@ export default function Kardex() {
                   <div className="min-w-0">
                     <p className="font-semibold text-sm truncate">{kardex.data.producto}</p>
                     <p className="text-xs text-muted-foreground">
+                      {sucursalFiltro ? `${sucursalFiltro} — ` : ""}
                       {kardex.data.totalMovimientos} movimientos — entradas {kardex.data.entradas} — salidas {kardex.data.salidas}
                     </p>
                   </div>
-                  <div className="ml-auto text-right shrink-0">
-                    <p className="text-lg font-black tabular-nums">{kardex.data.saldoCalculado}</p>
-                    <p className="text-[10px] text-muted-foreground">
-                      {sucursalFiltro ? `saldo en ${sucursalFiltro}` : "saldo total"}
-                    </p>
-                  </div>
+                  {/* Saldo ACTUAL: lo que hay hoy según 365. Si hay una sucursal
+                      seleccionada muestra la de esa sucursal; si no, el total. */}
+                  {(() => {
+                    const suc = sucursalFiltro
+                      ? kardex.data.porSucursal?.find((x: any) => x.sucursal === sucursalFiltro)
+                      : null;
+                    const actual = sucursalFiltro
+                      ? suc?.stockActual
+                      : kardex.data.stockActualTotal;
+                    const libro = sucursalFiltro ? (suc?.saldo ?? 0) : kardex.data.saldoTotalTodasSucursales;
+                    return (
+                      <div className="ml-auto text-right shrink-0">
+                        <p className="text-2xl font-black tabular-nums leading-none">
+                          {actual ?? "—"}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground mt-0.5">
+                          stock actual{sucursalFiltro ? ` · ${sucursalFiltro}` : " · todas"}
+                        </p>
+                        <p className="text-[10px] text-muted-foreground">libro: {libro}</p>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* Saldo por sucursal: desglose desplegable, para ver dónde está
