@@ -68,6 +68,23 @@ async function guardarVenta(db: any, sql: any, venta: any): Promise<boolean> {
          VALUES (${ventaId}, ${d.articulo || "—"}, ${Number(d.cantidad) || 0}, ${Number(d.precio) || 0}, ${Number(d.descuento) || 0}, ${Number(d.subtotal) || 0}, ${fecha}, ${venta.nombre_sucursal ?? null})
       `);
     }
+    // KARDEX: cada línea vendida es una SALIDA de stock. El vendedor queda
+    // registrado para la auditoría (quién movió qué y cuándo).
+    try {
+      const { kardex } = await import("./kardex");
+      await kardex.registrar(detalles.map((d: any) => ({
+        fecha: venta.fecha_hora || fecha,
+        articuloNombre: d.articulo || "—",
+        sucursal: venta.nombre_sucursal ?? null,
+        tipo: "venta" as const,
+        cantidad: -(Number(d.cantidad) || 0),
+        costoUnitario: Number(d.precio) || null,
+        usuario: venta.usuario ?? null,
+        referenciaTipo: "venta",
+        referenciaId: ventaId,
+        detalle: `Comprobante ${venta.num_comprobante ?? ventaId}`,
+      })));
+    } catch { /* el kardex nunca debe tumbar la sincronización */ }
   } catch (e) {
     console.warn(`[SyncVentas] Error en detalle de venta ${ventaId}:`, e);
   }

@@ -18,6 +18,7 @@ import NuevaTransferencia from "./pages/NuevaTransferencia";
 import Tareas from "./pages/Tareas";
 import Historial from "./pages/Historial";
 import Inventario from "./pages/Inventario";
+import Kardex from "./pages/Kardex";
 import Asistencia from "./pages/Asistencia";
 import Reportes from "./pages/Reportes";
 import Gastos from "./pages/Gastos";
@@ -96,6 +97,7 @@ function Router() {
           <Route path="/" component={Consulta} />
           <Route path="/asistente" component={Asistente} />
           <Route path="/inventario" component={Inventario} />
+          <Route path="/kardex" component={Kardex} />
           <Route path="/transferencias" component={Transferencias} />
           <Route path="/transferencias/nueva" component={NuevaTransferencia} />
           <Route path="/contingencia" component={Contingencia} />
@@ -158,6 +160,7 @@ function Router() {
         <Route path="/tareas" component={Tareas} />
         <Route path="/historial" component={Historial} />
         <Route path="/inventario" component={Inventario} />
+          <Route path="/kardex" component={Kardex} />
         <Route path="/fotos" component={FotosProductos} />
         <Route path="/reservas" component={Reservas} />
         <Route path="/asistencia" component={Asistencia} />

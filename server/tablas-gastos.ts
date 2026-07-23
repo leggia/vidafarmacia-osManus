@@ -110,6 +110,28 @@ export async function crearTablasGastos(): Promise<void> {
     "ALTER TABLE bandeja_facturas ADD COLUMN nitCliente VARCHAR(30)",
     "ALTER TABLE bandeja_facturas ADD COLUMN ajena INT NOT NULL DEFAULT 0",
     "ALTER TABLE bandeja_facturas ADD COLUMN servicioDetectado VARCHAR(60)",
+    // KARDEX: libro append-only de movimientos de stock
+    `CREATE TABLE IF NOT EXISTS movimientos_stock (
+      id INT AUTO_INCREMENT PRIMARY KEY,
+      fecha TIMESTAMP NOT NULL,
+      articuloNombre VARCHAR(500) NOT NULL,
+      articuloClave VARCHAR(255) NOT NULL,
+      articuloId INT,
+      almacenId INT,
+      sucursal VARCHAR(150),
+      tipo VARCHAR(30) NOT NULL,
+      cantidad DECIMAL(14,2) NOT NULL,
+      costoUnitario DECIMAL(12,4),
+      usuario VARCHAR(150),
+      referenciaTipo VARCHAR(30),
+      referenciaId VARCHAR(60),
+      detalle VARCHAR(300),
+      creadoEn TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+    )`,
+    "CREATE INDEX idx_mov_clave_fecha ON movimientos_stock (articuloClave, fecha)",
+    "CREATE INDEX idx_mov_fecha ON movimientos_stock (fecha)",
+    "CREATE INDEX idx_mov_usuario ON movimientos_stock (usuario)",
+    "ALTER TABLE movimientos_stock ADD UNIQUE INDEX uniq_mov_origen (referenciaTipo, referenciaId, articuloClave, tipo)",
   ];
   for (const m of migraciones) {
     try { await db.execute(sql.raw(m)); } catch { /* ya existe */ }

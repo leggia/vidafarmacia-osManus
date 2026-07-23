@@ -402,6 +402,36 @@ export async function confirmTransfer(transferId: number, userId: number) {
   await db.delete(taskQueue)
     .where(and(eq(taskQueue.referenceId, transferId), eq(taskQueue.type, "transfer_sync")));
 
+  // KARDEX: una transferencia son DOS asientos por producto — sale del origen y
+  // entra al destino. Así el kardex de cada sucursal cuadra por separado.
+  try {
+    const { kardex } = await import("./kardex");
+    const usuarioRow = await db.select().from(users).where(eq(users.id, userId)).limit(1);
+    const usuario = usuarioRow[0]?.name || usuarioRow[0]?.email || `usuario ${userId}`;
+    const origenNombre = origen?.name || "origen";
+    const destinoNombre = destino?.name || "destino";
+    const asientos: any[] = [];
+    for (const it of its) {
+      const cant = Number(it.quantity) || 0;
+      if (cant <= 0) continue;
+      asientos.push({
+        fecha: new Date(), articuloNombre: it.productName, sucursal: origenNombre,
+        tipo: "transferencia_salida", cantidad: -cant, usuario,
+        referenciaTipo: "transferencia", referenciaId: transferId,
+        detalle: `Hacia ${destinoNombre}`,
+      });
+      asientos.push({
+        fecha: new Date(), articuloNombre: it.productName, sucursal: destinoNombre,
+        tipo: "transferencia_entrada", cantidad: cant, usuario,
+        referenciaTipo: "transferencia", referenciaId: transferId,
+        detalle: `Desde ${origenNombre}`,
+      });
+    }
+    await kardex.registrar(asientos);
+  } catch (e: any) {
+    console.warn("[Kardex] No se registró la transferencia:", e?.message);
+  }
+
   return { success: true, message: resultado365.message };
 }
 

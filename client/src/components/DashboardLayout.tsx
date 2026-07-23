@@ -35,7 +35,7 @@ import {
   Users,
   Plus,
   Sparkles,
-  HeartHandshake, Megaphone, Landmark, Wallet2, LineChart, ShieldAlert, ShieldCheck, Pill, Contact , ClipboardList , Inbox , ScanLine } from "lucide-react";
+  HeartHandshake, Megaphone, Landmark, Wallet2, LineChart, ShieldAlert, ShieldCheck, Pill, Contact , ClipboardList , Inbox , ScanLine , BookOpen } from "lucide-react";
 import { CSSProperties, useEffect, useRef, useState } from "react";
 import { useLocation } from "wouter";
 import { DashboardLayoutSkeleton } from "./DashboardLayoutSkeleton";
@@ -50,6 +50,7 @@ const menuItems = [
   { icon: ScanLine, label: "Escanear", path: "/escanear", soloAdmin: true },
   { icon: ArrowLeftRight, label: "Transferencias", path: "/transferencias" },
   { icon: ClipboardCheck, label: "Inventario", path: "/inventario" },
+  { icon: BookOpen, label: "Kardex", path: "/kardex" },
   { icon: ShieldAlert, label: "Contingencia", path: "/contingencia" },
   { icon: ShieldCheck, label: "Controlados", path: "/dispensacion" },
   { icon: Pill, label: "Psicotrópicos", path: "/psicotropicos" },

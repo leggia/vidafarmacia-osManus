@@ -853,6 +853,23 @@ INSTRUCCIONES GENERALES:
               const { registrarPreciosCompra } = await import("./inteligencia-compras");
               await registrarPreciosCompra(itemsLimpios as any[], input.supplier || "");
             } catch { /* no bloquea */ }
+            // KARDEX: cada producto comprado ENTRA al almacén
+            try {
+              const { kardex } = await import("./kardex");
+              await kardex.registrar((itemsLimpios as any[]).map((it) => ({
+                fecha: new Date(),
+                articuloNombre: it.productName,
+                articuloId: it.articuloId ?? null,
+                sucursal: input.almacenNombre ?? null,
+                tipo: "compra" as const,
+                cantidad: Number(it.quantity) || 0,
+                costoUnitario: Number(it.unitCost) || null,
+                usuario: ctx.user?.name || ctx.user?.email || null,
+                referenciaTipo: "compra",
+                referenciaId: purchaseId,
+                detalle: `${input.supplier || "Proveedor"} · factura ${input.receiptNumber || "s/n"}`,
+              })));
+            } catch (e: any) { console.warn("[Kardex] compra:", e?.message); }
             // APRENDER los descuentos de este proveedor: con cada compra el sistema
             // afina qué descuento suele dar en cada producto, para avisar cuando
             // una factura venga con menos de lo habitual.
@@ -1988,7 +2005,7 @@ Devuelve JSON:
         inventarioId: z.number().nullable().optional(),
       })),
     }))
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const { getDb } = await import("./db");
       const { inventarioProveedores, inventarioSesiones } = await import("../drizzle/schema");
       const { eq, and } = await import("drizzle-orm");
@@ -2066,6 +2083,30 @@ Devuelve JSON:
                 fechaVencimiento: c.fechaVencimiento || null,
               })),
           });
+          // KARDEX: los ajustes de inventario son el movimiento MÁS sensible para
+          // auditar (cambian stock sin venta ni compra). Se registra la diferencia
+          // de cada producto, con quién la hizo.
+          if (ajusteResultado?.ok) {
+            try {
+              const { kardex } = await import("./kardex");
+              await kardex.registrar(input.conteos
+                .filter((c) => c.diferencia !== 0)
+                .map((c) => ({
+                  fecha: new Date(),
+                  articuloNombre: c.nombre,
+                  articuloId: c.articuloId ?? null,
+                  almacenId: sesion.almacenId,
+                  sucursal: sesion.almacenNombre ?? null,
+                  tipo: "ajuste_inventario" as const,
+                  cantidad: Number(c.diferencia) || 0, // + sobró / − faltó
+                  usuario: ctx.user?.name || ctx.user?.email || null,
+                  referenciaTipo: "inventario",
+                  referenciaId: `${input.sesionId}-${input.proveedorNombre}`,
+                  detalle: `${input.proveedorNombre} · sistema ${c.stockSistema} → físico ${c.stockFisico}`,
+                })));
+            } catch (e: any) { console.warn("[Kardex] ajuste:", e?.message); }
+          }
+
           // PASO 3: dejar registrado el resultado REAL del ajuste (no solo un
           // toast pasajero) — así al reabrir la sesión se ve claramente si el
           // stock de 365 quedó al día o si hace falta reintentar.
@@ -2835,6 +2876,43 @@ const ventasRouter = router({
   // Diagnóstico temporal: ver qué gastos y sucursales hay (para depurar el reporte)
   // Meses que tienen ventas registradas, para el selector de reportes.
   // Devuelve el más reciente primero, con su total para dar contexto.
+  // ─── KARDEX: libro de movimientos de stock ────────────────────────────────
+  kardexProducto: protectedProcedure
+    .input(z.object({
+      producto: z.string().min(2),
+      desde: z.string().optional(), hasta: z.string().optional(),
+      sucursal: z.string().optional(), limite: z.number().optional(),
+    }))
+    .query(async ({ input }) => {
+      const { kardex } = await import("./kardex");
+      return kardex.porProducto(input.producto, input);
+    }),
+
+  kardexBuscar: protectedProcedure
+    .input(z.object({ texto: z.string() }))
+    .query(async ({ input }) => {
+      const { kardex } = await import("./kardex");
+      return kardex.buscarProductos(input.texto);
+    }),
+
+  // Auditoría: quién movió qué y cuándo (información sensible → solo admin)
+  kardexAuditoria: adminProcedure
+    .input(z.object({
+      desde: z.string().optional(), hasta: z.string().optional(),
+      usuario: z.string().optional(), tipo: z.string().optional(),
+      sucursal: z.string().optional(), producto: z.string().optional(),
+      limite: z.number().optional(),
+    }))
+    .query(async ({ input }) => {
+      const { kardex } = await import("./kardex");
+      return kardex.auditoria(input);
+    }),
+
+  kardexEstado: protectedProcedure.query(async () => {
+    const { kardex } = await import("./kardex");
+    return kardex.estado();
+  }),
+
   mesesDisponibles: protectedProcedure.query(async () => {
     const { getDb } = await import("./db");
     const { sql } = await import("drizzle-orm");

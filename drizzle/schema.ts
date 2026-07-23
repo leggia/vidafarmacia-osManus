@@ -1,4 +1,4 @@
-import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, decimal, json, index } from "drizzle-orm/mysql-core";
+import { int, mysqlEnum, mysqlTable, text, timestamp, varchar, decimal, json, index, unique } from "drizzle-orm/mysql-core";
 
 // ─── Users ───────────────────────────────────────────────────────────────────
 export const users = mysqlTable("users", {
@@ -172,6 +172,43 @@ export const operationHistory = mysqlTable("operation_history", {
 
 export type OperationHistoryItem = typeof operationHistory.$inferSelect;
 export type InsertOperationHistoryItem = typeof operationHistory.$inferInsert;
+
+// ─── KARDEX: libro de movimientos de stock ───────────────────────────────────
+// Libro APPEND-ONLY: cada movimiento se registra y NUNCA se edita ni se borra.
+// Si algo sale mal se agrega un movimiento correctivo, igual que en contabilidad.
+// De aquí salen el kardex por producto, la auditoría (quién movió qué y cuándo)
+// y la reconciliación contra el stock real de 365.
+export const movimientosStock = mysqlTable("movimientos_stock", {
+  id: int("id").autoincrement().primaryKey(),
+  fecha: timestamp("fecha").notNull(),              // cuándo ocurrió el movimiento
+  articuloNombre: varchar("articuloNombre", { length: 500 }).notNull(),
+  // Nombre normalizado (sin tildes/dobles espacios, en mayúsculas): es la llave
+  // por la que se agrupa la historia de un producto.
+  articuloClave: varchar("articuloClave", { length: 255 }).notNull(),
+  articuloId: int("articuloId"),                    // código de 365 si se conoce
+  almacenId: int("almacenId"),
+  sucursal: varchar("sucursal", { length: 150 }),
+  // venta · devolucion · compra · transferencia_entrada · transferencia_salida ·
+  // ajuste_inventario · anulacion_venta
+  tipo: varchar("tipo", { length: 30 }).notNull(),
+  cantidad: decimal("cantidad", { precision: 14, scale: 2 }).notNull(), // + entra, − sale
+  costoUnitario: decimal("costoUnitario", { precision: 12, scale: 4 }),
+  // Quién lo hizo: el dato central para la auditoría
+  usuario: varchar("usuario", { length: 150 }),
+  // Trazabilidad: de qué documento salió (venta 69112, compra 40, transferencia 4…)
+  referenciaTipo: varchar("referenciaTipo", { length: 30 }),
+  referenciaId: varchar("referenciaId", { length: 60 }),
+  detalle: varchar("detalle", { length: 300 }),
+  creadoEn: timestamp("creadoEn").defaultNow().notNull(),
+}, (t) => ({
+  idxClaveFecha: index("idx_mov_clave_fecha").on(t.articuloClave, t.fecha),
+  idxFecha: index("idx_mov_fecha").on(t.fecha),
+  idxUsuario: index("idx_mov_usuario").on(t.usuario),
+  // Evita duplicar el mismo movimiento si una sincronización se repite
+  uniqOrigen: unique("uniq_mov_origen").on(t.referenciaTipo, t.referenciaId, t.articuloClave, t.tipo),
+}));
+
+export type MovimientoStock = typeof movimientosStock.$inferSelect;
 
 // ─── Diferencias de caja (faltantes/sobrantes por cierre) ────────────────────
 // Cada cierre de caja en 365 reporta saldoFaltante/saldoSobrante: la diferencia
