@@ -69,6 +69,11 @@ export function claveArticulo(nombre: string): string {
  * OJO con el orden: "Cobol" se evalúa ANTES que "Matriz", porque "Casa Matriz
  * Cobol" contiene ambas palabras y es la sucursal Cobol, no la Casa Matriz.
  */
+/** Nombre canónico de cada almacén de 365. */
+export const NOMBRE_ALMACEN: Record<number, string> = {
+  1: "Casa Matriz", 2: "Petrolera", 3: "Lanza", 4: "Cobol",
+};
+
 export function resolverSucursal(nombre?: string | null): { almacenId: number | null; sucursal: string | null } {
   const n = String(nombre || "").toLowerCase();
   if (!n.trim()) return { almacenId: null, sucursal: null };
@@ -220,7 +225,48 @@ class KardexService {
       salidas: Math.round((Number(s.salidas) || 0) * 100) / 100,
       movimientos: Number(s.movimientos) || 0,
       ultimoMovimiento: s.ultimoMovimiento,
-    }));
+    })) as any[];
+
+    // STOCK ACTUAL REAL de cada sucursal (lo que dice 365 ahora mismo). El saldo
+    // del libro solo cuenta desde que el kardex empezó; el stock actual es el dato
+    // de control. Se muestran juntos para poder compararlos de un vistazo.
+    try {
+      const { obtenerStockAlmacen } = await import("./stock-cache");
+      const stockPorAlmacen = new Map<number, number>();
+      await Promise.all([1, 2, 3, 4].map(async (idAlm) => {
+        try {
+          // Caché de 5 min: al navegar el kardex esto se pide seguido
+          const r = await obtenerStockAlmacen(idAlm, { ttlSeg: 300, fallbackCache: true });
+          for (const p of (r.lista || []) as any[]) {
+            if (claveArticulo(p.nombre) === clave) {
+              stockPorAlmacen.set(idAlm, Number(p.stock) || 0);
+              break;
+            }
+          }
+        } catch { /* un almacén que falle no rompe el resto */ }
+      }));
+      for (const s of porSucursal) {
+        if (s.almacenId != null && stockPorAlmacen.has(s.almacenId)) {
+          s.stockActual = stockPorAlmacen.get(s.almacenId);
+          s.diferencia = Math.round(((s.stockActual ?? 0) - s.saldo) * 100) / 100;
+        }
+      }
+      // Sucursales con stock pero SIN movimientos en el libro: deben verse igual,
+      // si no parecería que ahí no hay producto.
+      for (const [idAlm, stock] of Array.from(stockPorAlmacen.entries())) {
+        if (!porSucursal.some((s: any) => s.almacenId === idAlm)) {
+          porSucursal.push({
+            sucursal: NOMBRE_ALMACEN[idAlm] ?? `Almacén ${idAlm}`,
+            almacenId: idAlm, saldo: 0, entradas: 0, salidas: 0,
+            movimientos: 0, ultimoMovimiento: null,
+            stockActual: stock, diferencia: stock,
+          });
+        }
+      }
+      porSucursal.sort((a: any, b: any) => (b.stockActual ?? b.saldo) - (a.stockActual ?? a.saldo));
+    } catch (e: any) {
+      console.warn("[Kardex] No se pudo leer el stock actual:", e?.message);
+    }
 
     return {
       producto: movs[0]?.articuloNombre || nombre,
@@ -236,6 +282,9 @@ class KardexService {
       saldoTotalTodasSucursales: Math.round(
         porSucursal.reduce((t: number, s: any) => t + s.saldo, 0) * 100,
       ) / 100,
+      stockActualTotal: porSucursal.some((s: any) => s.stockActual != null)
+        ? Math.round(porSucursal.reduce((t: number, s: any) => t + (s.stockActual ?? 0), 0) * 100) / 100
+        : null,
     };
   }
 
@@ -544,6 +593,47 @@ class KardexService {
       diferencias: diferencias.slice(0, limite),
       nota: "El saldo del libro solo cuadra con 365 si el historial del producto está completo desde el inicio. Un producto con movimientos anteriores al libro mostrará diferencia.",
     };
+  }
+
+  /**
+   * CONTROL DE INTEGRIDAD: ¿hay ventas, compras o transferencias registradas en
+   * el sistema que NO tengan su asiento en el libro? Es el chequeo que delata
+   * casos como el de Refrianex (una venta que existía en los reportes pero no en
+   * el kardex). Devuelve cuántas faltan de cada fuente.
+   */
+  async pendientes() {
+    const db = await getDb();
+    if (!db) return { ventas: 0, compras: 0, transferencias: 0, ajustes: 0, total: 0 };
+    const contar = async (q: any) => {
+      try { return Number(rows(await db.execute(q))[0]?.n) || 0; } catch { return 0; }
+    };
+    const ventas = await contar(sql`
+      SELECT COUNT(DISTINCT v.id) AS n FROM ventas v
+      WHERE CAST(v.estado AS CHAR) = '1'
+        AND EXISTS (SELECT 1 FROM ventas_detalle d WHERE d.ventaId = v.id)
+        AND NOT EXISTS (SELECT 1 FROM movimientos_stock m
+                        WHERE m.referenciaTipo = 'venta' AND m.referenciaId = CAST(v.id AS CHAR))
+    `);
+    const compras = await contar(sql`
+      SELECT COUNT(*) AS n FROM purchases p
+      WHERE EXISTS (SELECT 1 FROM purchase_items i WHERE i.purchaseId = p.id)
+        AND NOT EXISTS (SELECT 1 FROM movimientos_stock m
+                        WHERE m.referenciaTipo = 'compra' AND m.referenciaId = CAST(p.id AS CHAR))
+    `);
+    const transferencias = await contar(sql`
+      SELECT COUNT(*) AS n FROM transfers t
+      WHERE t.status = 'completed'
+        AND NOT EXISTS (SELECT 1 FROM movimientos_stock m
+                        WHERE m.referenciaTipo = 'transferencia' AND m.referenciaId = CAST(t.id AS CHAR))
+    `);
+    const ajustes = await contar(sql`
+      SELECT COUNT(*) AS n FROM inventario_proveedores ip
+      WHERE ip.estado = 'completado' AND ip.conteos IS NOT NULL
+        AND NOT EXISTS (SELECT 1 FROM movimientos_stock m
+                        WHERE m.referenciaTipo = 'inventario'
+                          AND m.referenciaId = CONCAT(ip.sesionId, '-', ip.proveedorNombre))
+    `);
+    return { ventas, compras, transferencias, ajustes, total: ventas + compras + transferencias + ajustes };
   }
 
   /** Cuántos movimientos hay registrados (para saber si el libro ya tiene datos). */

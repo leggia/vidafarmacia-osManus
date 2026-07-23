@@ -2926,7 +2926,8 @@ const ventasRouter = router({
 
   kardexEstado: protectedProcedure.query(async () => {
     const { kardex } = await import("./kardex");
-    return kardex.estado();
+    const [estado, pendientes] = await Promise.all([kardex.estado(), kardex.pendientes()]);
+    return { ...estado, pendientes };
   }),
 
   mesesDisponibles: protectedProcedure.query(async () => {

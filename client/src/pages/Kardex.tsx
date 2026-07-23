@@ -140,6 +140,20 @@ export default function Kardex() {
               Quedan más movimientos por traer: vuelve a tocar "Importar histórico" para continuar.
             </p>
           )}
+          {/* Control de integridad: avisa si hay operaciones sin asiento en el libro */}
+          {estado.data.pendientes && estado.data.pendientes.total > 0 && (
+            <p className="mt-1.5 text-amber-700">
+              ⚠ Faltan {estado.data.pendientes.total} operaciones por registrar en el libro
+              {estado.data.pendientes.ventas > 0 ? ` · ${estado.data.pendientes.ventas} ventas` : ""}
+              {estado.data.pendientes.compras > 0 ? ` · ${estado.data.pendientes.compras} compras` : ""}
+              {estado.data.pendientes.transferencias > 0 ? ` · ${estado.data.pendientes.transferencias} transferencias` : ""}
+              {estado.data.pendientes.ajustes > 0 ? ` · ${estado.data.pendientes.ajustes} ajustes` : ""}.
+              Toca "Importar histórico" para completarlas.
+            </p>
+          )}
+          {estado.data.total > 0 && estado.data.pendientes && estado.data.pendientes.total === 0 && (
+            <p className="mt-1.5 text-emerald-700">✓ El libro está completo: no falta ninguna operación por registrar.</p>
+          )}
         </div>
       )}
 
@@ -218,16 +232,28 @@ export default function Kardex() {
                         {sucursalFiltro && <Badge variant="outline" className="text-[10px] px-1.5 py-0">viendo {sucursalFiltro}</Badge>}
                       </span>
                       <span className="text-muted-foreground">
-                        {kardex.data.porSucursal.length} sucursales · total {kardex.data.saldoTotalTodasSucursales} {verSucursales ? "▲" : "▼"}
+                        {kardex.data.stockActualTotal != null
+                          ? <>stock actual <b className="text-foreground">{kardex.data.stockActualTotal}</b></>
+                          : <>total {kardex.data.saldoTotalTodasSucursales}</>} {verSucursales ? "▲" : "▼"}
                       </span>
                     </button>
                     {verSucursales && (
                       <div className="border-t divide-y">
                         {/* Ver todas */}
+                        <div className="flex items-center justify-between px-2.5 py-1 text-[10px] text-muted-foreground uppercase tracking-wider bg-muted/30">
+                          <span>Sucursal</span>
+                          <span className="flex gap-3">
+                            <span className="w-14 text-right">stock hoy</span>
+                            <span className="w-14 text-right">libro</span>
+                          </span>
+                        </div>
                         <button onClick={() => setSucursalFiltro("")}
                           className={`w-full flex items-center justify-between px-2.5 py-1.5 text-xs hover:bg-muted/40 ${!sucursalFiltro ? "bg-primary/5 font-medium" : ""}`}>
                           <span>Todas las sucursales</span>
-                          <span className="tabular-nums font-bold">{kardex.data.saldoTotalTodasSucursales}</span>
+                          <span className="flex gap-3 tabular-nums">
+                            <span className="w-14 text-right font-bold">{kardex.data.stockActualTotal ?? "—"}</span>
+                            <span className="w-14 text-right text-muted-foreground">{kardex.data.saldoTotalTodasSucursales}</span>
+                          </span>
                         </button>
                         {kardex.data.porSucursal.map((s: any, i: number) => (
                           <button key={i}
@@ -236,11 +262,18 @@ export default function Kardex() {
                             <span className="min-w-0 text-left">
                               <span className="block truncate">{s.sucursal}</span>
                               <span className="block text-[10px] text-muted-foreground">
-                                entró {s.entradas} · salió {s.salidas} · {s.movimientos} mov.
+                                {s.movimientos > 0
+                                  ? `entró ${s.entradas} · salió ${s.salidas} · ${s.movimientos} mov.`
+                                  : "sin movimientos en el libro"}
                               </span>
                             </span>
-                            <span className={`tabular-nums font-bold shrink-0 ${s.saldo < 0 ? "text-red-600" : ""}`}>
-                              {s.saldo}
+                            <span className="flex gap-3 tabular-nums shrink-0">
+                              <span className={`w-14 text-right font-bold ${(s.stockActual ?? 0) <= 0 ? "text-muted-foreground" : ""}`}>
+                                {s.stockActual ?? "—"}
+                              </span>
+                              <span className={`w-14 text-right text-muted-foreground ${s.saldo < 0 ? "text-red-600" : ""}`}>
+                                {s.saldo}
+                              </span>
                             </span>
                           </button>
                         ))}
