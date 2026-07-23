@@ -630,6 +630,15 @@ export default function NuevaTransferencia() {
                       </div>
                     </div>
                   ))}
+                  {/* Botón para seguir agregando SIN volver arriba (listas largas). */}
+                  <Button
+                    variant="outline"
+                    onClick={addEmptyItem}
+                    className="w-full gap-1 text-xs uppercase tracking-wider font-semibold border-dashed"
+                  >
+                    <Plus className="h-3.5 w-3.5" />
+                    Agregar producto
+                  </Button>
                   <div className="border-t-2 border-foreground pt-3 mt-3">
                     <p className="text-sm font-bold uppercase tracking-wider">
                       Total: {items.reduce((s, i) => s + i.quantity, 0)} unidades
