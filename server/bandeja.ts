@@ -44,6 +44,32 @@ function calcularEstado(items: ItemBandeja[]): {
   return { estado, emparejados, conVencimiento };
 }
 
+/**
+ * NIT de la farmacia, para detectar facturas que llegaron por error y NO son
+ * nuestras (importante ahora que entran solas desde el correo).
+ *
+ * Se toma de la variable de entorno NIT_FARMACIA si está configurada. Si no, se
+ * APRENDE solo: el NIT que más se repite entre las facturas ya recibidas es, con
+ * evidencia suficiente (3 o más), el de la farmacia. Mientras no haya evidencia,
+ * no se marca nada como ajeno para no dar falsas alarmas.
+ */
+async function nitDeLaFarmacia(db: any): Promise<string | null> {
+  const configurado = (process.env.NIT_FARMACIA || "").trim();
+  if (configurado) return configurado;
+  try {
+    const { sql } = await import("drizzle-orm");
+    const r: any = await db.execute(sql`
+      SELECT nitCliente, COUNT(*) AS n FROM bandeja_facturas
+      WHERE nitCliente IS NOT NULL AND nitCliente <> ''
+      GROUP BY nitCliente ORDER BY n DESC LIMIT 1
+    `);
+    const filas = Array.isArray(r) ? r[0] : r?.rows ?? r;
+    const top = filas?.[0];
+    if (top && Number(top.n) >= 3) return String(top.nitCliente);
+  } catch { /* la columna puede no existir todavía */ }
+  return null;
+}
+
 class BandejaService {
   /** Ingresa una factura XML parseada a la bandeja. Idempotente por CUF: si ya
    *  existe esa factura, no la duplica (devuelve la existente). */
@@ -70,9 +96,22 @@ class BandejaService {
     }));
     const { estado, emparejados, conVencimiento } = calcularEstado(items);
 
+    // ¿La factura viene a nombre de la farmacia? Si sabemos cuál es nuestro NIT y
+    // el de la factura es otro, se marca para revisarla (no se rechaza: puede ser
+    // un NIT nuevo o un error de tipeo del proveedor).
+    const nitNuestro = await nitDeLaFarmacia(db);
+    const nitFactura = (f.nitCliente || "").trim();
+    const esAjena = !!(nitNuestro && nitFactura && nitFactura !== nitNuestro);
+    if (esAjena) {
+      console.warn(`[Bandeja] Factura a nombre de otro NIT (${nitFactura}, esperado ${nitNuestro}): ${f.razonSocialCliente ?? "?"}`);
+    }
+
     const res = await db.insert(bandejaFacturas).values({
       nitEmisor: f.nitEmisor,
       proveedor: f.razonSocialEmisor,
+      razonSocialCliente: f.razonSocialCliente ?? null,
+      nitCliente: f.nitCliente ?? null,
+      ajena: esAjena ? 1 : 0,
       numeroFactura: f.numeroFactura,
       cuf: f.cuf,
       fechaEmision: f.fechaEmision,
@@ -151,6 +190,7 @@ class BandejaService {
     const db = await getDb();
     if (!db) throw new Error("Sin BD");
     const { estado, emparejados, conVencimiento } = calcularEstado(items);
+
     await db.update(bandejaFacturas).set({
       items,
       totalItems: items.length,

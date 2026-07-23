@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { esFacturaXml, parsearFacturaXml } from "./factura-xml";
+import { esFacturaXml, extraerPresentacion, extraerVencimiento, parsearFacturaXml } from "./factura-xml";
 
 // XML mínimo con la estructura real del SIN (2 productos).
 const XML = `<?xml version="1.0" encoding="UTF-8"?>
@@ -103,5 +103,31 @@ describe("factura-xml", () => {
   it("suma correctamente los descuentos de línea", () => {
     const f = parsearFacturaXml(XML);
     expect(f.descuentoTotalLineas).toBeCloseTo(13.4, 2);
+  });
+
+  it("lee el vencimiento cuando el proveedor lo escribe en la descripción", () => {
+    expect(extraerVencimiento("PARACETAMOL x 30 comp VENC: 12/2027")).toBe("2027-12-31");
+    expect(extraerVencimiento("AMOXICILINA VTO 31/12/2027")).toBe("2027-12-31");
+    expect(extraerVencimiento("IBUPROFENO F.V. 06/28")).toBe("2028-06-30");
+    expect(extraerVencimiento("OMEPRAZOL VENCE DIC-27")).toBe("2027-12-31");
+  });
+
+  it("no confunde contenidos ni cantidades con un vencimiento", () => {
+    expect(extraerVencimiento("VASELINA sólida x 12 g.")).toBeNull();
+    expect(extraerVencimiento("IBUFEN 200 mg suspensión 100 ml")).toBeNull();
+    expect(extraerVencimiento("JABON con estuche x 20 piezas")).toBeNull();
+    // Fecha demasiado antigua: no es un vencimiento vigente
+    expect(extraerVencimiento("PRODUCTO VENC 03/2019")).toBeNull();
+  });
+
+  it("extrae la presentación y las unidades por envase", () => {
+    expect(extraerPresentacion("SULFATO DE MAGNESIA 50 sobres")).toEqual({
+      presentacion: "50 sobres", unidadesPorEnvase: 50,
+    });
+    // La concentración (200 mg) no debe ganarle al contenido del envase (100 ml)
+    expect(extraerPresentacion("IBUFEN FUERTE 200 mg suspensió 100 ml").presentacion).toBe("100 ml");
+    // Envase compuesto: 25 sobres de 9 pastillas = 225 unidades
+    expect(extraerPresentacion("CALMATOS PLÚS 25 sbrs. x 9 pastillas").unidadesPorEnvase).toBe(225);
+    expect(extraerPresentacion("VASELINA sólida x 12 g.").presentacion).toBe("12 g");
   });
 });

@@ -8,7 +8,7 @@ import { trpc } from "@/lib/trpc";
 import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { Inbox, Upload, Loader2, Trash2, FileText, CheckCircle2 } from "lucide-react";
+import { Inbox, Upload, Loader2, Trash2, FileText, CheckCircle2, AlertTriangle } from "lucide-react";
 import { useLocation } from "wouter";
 import { toast } from "sonner";
 import { useRef, useState } from "react";
@@ -90,12 +90,14 @@ export default function Bandeja() {
           {facturas.map((f: any) => {
             const est = ESTADOS[f.estado] || ESTADOS.recibida;
             return (
-              <Card key={f.id} className="border-foreground/10 hover:border-foreground/20 transition-colors">
+              <Card key={f.id} data-ajena={f.ajena ? "1" : "0"} className="border-foreground/10 hover:border-foreground/20 transition-colors">
                 <CardContent className="py-4">
                   <div className="flex items-center justify-between gap-2">
                     <button className="flex items-center gap-4 text-left flex-1 min-w-0" onClick={() => setLocation(`/bandeja/${f.id}`)}>
-                      <div className="h-10 w-10 bg-foreground/5 rounded flex items-center justify-center shrink-0">
-                        <FileText className="h-5 w-5 text-foreground/60" />
+                      <div className={`h-10 w-10 rounded flex items-center justify-center shrink-0 ${f.ajena ? "bg-amber-100" : "bg-foreground/5"}`}>
+                        {f.ajena
+                          ? <AlertTriangle className="h-5 w-5 text-amber-600" />
+                          : <FileText className="h-5 w-5 text-foreground/60" />}
                       </div>
                       <div className="min-w-0">
                         <p className="font-semibold text-sm truncate">{f.proveedor || "Proveedor desconocido"}</p>
@@ -106,6 +108,11 @@ export default function Bandeja() {
                           {f.itemsEmparejados}/{f.totalItems} emparejados · {f.itemsConVencimiento}/{f.totalItems} con vencimiento
                           {f.origen === "correo" && " · llegó por correo"}
                         </p>
+                        {f.ajena && (
+                          <p className="text-[11px] text-amber-700 font-medium truncate">
+                            ⚠ A nombre de {f.razonSocialCliente || "otro NIT"} — revisa si es de la farmacia
+                          </p>
+                        )}
                       </div>
                     </button>
                     <div className="flex items-center gap-2 shrink-0">

@@ -105,6 +105,10 @@ export async function crearTablasGastos(): Promise<void> {
       registradoEn TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
     )`,
     "ALTER TABLE diferencias_caja ADD UNIQUE INDEX idx_difcaja_caja (cajaId)",
+    // Bandeja: a nombre de quién viene la factura (para avisar si es ajena)
+    "ALTER TABLE bandeja_facturas ADD COLUMN razonSocialCliente VARCHAR(255)",
+    "ALTER TABLE bandeja_facturas ADD COLUMN nitCliente VARCHAR(30)",
+    "ALTER TABLE bandeja_facturas ADD COLUMN ajena INT NOT NULL DEFAULT 0",
   ];
   for (const m of migraciones) {
     try { await db.execute(sql.raw(m)); } catch { /* ya existe */ }

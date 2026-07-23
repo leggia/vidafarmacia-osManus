@@ -205,6 +205,11 @@ export const bandejaFacturas = mysqlTable("bandeja_facturas", {
   // Cabecera fiscal (del XML, exacta)
   nitEmisor: varchar("nitEmisor", { length: 30 }),
   proveedor: varchar("proveedor", { length: 255 }),
+  // A nombre de quién viene la factura. Sirve para avisar si llegó una factura
+  // que NO es de la farmacia (ahora que entran solas por correo).
+  razonSocialCliente: varchar("razonSocialCliente", { length: 255 }),
+  nitCliente: varchar("nitCliente", { length: 30 }),
+  ajena: int("ajena").notNull().default(0), // 1 = no parece ser de la farmacia
   numeroFactura: varchar("numeroFactura", { length: 60 }),
   cuf: varchar("cuf", { length: 100 }),
   fechaEmision: varchar("fechaEmision", { length: 40 }),
