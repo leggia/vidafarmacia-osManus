@@ -204,9 +204,12 @@ export default function Kardex() {
               </button>
               {kardex.data.porSucursal.map((s: any, i: number) => (
                 <button key={i}
-                  onClick={() => setSucursalFiltro(s.sucursal === "(sin sucursal)" ? "" : s.sucursal)}
+                  onClick={() => setSucursalFiltro(s.sucursal)}
+                  title={s.etiquetas?.length ? `Movimientos sin almacén identificado: ${s.etiquetas.join(", ")}` : undefined}
                   className={`px-2.5 py-1 rounded-full border text-xs transition ${
-                    sucursalFiltro === s.sucursal ? "bg-primary text-primary-foreground border-primary font-semibold" : "hover:border-primary/50"}`}>
+                    sucursalFiltro === s.sucursal ? "bg-primary text-primary-foreground border-primary font-semibold"
+                      : s.sucursal === "Sin sucursal" ? "border-amber-300 text-amber-700 hover:border-amber-500"
+                      : "hover:border-primary/50"}`}>
                   {s.sucursal}
                 </button>
               ))}

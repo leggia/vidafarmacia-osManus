@@ -167,7 +167,12 @@ class KardexService {
     const filtros = [sql`articuloClave = ${clave}`];
     if (opts?.desde) filtros.push(sql`DATE(fecha) >= ${opts.desde}`);
     if (opts?.hasta) filtros.push(sql`DATE(fecha) <= ${opts.hasta}`);
-    if (opts?.sucursal) filtros.push(sql`sucursal LIKE ${"%" + opts.sucursal + "%"}`);
+    if (opts?.sucursal === "Sin sucursal") {
+      // Grupo de los movimientos que no se pudieron asignar a un almacén real
+      filtros.push(sql`almacenId IS NULL`);
+    } else if (opts?.sucursal) {
+      filtros.push(sql`sucursal LIKE ${"%" + opts.sucursal + "%"}`);
+    }
     let where = filtros[0];
     for (let i = 1; i < filtros.length; i++) where = sql`${where} AND ${filtros[i]}`;
 
@@ -267,6 +272,37 @@ class KardexService {
     } catch (e: any) {
       console.warn("[Kardex] No se pudo leer el stock actual:", e?.message);
     }
+
+    // CONSOLIDAR: la farmacia tiene exactamente 4 almacenes. Cualquier etiqueta
+    // que no sea una de esas cuatro (un movimiento sin sucursal, o un nombre que
+    // no se pudo identificar) se junta en un solo grupo "Sin sucursal", para que
+    // nunca aparezcan sucursales de más. Las cuatro siempre se muestran, aunque
+    // no tengan movimientos todavía.
+    const CANONICAS = [1, 2, 3, 4];
+    const consolidado: any[] = CANONICAS.map((idAlm) => {
+      const existente = porSucursal.find((x: any) => x.almacenId === idAlm);
+      return existente ?? {
+        sucursal: NOMBRE_ALMACEN[idAlm], almacenId: idAlm,
+        saldo: 0, entradas: 0, salidas: 0, movimientos: 0,
+        ultimoMovimiento: null, stockActual: null, diferencia: null,
+      };
+    });
+    const sueltos = porSucursal.filter((x: any) => !CANONICAS.includes(Number(x.almacenId)));
+    if (sueltos.length > 0) {
+      const sumar = (k: string) => sueltos.reduce((t: number, x: any) => t + (Number(x[k]) || 0), 0);
+      consolidado.push({
+        sucursal: "Sin sucursal", almacenId: null,
+        saldo: Math.round(sumar("saldo") * 100) / 100,
+        entradas: Math.round(sumar("entradas") * 100) / 100,
+        salidas: Math.round(sumar("salidas") * 100) / 100,
+        movimientos: sumar("movimientos"),
+        ultimoMovimiento: null, stockActual: null, diferencia: null,
+        // Qué etiquetas se juntaron aquí: útil para rastrear el origen
+        etiquetas: sueltos.map((x: any) => x.sucursal).filter(Boolean),
+      });
+    }
+    porSucursal.length = 0;
+    porSucursal.push(...consolidado);
 
     return {
       producto: movs[0]?.articuloNombre || nombre,

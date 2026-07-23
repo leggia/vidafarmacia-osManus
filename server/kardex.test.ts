@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { claveArticulo, resolverSucursal } from "./kardex";
+import { NOMBRE_ALMACEN, claveArticulo, resolverSucursal } from "./kardex";
 
 describe("kardex — clave del artículo", () => {
   it("agrupa el mismo producto escrito de formas distintas", () => {
@@ -87,5 +87,44 @@ describe("kardex — orden cronológico dentro del mismo día", () => {
     let saldo = 20;
     const saldos = movs.map((m) => (saldo += m.cantidad));
     expect(saldos).toEqual([17, 27, 25]);
+  });
+});
+
+describe("kardex — la farmacia tiene exactamente 4 almacenes", () => {
+  it("los cuatro almacenes reales están definidos", () => {
+    expect(Object.keys(NOMBRE_ALMACEN)).toHaveLength(4);
+    expect(NOMBRE_ALMACEN[1]).toBe("Casa Matriz");   // ALMACEN PRINCIPAL
+    expect(NOMBRE_ALMACEN[2]).toBe("Petrolera");
+    expect(NOMBRE_ALMACEN[3]).toBe("Lanza");
+    expect(NOMBRE_ALMACEN[4]).toBe("Cobol");         // Casa Matriz Cobol
+  });
+
+  it("consolida en 4 y agrupa lo no identificado en uno solo", () => {
+    // Réplica de la consolidación de porProducto()
+    const consolidar = (filas: any[]) => {
+      const CANON = [1, 2, 3, 4];
+      const out = CANON.map((id) => filas.find((f) => f.almacenId === id) ?? { sucursal: NOMBRE_ALMACEN[id], almacenId: id, saldo: 0 });
+      const sueltos = filas.filter((f) => !CANON.includes(Number(f.almacenId)));
+      if (sueltos.length > 0) {
+        out.push({ sucursal: "Sin sucursal", almacenId: null, saldo: sueltos.reduce((t, x) => t + x.saldo, 0) });
+      }
+      return out;
+    };
+    // Dos etiquetas huérfanas distintas no deben producir dos sucursales extra
+    const r = consolidar([
+      { sucursal: "Casa Matriz", almacenId: 1, saldo: 10 },
+      { sucursal: "Lanza", almacenId: 3, saldo: 5 },
+      { sucursal: "(sin sucursal)", almacenId: null, saldo: 2 },
+      { sucursal: "Deposito viejo", almacenId: null, saldo: 1 },
+    ]);
+    expect(r).toHaveLength(5);                      // 4 reales + 1 grupo
+    expect(r.filter((x) => x.almacenId !== null)).toHaveLength(4);
+    expect(r[r.length - 1].saldo).toBe(3);          // 2 + 1 juntos
+  });
+
+  it("las cuatro aparecen aunque no tengan movimientos", () => {
+    const CANON = [1, 2, 3, 4];
+    const out = CANON.map((id) => ({ sucursal: NOMBRE_ALMACEN[id], almacenId: id }));
+    expect(out.map((x) => x.sucursal)).toEqual(["Casa Matriz", "Petrolera", "Lanza", "Cobol"]);
   });
 });
