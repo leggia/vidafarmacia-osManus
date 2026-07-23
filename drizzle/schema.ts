@@ -199,6 +199,10 @@ export const movimientosStock = mysqlTable("movimientos_stock", {
   referenciaTipo: varchar("referenciaTipo", { length: 30 }),
   referenciaId: varchar("referenciaId", { length: 60 }),
   detalle: varchar("detalle", { length: 300 }),
+  // Procedencia del asiento — dato de auditoría: "vivo" se registró en el momento
+  // en que ocurrió; "importado" se reconstruyó del histórico ya existente y por
+  // eso puede no tener usuario ni hora exacta.
+  origen: varchar("origen", { length: 12 }).notNull().default("vivo"),
   creadoEn: timestamp("creadoEn").defaultNow().notNull(),
 }, (t) => ({
   idxClaveFecha: index("idx_mov_clave_fecha").on(t.articuloClave, t.fecha),

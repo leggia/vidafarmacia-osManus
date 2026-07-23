@@ -16,9 +16,10 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { toast } from "sonner";
 import {
   BookOpen, Search, Loader2, ArrowDownCircle, ArrowUpCircle,
-  ShieldCheck, Package, Filter,
+  ShieldCheck, Package, Filter, DownloadCloud, Scale,
 } from "lucide-react";
 
 // Color e ícono por tipo de movimiento
@@ -39,11 +40,23 @@ function fechaCorta(f: any): string {
 }
 
 export default function Kardex() {
-  const [vista, setVista] = useState<"producto" | "auditoria">("producto");
+  const [vista, setVista] = useState<"producto" | "auditoria" | "cuadre">("producto");
+  const [almacenCuadre, setAlmacenCuadre] = useState(1);
   const [busqueda, setBusqueda] = useState("");
   const [productoSel, setProductoSel] = useState<string | null>(null);
 
+  const utils = trpc.useUtils();
   const estado = trpc.ventas.kardexEstado.useQuery();
+  const importar = trpc.ventas.kardexImportar.useMutation({
+    onSuccess: (r: any) => {
+      if (r.total > 0) toast.success(r.mensaje, { duration: 9000 });
+      else toast.info(r.mensaje, { duration: 6000 });
+      utils.ventas.kardexEstado.invalidate();
+      utils.ventas.kardexAuditoria.invalidate();
+      utils.ventas.kardexProducto.invalidate();
+    },
+    onError: (e) => toast.error("No se pudo importar: " + e.message),
+  });
   const sugerencias = trpc.ventas.kardexBuscar.useQuery(
     { texto: busqueda },
     { enabled: busqueda.trim().length >= 2 && !productoSel },
@@ -56,6 +69,10 @@ export default function Kardex() {
   // Auditoría
   const [filtroUsuario, setFiltroUsuario] = useState("");
   const [filtroTipo, setFiltroTipo] = useState("");
+  const cuadre = trpc.ventas.kardexReconciliar.useQuery(
+    { almacenId: almacenCuadre },
+    { enabled: vista === "cuadre" },
+  );
   const auditoria = trpc.ventas.kardexAuditoria.useQuery(
     { usuario: filtroUsuario || undefined, tipo: filtroTipo || undefined, limite: 150 },
     { enabled: vista === "auditoria" },
@@ -85,12 +102,42 @@ export default function Kardex() {
           onClick={() => setVista("auditoria")} className="gap-1 text-xs">
           <ShieldCheck className="h-3 w-3" /> Auditoría
         </Button>
+        <Button size="sm" variant={vista === "cuadre" ? "default" : "outline"}
+          onClick={() => setVista("cuadre")} className="gap-1 text-xs">
+          <Scale className="h-3 w-3" /> Cuadre
+        </Button>
       </div>
 
-      {estado.data && estado.data.total === 0 && (
-        <div className="rounded-lg border border-amber-300 bg-amber-50 p-3 text-xs text-amber-800">
-          El libro de movimientos está vacío. Se irá llenando solo con cada venta,
-          compra, transferencia y ajuste de inventario a partir de ahora.
+      {/* Importación del histórico: reconstruye el libro con lo ya registrado */}
+      {estado.data && (
+        <div className={`rounded-lg border p-3 text-xs ${estado.data.total === 0 ? "border-amber-300 bg-amber-50 text-amber-900" : "border-foreground/15 bg-muted/30"}`}>
+          <div className="flex items-start justify-between gap-3">
+            <div className="min-w-0">
+              {estado.data.total === 0 ? (
+                <p>
+                  El libro está vacío. Se llenará solo con cada movimiento nuevo, y
+                  puedes traer el histórico que ya tiene el sistema.
+                </p>
+              ) : (
+                <p className="text-muted-foreground">
+                  <b className="text-foreground">{estado.data.envivo?.toLocaleString("es-BO")}</b> registrados en vivo
+                  {estado.data.importados ? <> · <b className="text-foreground">{estado.data.importados.toLocaleString("es-BO")}</b> importados del histórico</> : null}
+                  {estado.data.desde ? <> · desde {new Date(estado.data.desde).toLocaleDateString("es-BO")}</> : null}
+                </p>
+              )}
+            </div>
+            <Button size="sm" variant="outline" className="gap-1 text-xs shrink-0"
+              disabled={importar.isPending}
+              onClick={() => importar.mutate({})}>
+              {importar.isPending ? <Loader2 className="h-3 w-3 animate-spin" /> : <DownloadCloud className="h-3 w-3" />}
+              Importar histórico
+            </Button>
+          </div>
+          {importar.data?.quedaMas && (
+            <p className="mt-1.5 text-amber-700">
+              Quedan más movimientos por traer: vuelve a tocar "Importar histórico" para continuar.
+            </p>
+          )}
         </div>
       )}
 
@@ -176,6 +223,7 @@ export default function Kardex() {
                             {m.usuario ? `${m.usuario}` : "sin usuario"}
                             {m.sucursal ? ` · ${m.sucursal}` : ""}
                             {m.detalle ? ` · ${m.detalle}` : ""}
+                            {m.origen === "importado" ? " · histórico" : ""}
                           </p>
                         </div>
                         <div className="text-right shrink-0">
@@ -190,6 +238,67 @@ export default function Kardex() {
                 )}
               </CardContent>
             </Card>
+          )}
+        </>
+      ) : vista === "cuadre" ? (
+        <>
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-muted-foreground">Almacén</span>
+            <select value={almacenCuadre} onChange={(e) => setAlmacenCuadre(Number(e.target.value))}
+              className="h-9 rounded-md border bg-background px-2 text-xs">
+              <option value={1}>Almacén Principal</option>
+              <option value={2}>Almacén Petrolera</option>
+              <option value={3}>Almacén Lanza</option>
+              <option value={4}>Almacén Cobol</option>
+            </select>
+          </div>
+
+          {cuadre.isFetching && (
+            <div className="flex justify-center py-6"><Loader2 className="h-5 w-5 animate-spin text-muted-foreground" /></div>
+          )}
+          {cuadre.data && (
+            <>
+              <Card>
+                <CardContent className="py-3">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="text-xs font-black uppercase tracking-wider">Cuadre con 365</p>
+                      <p className="text-[11px] text-muted-foreground">
+                        {cuadre.data.comparados} productos comparados
+                      </p>
+                    </div>
+                    <div className="text-right">
+                      <p className={`text-lg font-black ${cuadre.data.conDiferencia === 0 ? "text-emerald-700" : "text-amber-700"}`}>
+                        {cuadre.data.conDiferencia}
+                      </p>
+                      <p className="text-[10px] text-muted-foreground">con diferencia</p>
+                    </div>
+                  </div>
+                  <p className="text-[11px] text-muted-foreground mt-2">{cuadre.data.nota}</p>
+                </CardContent>
+              </Card>
+
+              <div className="space-y-1.5">
+                {cuadre.data.diferencias.map((d: any, i: number) => (
+                  <div key={i} className="flex items-center gap-2 text-xs bg-muted/30 rounded-md px-2.5 py-2">
+                    <div className="min-w-0 flex-1">
+                      <p className="font-medium truncate">{d.producto}</p>
+                      <p className="text-[11px] text-muted-foreground">
+                        365: {d.stock365} · libro: {d.saldoLibro} · {d.movimientos} movimientos
+                      </p>
+                    </div>
+                    <p className={`font-bold tabular-nums shrink-0 ${d.diferencia > 0 ? "text-emerald-700" : "text-red-600"}`}>
+                      {d.diferencia > 0 ? "+" : ""}{d.diferencia}
+                    </p>
+                  </div>
+                ))}
+                {cuadre.data.conDiferencia === 0 && (
+                  <p className="text-xs text-emerald-700 text-center py-4">
+                    Todo cuadra: el libro coincide con el stock de 365.
+                  </p>
+                )}
+              </div>
+            </>
           )}
         </>
       ) : (

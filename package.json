@@ -1,6 +1,6 @@
 {
   "name": "vidafarma-os",
-  "version": "2.79.0",
+  "version": "2.80.0",
   "description": "VidaFarma OS — sistema de gestión para farmacia (inventario, compras, ventas, finanzas y asistente IA). Cochabamba, Bolivia.",
   "author": "Luis Omar Tuco Tito <leggia@vidafarma.bo> (Técnico Superior en Sistemas Informáticos)",
   "license": "MIT",

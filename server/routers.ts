@@ -2908,6 +2908,22 @@ const ventasRouter = router({
       return kardex.auditoria(input);
     }),
 
+  // Importar el histórico ya existente al libro (admin: modifica datos)
+  kardexImportar: adminProcedure
+    .input(z.object({ lote: z.number().optional(), desde: z.string().optional() }).optional())
+    .mutation(async ({ input }) => {
+      const { kardex } = await import("./kardex");
+      return kardex.importarHistorico(input ?? {});
+    }),
+
+  // Reconciliación: saldo del libro vs stock real de 365
+  kardexReconciliar: adminProcedure
+    .input(z.object({ almacenId: z.number(), limite: z.number().optional() }))
+    .query(async ({ input }) => {
+      const { kardex } = await import("./kardex");
+      return kardex.reconciliar(input.almacenId, input);
+    }),
+
   kardexEstado: protectedProcedure.query(async () => {
     const { kardex } = await import("./kardex");
     return kardex.estado();
