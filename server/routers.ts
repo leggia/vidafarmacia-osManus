@@ -794,6 +794,8 @@ INSTRUCCIONES GENERALES:
         result = await db.createPurchase({
           userId: ctx.user.id,
         branchId: input.branchId,
+        // Almacén real donde entra la mercadería (el que se envía a 365)
+        almacenNombre: input.almacenNombre || null,
         receiptNumber: input.receiptNumber,
         receiptType: input.receiptType || "BOLETA",
         supplier: input.supplier,

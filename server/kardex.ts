@@ -458,8 +458,8 @@ class KardexService {
     try {
       const filas = rows(await db.execute(sql`
         SELECT pi.purchaseId, pi.productName, pi.quantity, pi.unitCost,
-               p.createdAt, p.supplier, p.receiptNumber, p.userId,
-               u.name AS usuarioNombre, u.email AS usuarioEmail, b.name AS sucursal
+               p.createdAt, p.supplier, p.receiptNumber, p.userId, p.almacenNombre,
+               u.name AS usuarioNombre, u.email AS usuarioEmail, b.name AS sucursalFormulario
         FROM purchase_items pi
         JOIN purchases p ON p.id = pi.purchaseId
         LEFT JOIN users u ON u.id = p.userId
@@ -475,7 +475,11 @@ class KardexService {
         compras = await this.registrar(filas.map((f: any) => ({
           fecha: f.createdAt,
           articuloNombre: f.productName,
-          sucursal: f.sucursal,
+          // El almacén REAL donde entró la mercadería. Se usa la sucursal del
+          // formulario solo como respaldo para compras viejas, que no guardaron
+          // el almacén: esa sucursal viene preseleccionada en Casa Matriz, y por
+          // eso antes TODAS las compras aparecían entrando a Casa Matriz.
+          sucursal: f.almacenNombre || f.sucursalFormulario,
           tipo: "compra" as const,
           cantidad: Number(f.quantity) || 0,
           costoUnitario: f.unitCost != null ? Number(f.unitCost) : null,
@@ -699,6 +703,51 @@ class KardexService {
     } catch { /* tabla ausente */ }
 
     return { ventas, compras, transferencias, ajustes, total: ventas + compras + transferencias + ajustes };
+  }
+
+  /**
+   * Corrige la sucursal de los asientos de COMPRA que quedaron mal.
+   *
+   * Las compras se registraban con la sucursal del formulario (preseleccionada en
+   * Casa Matriz) en vez del almacén donde realmente entró la mercadería, así que
+   * todas aparecían entrando a Casa Matriz. Ya se guarda el almacén correcto;
+   * esto reescribe los asientos anteriores que sí tienen el dato.
+   *
+   * Es la excepción a "el libro no se edita": estos asientos son datos
+   * RECONSTRUIDOS con un criterio equivocado, no registros originales. Las
+   * compras viejas que nunca guardaron el almacén no se pueden recuperar y se
+   * informan aparte.
+   */
+  async repararSucursalCompras(): Promise<{ corregidos: number; sinDato: number }> {
+    const db = await getDb();
+    if (!db) return { corregidos: 0, sinDato: 0 };
+    let corregidos = 0;
+    try {
+      const compras = rows(await db.execute(sql`
+        SELECT id, almacenNombre FROM purchases WHERE almacenNombre IS NOT NULL AND almacenNombre <> ''
+      `));
+      for (const c of compras) {
+        const { almacenId, sucursal } = resolverSucursal(c.almacenNombre);
+        if (!sucursal) continue;
+        const r: any = await db.execute(sql`
+          UPDATE movimientos_stock
+          SET sucursal = ${sucursal}, almacenId = ${almacenId}
+          WHERE referenciaTipo = 'compra' AND referenciaId = ${String(c.id)}
+            AND (sucursal <> ${sucursal} OR sucursal IS NULL)
+        `);
+        const afectadas = Number((r as any)?.rowsAffected ?? (r as any)?.affectedRows ?? (Array.isArray(r) ? r[0]?.affectedRows : 0)) || 0;
+        corregidos += afectadas;
+      }
+      const sinDatoRes = rows(await db.execute(sql`
+        SELECT COUNT(*) AS n FROM purchases WHERE almacenNombre IS NULL OR almacenNombre = ''
+      `));
+      const sinDato = Number(sinDatoRes[0]?.n) || 0;
+      if (corregidos > 0) console.log(`[Kardex] ${corregidos} asientos de compra corregidos de sucursal`);
+      return { corregidos, sinDato };
+    } catch (e: any) {
+      console.warn("[Kardex] Error reparando sucursal de compras:", e?.message);
+      return { corregidos, sinDato: 0 };
+    }
   }
 
   /** Cuántos movimientos hay registrados (para saber si el libro ya tiene datos). */

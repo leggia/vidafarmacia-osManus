@@ -54,6 +54,10 @@ export const purchases = mysqlTable("purchases", {
   id: int("id").autoincrement().primaryKey(),
   userId: int("userId").notNull(),
   branchId: int("branchId").notNull(),
+  // Almacén REAL donde entró la mercadería (lo que se envía a 365). No es lo
+  // mismo que branchId: esa es la sucursal del formulario, que viene
+  // preseleccionada en Casa Matriz y no dice a qué almacén entró el stock.
+  almacenNombre: varchar("almacenNombre", { length: 120 }),
   receiptNumber: varchar("receiptNumber", { length: 100 }),
   receiptType: varchar("receiptType", { length: 50 }).default("BOLETA"),
   supplier: varchar("supplier", { length: 255 }),

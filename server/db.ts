@@ -119,6 +119,7 @@ export async function listPurchases(userId: number) {
 export async function createPurchase(data: {
   userId: number;
   branchId: number;
+  almacenNombre?: string | null;
   receiptNumber?: string;
   receiptType?: string;
   supplier?: string;
@@ -142,12 +143,17 @@ export async function createPurchase(data: {
     const { sql } = await import("drizzle-orm");
     await db.execute(sql.raw("ALTER TABLE purchase_items ADD COLUMN precioVenta DECIMAL(12,4)"));
   } catch { /* ya existe */ }
+  try {
+    const { sql } = await import("drizzle-orm");
+    await db.execute(sql.raw("ALTER TABLE purchases ADD COLUMN almacenNombre VARCHAR(120)"));
+  } catch { /* ya existe */ }
 
   const finalStatus = data.status || "draft";
 
   const [purchaseResult] = await db.insert(purchases).values({
     userId: data.userId,
     branchId: data.branchId,
+    almacenNombre: data.almacenNombre || null,
     receiptNumber: data.receiptNumber || null,
     receiptType: data.receiptType || "BOLETA",
     supplier: data.supplier || null,

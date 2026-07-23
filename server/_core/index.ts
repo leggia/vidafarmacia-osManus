@@ -467,6 +467,22 @@ async function startServer() {
     }
   });
 
+  // Corrige la sucursal de los asientos de compra del kardex
+  app.get("/api/admin/reparar-compras-kardex", async (_req, res) => {
+    try {
+      const { kardex } = await import("../kardex");
+      const r = await kardex.repararSucursalCompras();
+      res.json({
+        success: true, ...r,
+        nota: r.sinDato > 0
+          ? `${r.sinDato} compra(s) antiguas no guardaron el almacén de destino: su sucursal en el kardex no se puede recuperar.`
+          : "Todas las compras tienen almacén registrado.",
+      });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e?.message });
+    }
+  });
+
   // Captura manual de cierres de caja (faltantes/sobrantes). GET para el navegador.
   app.get("/api/admin/capturar-cierres-caja", async (_req, res) => {
     try {

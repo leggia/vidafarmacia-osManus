@@ -133,6 +133,7 @@ export async function crearTablasGastos(): Promise<void> {
     "CREATE INDEX idx_mov_usuario ON movimientos_stock (usuario)",
     "ALTER TABLE movimientos_stock ADD UNIQUE INDEX uniq_mov_origen (referenciaTipo, referenciaId, articuloClave, tipo)",
     "ALTER TABLE movimientos_stock ADD COLUMN origen VARCHAR(12) NOT NULL DEFAULT 'vivo'",
+    "ALTER TABLE purchases ADD COLUMN almacenNombre VARCHAR(120)",
   ];
   for (const m of migraciones) {
     try { await db.execute(sql.raw(m)); } catch { /* ya existe */ }
