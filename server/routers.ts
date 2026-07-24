@@ -858,11 +858,24 @@ INSTRUCCIONES GENERALES:
             // KARDEX: cada producto comprado ENTRA al almacén
             try {
               const { kardex } = await import("./kardex");
+              let nombreSucursalCompra: string | null = null;
+              try {
+                const { getDb } = await import("./db");
+                const { branches } = await import("../drizzle/schema");
+                const { eq } = await import("drizzle-orm");
+                const dbb = await getDb();
+                if (dbb) {
+                  const b = await dbb.select().from(branches).where(eq(branches.id, input.branchId)).limit(1);
+                  nombreSucursalCompra = b[0]?.name ?? null;
+                }
+              } catch { /* si falla, queda null */ }
               await kardex.registrar((itemsLimpios as any[]).map((it) => ({
                 fecha: new Date(),
                 articuloNombre: it.productName,
                 articuloId: it.articuloId ?? null,
-                sucursal: input.almacenNombre ?? null,
+                // Almacén real de ingreso; si el formulario no lo mandó, se usa
+                // la sucursal de la compra para no dejarlo sin origen.
+                sucursal: input.almacenNombre || nombreSucursalCompra || null,
                 tipo: "compra" as const,
                 cantidad: Number(it.quantity) || 0,
                 costoUnitario: Number(it.unitCost) || null,

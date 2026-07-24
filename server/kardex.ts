@@ -113,8 +113,14 @@ class KardexService {
       const valores = movs
         .filter((m) => m.articuloNombre && Number.isFinite(Number(m.cantidad)))
         .map((m) => {
-          // Normalizar la sucursal: cada fuente la nombra distinto
+          // Normalizar la sucursal: cada fuente la nombra distinto. Si el nombre
+          // vino vacío pero sí se conoce el almacén, se deduce de ahí: todo
+          // movimiento tiene un origen, no debe quedar "Sin sucursal".
           const suc = resolverSucursal(m.sucursal);
+          if (!suc.sucursal && m.almacenId != null && NOMBRE_ALMACEN[m.almacenId]) {
+            suc.almacenId = m.almacenId;
+            suc.sucursal = NOMBRE_ALMACEN[m.almacenId];
+          }
           return {
           fecha: typeof m.fecha === "string" ? new Date(m.fecha) : m.fecha,
           articuloNombre: String(m.articuloNombre).slice(0, 500),
@@ -748,6 +754,99 @@ class KardexService {
       console.warn("[Kardex] Error reparando sucursal de compras:", e?.message);
       return { corregidos, sinDato: 0 };
     }
+  }
+
+  /**
+   * Completa la sucursal de los movimientos que quedaron sin ella.
+   *
+   * Todo movimiento tiene un origen real; que aparezca "Sin sucursal" siempre es
+   * un dato que no se copió, no un caso legítimo. Se rellena desde la fuente:
+   *  · ajustes → el almacén de la sesión de inventario (que sí lo guarda)
+   *  · ventas → la sucursal de la venta
+   *  · compras → el almacén de ingreso, o la sucursal de la compra
+   *  · transferencias → origen y destino de la transferencia
+   */
+  async completarSucursales(): Promise<{ corregidos: number; sinFuente: number; detalle: Record<string, number> }> {
+    const db = await getDb();
+    if (!db) return { corregidos: 0, sinFuente: 0, detalle: {} };
+    const detalle: Record<string, number> = {};
+    let corregidos = 0;
+    const aplicar = async (etiqueta: string, consulta: any) => {
+      try {
+        const r: any = await db.execute(consulta);
+        const n = Number((r as any)?.rowsAffected ?? (r as any)?.affectedRows ?? (Array.isArray(r) ? r[0]?.affectedRows : 0)) || 0;
+        if (n > 0) { detalle[etiqueta] = n; corregidos += n; }
+      } catch (e: any) {
+        console.warn(`[Kardex] completarSucursales(${etiqueta}):`, e?.message);
+      }
+    };
+
+    // 1. Por almacenId ya guardado (el caso más directo)
+    for (const [id, nombre] of Object.entries(NOMBRE_ALMACEN)) {
+      await aplicar(`almacen-${id}`, sql`
+        UPDATE movimientos_stock SET sucursal = ${nombre}
+        WHERE (sucursal IS NULL OR sucursal = '') AND almacenId = ${Number(id)}
+      `);
+    }
+
+    // 2. Ventas: tomar la sucursal de la venta original
+    await aplicar("ventas", sql`
+      UPDATE movimientos_stock m
+      JOIN ventas v ON CAST(v.id AS CHAR) = m.referenciaId
+      SET m.sucursal = v.nombreSucursal
+      WHERE m.referenciaTipo = 'venta' AND (m.sucursal IS NULL OR m.sucursal = '')
+        AND v.nombreSucursal IS NOT NULL AND v.nombreSucursal <> ''
+    `);
+
+    // 3. Compras: almacén de ingreso; si no está, la sucursal de la compra
+    await aplicar("compras-almacen", sql`
+      UPDATE movimientos_stock m
+      JOIN purchases p ON CAST(p.id AS CHAR) = m.referenciaId
+      SET m.sucursal = p.almacenNombre
+      WHERE m.referenciaTipo = 'compra' AND (m.sucursal IS NULL OR m.sucursal = '')
+        AND p.almacenNombre IS NOT NULL AND p.almacenNombre <> ''
+    `);
+    await aplicar("compras-sucursal", sql`
+      UPDATE movimientos_stock m
+      JOIN purchases p ON CAST(p.id AS CHAR) = m.referenciaId
+      JOIN branches b ON b.id = p.branchId
+      SET m.sucursal = b.name
+      WHERE m.referenciaTipo = 'compra' AND (m.sucursal IS NULL OR m.sucursal = '')
+    `);
+
+    // 4. Transferencias: origen para las salidas, destino para las entradas
+    await aplicar("transf-salida", sql`
+      UPDATE movimientos_stock m
+      JOIN transfers t ON CAST(t.id AS CHAR) = m.referenciaId
+      JOIN branches b ON b.id = t.fromBranchId
+      SET m.sucursal = b.name
+      WHERE m.referenciaTipo = 'transferencia' AND m.tipo = 'transferencia_salida'
+        AND (m.sucursal IS NULL OR m.sucursal = '')
+    `);
+    await aplicar("transf-entrada", sql`
+      UPDATE movimientos_stock m
+      JOIN transfers t ON CAST(t.id AS CHAR) = m.referenciaId
+      JOIN branches b ON b.id = t.toBranchId
+      SET m.sucursal = b.name
+      WHERE m.referenciaTipo = 'transferencia' AND m.tipo = 'transferencia_entrada'
+        AND (m.sucursal IS NULL OR m.sucursal = '')
+    `);
+
+    // 5. Normalizar todo a las 4 etiquetas canónicas y fijar el almacenId
+    for (const [id, nombre] of Object.entries(NOMBRE_ALMACEN)) {
+      const patron = nombre === "Casa Matriz" ? "%matriz%" : `%${nombre.toLowerCase()}%`;
+      await aplicar(`norm-${nombre}`, sql`
+        UPDATE movimientos_stock
+        SET sucursal = ${nombre}, almacenId = ${Number(id)}
+        WHERE LOWER(sucursal) LIKE ${patron} AND (sucursal <> ${nombre} OR almacenId IS NULL)
+          ${nombre === "Casa Matriz" ? sql`AND LOWER(sucursal) NOT LIKE '%cobol%'` : sql``}
+      `);
+    }
+
+    const restantes = rows(await db.execute(sql`
+      SELECT COUNT(*) AS n FROM movimientos_stock WHERE sucursal IS NULL OR sucursal = ''
+    `));
+    return { corregidos, sinFuente: Number(restantes[0]?.n) || 0, detalle };
   }
 
   /** Cuántos movimientos hay registrados (para saber si el libro ya tiene datos). */

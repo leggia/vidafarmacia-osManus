@@ -467,6 +467,47 @@ async function startServer() {
     }
   });
 
+  // Completa las sucursales faltantes del kardex y normaliza las etiquetas
+  app.get("/api/admin/reparar-sucursales-kardex", async (_req, res) => {
+    try {
+      const { kardex } = await import("../kardex");
+      const r = await kardex.completarSucursales();
+      res.json({
+        success: true, ...r,
+        nota: r.sinFuente > 0
+          ? `Quedan ${r.sinFuente} movimientos sin sucursal: su documento de origen tampoco la tiene.`
+          : "Todos los movimientos tienen sucursal asignada.",
+      });
+    } catch (e: any) {
+      res.status(500).json({ success: false, error: e?.message });
+    }
+  });
+
+  // Muestra qué movimientos quedaron sin sucursal y de dónde vienen
+  app.get("/api/admin/diag-sin-sucursal", async (_req, res) => {
+    try {
+      const db = await getDb();
+      if (!db) return res.status(500).json({ error: "DB no disponible" });
+      const r: any = await db.execute(sql`
+        SELECT tipo, referenciaTipo, COUNT(*) AS n,
+               MIN(fecha) AS desde, MAX(fecha) AS hasta,
+               GROUP_CONCAT(DISTINCT referenciaId ORDER BY referenciaId SEPARATOR ',') AS referencias
+        FROM movimientos_stock WHERE sucursal IS NULL OR sucursal = ''
+        GROUP BY tipo, referenciaTipo ORDER BY n DESC
+      `);
+      const grupos = (Array.isArray(r) ? r[0] : r?.rows ?? r) as any[];
+      res.json({
+        totalSinSucursal: grupos.reduce((t, g: any) => t + Number(g.n), 0),
+        grupos: grupos.map((g: any) => ({
+          ...g,
+          referencias: String(g.referencias || "").split(",").slice(0, 20),
+        })),
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e?.message });
+    }
+  });
+
   // Corrige la sucursal de los asientos de compra del kardex
   app.get("/api/admin/reparar-compras-kardex", async (_req, res) => {
     try {
